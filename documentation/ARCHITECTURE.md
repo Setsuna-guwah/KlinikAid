@@ -127,6 +127,24 @@ The AI chatbot endpoint at `/api/chat` coordinates RAG grounding and Gemini inte
 5. **Model Query**: Sends the grounded history to `gemini-2.5-flash`.
 6. **Logging**: Writes the message, bot response, session ID, and token usage count into `chatbot_logs`.
 
+### Two Implementations
+
+The same pipeline exists in **two parallel implementations** — one per client platform:
+
+| | Web | Mobile |
+|---|---|---|
+| **File** | `src/app/api/chat/route.ts` | `supabase/functions/chat/index.ts` |
+| **Runtime** | Next.js / Node.js | Deno (Supabase Edge Function) |
+| **Auth** | Cookie session | JWT Bearer header |
+| **Request body** | `{ messages: [...], sessionId }` — full history for multi-turn Gemini context | `{ message: string, session_id: string }` — single message |
+| **Response** | `{ response, tokensUsed }` | `{ response, log_id }` — `log_id` needed for per-message feedback UI |
+
+The mobile client uses `supabase.functions.invoke('chat', ...)` and stays within Supabase's API surface. The web client calls the Next.js API route directly. Both use identical rate limits, model strings, RPC arguments, and system prompt text. See [`supabase/functions/chat/README.md`](../supabase/functions/chat/README.md) for the function's full contract and deploy instructions.
+
+> **Sync rule:** Any change to rate limit, model strings, `match_documents` thresholds, system prompt, or `chatbot_logs` columns must be applied to **both** files.
+
+
+
 ---
 
 ## Supabase Private Storage Bucket
