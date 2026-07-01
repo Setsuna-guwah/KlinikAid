@@ -13,7 +13,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     const adminProfile = await requireRole(["admin"]);
     const { id } = params;
     const body = await request.json();
-    const { email, fullName, role, department } = body;
+    const { email, fullName, role, department, password } = body;
 
     if (!email || !fullName || !role) {
       return errorResponse("Missing required fields: email, fullName, role", 400);
@@ -26,15 +26,29 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     const adminClient = createAdminClient();
     const supabase = createClient();
 
-    // 1. Update Auth user (email & metadata)
-    const { error: authError } = await adminClient.auth.admin.updateUserById(id, {
+    // 1. Update Auth user (email, metadata & optional password)
+    const updateParams: {
+      email: string;
+      user_metadata: {
+        full_name: string;
+        role: string;
+        department: string | null;
+      };
+      password?: string;
+    } = {
       email,
       user_metadata: {
         full_name: fullName,
         role,
         department: role === "department_staff" ? department : null,
       },
-    });
+    };
+
+    if (password) {
+      updateParams.password = password;
+    }
+
+    const { error: authError } = await adminClient.auth.admin.updateUserById(id, updateParams);
 
     if (authError) {
       throw authError;
