@@ -3,6 +3,7 @@
 import React, { useState, useTransition, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { loginAction } from "./actions";
+import { createClient } from "@/lib/supabase/client";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,6 +40,11 @@ function LoginForm() {
       try {
         const result = await loginAction(null, formData);
 
+        if (!result) {
+          setError("Sign-in did not complete. Please try again.");
+          return;
+        }
+
         if (result.error) {
           setError(result.error);
           return;
@@ -54,10 +60,18 @@ function LoginForm() {
           router.push(redirectPath || result.redirectUrl);
           router.refresh();
         }
-            } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : "An unexpected error occurred. Please try again.");
+      } catch {
+        setError("Sign-in could not be completed. Please check your connection and try again.");
       }
     });
+  };
+
+  const handleBackToLogin = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    setMfaRequired(false);
+    setTotpCode("");
+    setError(null);
   };
 
   return (
@@ -198,11 +212,7 @@ function LoginForm() {
                   type="button"
                   variant="ghost"
                   className="w-full text-sm text-slate-500 hover:text-slate-800"
-                  onClick={() => {
-                    setMfaRequired(false);
-                    setTotpCode("");
-                    setError(null);
-                  }}
+                  onClick={handleBackToLogin}
                   disabled={isPending}
                 >
                   Back to login

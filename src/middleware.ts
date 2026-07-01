@@ -30,7 +30,7 @@ export async function middleware(request: NextRequest) {
   // 2. Authenticated user logic
   if (user) {
     // Redirect already logged-in users away from login page to their dashboard
-    if (path === "/login" || path === "/") {
+    if (request.method === "GET" && (path === "/login" || path === "/")) {
       const { data: profile } = await supabase
         .from("profiles")
         .select("role")

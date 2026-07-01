@@ -5,6 +5,7 @@ import Sidebar from "@/components/sidebar";
 import { headers } from "next/headers";
 import { logEvent } from "@/lib/logger";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
+import { getTotpFactors } from "@/lib/auth/mfa";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,23 @@ export default async function DashboardLayout({ children }: DashboardLayoutProps
   // 3.5 Enforce Data Privacy Agreement gate (Republic Act 10173) for patients
   if (profile.role === "patient" && !profile.accepted_privacy_at) {
     redirect("/privacy-agreement");
+  }
+
+  // 3.7 Enforce MFA Enrollment gate for Staff roles
+  const isStaff = ["admin", "receptionist", "department_staff", "medical_specialist"].includes(profile.role);
+  if (isStaff) {
+    const { data: factorsData, error: factorsError } = await supabase.auth.mfa.listFactors();
+    if (factorsError) {
+      console.error("MFA Gate error retrieving factors:", factorsError.message);
+      await supabase.auth.signOut();
+      redirect("/login?error=mfa_check_failed");
+    }
+
+    const hasVerifiedFactor = getTotpFactors(factorsData).some((f) => f.status === "verified");
+    if (!hasVerifiedFactor) {
+      // Staff has no verified TOTP factor, force routing to enroll page
+      redirect("/mfa-enroll");
+    }
   }
 
   // 4. Handle access denial logging and redirection (Revision B)
