@@ -41,6 +41,7 @@ next-env.d.ts
 # Context docs (AI/dev reference only, not project code)
 MASTER_CONTEXT.md
 KlinikAid_Web_Implementation_Guide_v2.md
+WHOLE_PROJECT_CONTEXT.md
 
 # Phase documentation (untracked dev context)
 docs/
