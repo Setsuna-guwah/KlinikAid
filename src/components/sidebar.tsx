@@ -18,7 +18,6 @@ import {
   History,
   FileSpreadsheet,
   UserCheck,
-  LineChart,
   Bot,
   Upload,
   Search,
@@ -74,7 +73,6 @@ export default function Sidebar({ user }: SidebarProps) {
     medical_specialist: [
       { label: "Dashboard", href: "/specialist/dashboard", icon: LayoutDashboard },
       { label: "My Patients", href: "/specialist/patients", icon: UserCheck },
-      { label: "Analytics Dashboard", href: "/specialist/analytics", icon: LineChart },
     ],
     patient: [
       { label: "Dashboard", href: "/patient/dashboard", icon: LayoutDashboard },

@@ -241,6 +241,10 @@ CREATE POLICY "Patients can update own pending documents"
   USING (uploader_id = auth.uid() AND status = 'pending')
   WITH CHECK (uploader_id = auth.uid() AND status = 'pending');
 
+CREATE POLICY "Patients can delete own pending documents"
+  ON public.documents FOR DELETE
+  USING (uploader_id = auth.uid() AND status = 'pending');
+
 -- 5. Department Records Policies (Enforces Isolation SO-D)
 CREATE POLICY "Admins have full access to department records" 
   ON public.department_records FOR ALL 

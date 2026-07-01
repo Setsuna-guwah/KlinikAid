@@ -3,7 +3,8 @@ import { requireRole } from "@/lib/auth/helpers";
 import { errorResponse, successResponse } from "@/lib/api-response";
 import { logEvent } from "@/lib/logger";
 import { toZonedTime, format } from "date-fns-tz";
-import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
+import { DEPARTMENTS, SYSTEM_EVENT_TYPES } from "@/lib/constants";
+import { Department } from "@/types";
 
 export async function POST(
   request: Request,
@@ -23,7 +24,7 @@ export async function POST(
     const documentId = params.id;
 
     // 3. Parse request body
-    let body: { notes?: string } = {};
+    let body: { notes?: string; destination_department?: Department } = {};
     try {
       body = await request.json();
     } catch {
@@ -56,6 +57,10 @@ export async function POST(
       reviewed_by_name: profile.full_name,
       reviewed_at: phTimestamp,
       review_notes: body.notes || "",
+      destination_department: body.destination_department || null,
+      destination_department_label: body.destination_department
+        ? DEPARTMENTS[body.destination_department]?.label || body.destination_department
+        : null,
     };
 
     // 6. Update document in Database
@@ -93,7 +98,11 @@ export async function POST(
       SYSTEM_EVENT_TYPES.DOCUMENT_APPROVED,
       `Document approved: ${updatedDoc.file_name} for patient ${updatedDoc.patient?.first_name} ${updatedDoc.patient?.last_name}`,
       null,
-      { document_id: documentId, notes: body.notes || "" }
+      {
+        document_id: documentId,
+        notes: body.notes || "",
+        destination_department: body.destination_department || null,
+      }
     );
 
     return successResponse(updatedDoc, "Document approved successfully");

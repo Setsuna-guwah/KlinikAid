@@ -25,6 +25,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { getReceptionDocumentSignedUrlAction } from "@/app/(dashboard)/reception/queue/[documentId]/actions";
+import { DEPARTMENTS } from "@/lib/constants";
+import { Department } from "@/types";
 import {
   Dialog,
   DialogContent,
@@ -56,10 +58,14 @@ export default function DocumentApprovalClient({ document: initialDoc }: Documen
     reviewed_at?: string;
     reviewed_by_name?: string;
     review_notes?: string;
+    destination_department?: Department | null;
+    destination_department_label?: string | null;
   } | null;
   const ocrConfidence = metadata?.ocr_confidence_score as number | undefined;
   const ocrFlags = (metadata?.ocr_flags || []) as string[];
   const fieldConfidences = metadata?.field_confidences as Record<string, number> | undefined;
+  const destinationDepartmentLabel = metadata?.destination_department_label
+    || (metadata?.destination_department ? DEPARTMENTS[metadata.destination_department]?.label : null);
 
   // Format dates in Manila timezone
   const formatZonedDate = (dateString: string) => {
@@ -452,6 +458,11 @@ export default function DocumentApprovalClient({ document: initialDoc }: Documen
                 ) : (
                   <Badge className="bg-rose-600 text-white font-medium flex items-center gap-0.5">
                     <XCircle className="h-3 w-3" /> Rejected
+                  </Badge>
+                )}
+                {doc.status === "approved" && destinationDepartmentLabel && (
+                  <Badge variant="outline" className="font-medium text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800">
+                    Destination: {destinationDepartmentLabel}
                   </Badge>
                 )}
               </div>

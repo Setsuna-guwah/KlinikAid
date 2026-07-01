@@ -31,7 +31,6 @@ const triageSchema = z.object({
   department: z.enum(["laboratory", "imaging", "ultrasound", "ecg"], {
     message: "Please select a department",
   }),
-  priority_level: z.enum(["routine", "urgent", "emergency"]),
   blood_pressure: z
     .string()
     .optional()
@@ -85,7 +84,6 @@ export default function TriageModal({
   } = useForm<TriageFormValues>({
     resolver: zodResolver(triageSchema),
     defaultValues: {
-      priority_level: "routine",
       blood_pressure: "",
       weight_kg: "",
       temperature_c: "",
@@ -123,6 +121,7 @@ export default function TriageModal({
             },
             body: JSON.stringify({
               notes: values.notes || "",
+              destination_department: values.department,
             }),
           });
 
@@ -141,7 +140,6 @@ export default function TriageModal({
           body: JSON.stringify({
             patient_id: patientId,
             department: values.department,
-            priority_level: values.priority_level,
             notes: values.notes,
             vitals: {
               blood_pressure: values.blood_pressure || null,
@@ -187,7 +185,7 @@ export default function TriageModal({
             <Input value={patientName} disabled className="bg-slate-50 dark:bg-slate-900/50 cursor-not-allowed border-slate-200" />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4">
             {/* Department Selector */}
             <div className="flex flex-col gap-2">
               <Label htmlFor="department" className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -212,28 +210,6 @@ export default function TriageModal({
               {errors.department && (
                 <p className="text-xs text-red-500">{errors.department.message}</p>
               )}
-            </div>
-
-            {/* Priority Level */}
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="priority_level" className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Priority Level
-              </Label>
-              <Select
-                onValueChange={(val) => {
-                  if (val) setValue("priority_level", val as "routine" | "urgent" | "emergency");
-                }}
-                defaultValue="routine"
-              >
-                <SelectTrigger id="priority_level" className="border-slate-200 dark:border-slate-800">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
-                  <SelectItem value="routine">Routine</SelectItem>
-                  <SelectItem value="urgent">Urgent</SelectItem>
-                  <SelectItem value="emergency">Emergency</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
           </div>
 

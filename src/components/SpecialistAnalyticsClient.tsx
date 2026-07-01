@@ -143,17 +143,26 @@ export default function SpecialistAnalyticsClient({
 
   // Shared helper functions are imported from @/lib/utils
 
+  const getNumericValue = (value: string) => {
+    const rawVal = typeof (value as unknown) === "number"
+      ? (value as unknown as number)
+      : parseFloat(value);
+    return Number.isNaN(rawVal) ? null : rawVal;
+  };
+
+  const hasNumericBaseline = (record: RecordData) =>
+    record.reference_range_min !== null && record.reference_range_max !== null;
+
   // Convert test value to number for graphing
   const chartData = records.map((r) => {
-    const rawVal = typeof (r.test_value as unknown) === "number"
-      ? (r.test_value as unknown as number)
-      : parseFloat(r.test_value);
     return {
       ...r,
-      numeric_value: Number.isNaN(rawVal) ? null : rawVal,
+      numeric_value: getNumericValue(r.test_value),
       formatted_date: formatPhTime(r.result_date || r.created_at)
     };
   });
+  const chartableData = chartData.filter((r) => r.numeric_value !== null);
+  const hasOnlyTextValues = records.length > 0 && chartableData.length === 0;
 
   // Fetch reference limits from first record
   const firstRec = records[0];
@@ -258,11 +267,19 @@ export default function SpecialistAnalyticsClient({
             <div className="h-[400px] flex items-center justify-center text-slate-400 dark:text-slate-500 text-xs border border-dashed border-slate-100 dark:border-slate-850 rounded-xl">
               No historical data recorded for metric: {selectedMetric}
             </div>
+          ) : hasOnlyTextValues ? (
+            <div className="h-[400px] flex flex-col items-center justify-center text-center text-slate-500 dark:text-slate-400 text-xs border border-dashed border-slate-100 dark:border-slate-850 rounded-xl bg-slate-50/40 dark:bg-slate-900/20">
+              <FileText className="h-8 w-8 text-slate-300 dark:text-slate-600 mb-2" />
+              <span className="font-bold text-slate-700 dark:text-slate-300">Not chartable - text parameter</span>
+              <span className="mt-1 max-w-xs leading-relaxed">
+                This parameter stores narrative findings, so no numeric trend line is available.
+              </span>
+            </div>
           ) : (
             <div className="h-[400px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart
-                  data={chartData}
+                  data={chartableData}
                   margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" className="dark:stroke-slate-900" />
@@ -383,7 +400,10 @@ export default function SpecialistAnalyticsClient({
                     </td>
                   </tr>
                 ) : (
-                  records.map((rec) => (
+                  records.map((rec) => {
+                    const isNumericResult = hasNumericBaseline(rec) && getNumericValue(rec.test_value) !== null;
+
+                    return (
                     <tr key={rec.id} className="hover:bg-slate-50/25 dark:hover:bg-slate-900/5 transition">
                       <td className="p-3 pl-4 font-mono text-[10px] text-slate-450 dark:text-slate-500">
                         {formatPhTimeFull(rec.result_date)}
@@ -405,7 +425,11 @@ export default function SpecialistAnalyticsClient({
                         )}
                       </td>
                       <td className="p-3">
-                        {rec.is_flagged ? (
+                        {!isNumericResult ? (
+                          <Badge variant="outline" className="font-bold text-[9px] px-1.5 py-0.5 uppercase tracking-wider border-slate-200 text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                            N/A
+                          </Badge>
+                        ) : rec.is_flagged ? (
                           <Badge variant="destructive" className="font-bold text-[9px] px-1.5 py-0.5 uppercase tracking-wider">
                             Flagged
                           </Badge>
@@ -419,7 +443,8 @@ export default function SpecialistAnalyticsClient({
                         {rec.notes || "--"}
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>

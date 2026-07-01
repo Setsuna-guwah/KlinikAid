@@ -12,7 +12,6 @@ import {
   Clock, 
   FileText, 
   ChevronRight, 
-  Filter
 } from "lucide-react";
 import { format } from "date-fns";
 import { DEPARTMENTS } from "@/lib/constants";
@@ -30,7 +29,6 @@ interface QueueItem {
   patient_id: string;
   department: string;
   status: string;
-  priority_level: "routine" | "urgent" | "critical";
   triage_notes: {
     queue_number?: string;
     vitals?: {
@@ -89,7 +87,6 @@ export default function DepartmentRecordsClient({
 
   const [activeTab, setActiveTab] = useState<"queue" | "history">("queue");
   const [searchTerm, setSearchTerm] = useState("");
-  const [priorityFilter, setPriorityFilter] = useState<string>("all");
 
   // Age helper
   const getAge = (dobString?: string) => {
@@ -114,8 +111,7 @@ export default function DepartmentRecordsClient({
     const pName = `${item.patient?.first_name || ""} ${item.patient?.last_name || ""}`.toLowerCase();
     const qNum = (item.triage_notes?.queue_number || "").toLowerCase();
     const matchesSearch = pName.includes(searchTerm.toLowerCase()) || qNum.includes(searchTerm.toLowerCase());
-    const matchesPriority = priorityFilter === "all" || item.priority_level === priorityFilter;
-    return matchesSearch && matchesPriority;
+    return matchesSearch;
   });
 
   // Group historical rows by patient_id and created_at (since database rows are flat test results)
@@ -259,23 +255,6 @@ export default function DepartmentRecordsClient({
               className="pl-9 pr-4 py-2 w-full text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-all"
             />
           </div>
-
-          {/* Priority filter (Only for queue tab) */}
-          {activeTab === "queue" && (
-            <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4 text-slate-400 hidden sm:block" />
-              <select
-                value={priorityFilter}
-                onChange={(e) => setPriorityFilter(e.target.value)}
-                className="px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
-              >
-                <option value="all">All Priorities</option>
-                <option value="critical">Critical</option>
-                <option value="urgent">Urgent</option>
-                <option value="routine">Routine</option>
-              </select>
-            </div>
-          )}
         </div>
       </div>
 
@@ -308,16 +287,6 @@ export default function DepartmentRecordsClient({
                   const vitals = item.triage_notes?.vitals;
                   const notes = item.triage_notes?.notes;
 
-                  // Priority badge styles
-                  let priorityBg = "bg-green-50 text-green-700 border-green-200 dark:bg-green-950/20 dark:text-green-400 dark:border-green-900/50";
-                  let priorityPulse = "";
-                  if (item.priority_level === "critical") {
-                    priorityBg = "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400 dark:border-red-900/50";
-                    priorityPulse = "animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.4)]";
-                  } else if (item.priority_level === "urgent") {
-                    priorityBg = "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/20 dark:text-orange-400 dark:border-orange-900/50";
-                  }
-
                   return (
                     <div 
                       key={item.id} 
@@ -325,7 +294,7 @@ export default function DepartmentRecordsClient({
                         item.status === "in_progress" ? "ring-2 ring-purple-500/30 border-purple-200" : ""
                       }`}
                     >
-                      {/* Top Row: Queue # & Priority */}
+                      {/* Top Row: Queue # & Status */}
                       <div className="flex items-center justify-between">
                         <span className="text-base font-extrabold text-teal-600 dark:text-teal-400 tracking-wider">
                           {queueNum}
@@ -336,9 +305,6 @@ export default function DepartmentRecordsClient({
                               Entering
                             </span>
                           )}
-                          <span className={`px-2 py-0.5 text-xs font-bold uppercase border rounded-md ${priorityBg} ${priorityPulse}`}>
-                            {item.priority_level}
-                          </span>
                         </div>
                       </div>
 
@@ -416,21 +382,6 @@ export default function DepartmentRecordsClient({
                   <span className="text-xs text-slate-400 dark:text-slate-500 block">In Progress</span>
                   <span className="text-2xl font-black text-purple-600 dark:text-purple-400 mt-1 block">
                     {initialQueue.filter(q => q.status === "in_progress").length}
-                  </span>
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <div className="flex justify-between items-center text-xs text-slate-500 dark:text-slate-400">
-                  <span>Critical Patients:</span>
-                  <span className="font-extrabold text-red-500">
-                    {initialQueue.filter(q => q.priority_level === "critical").length}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-xs text-slate-500 dark:text-slate-400 mt-1.5">
-                  <span>Urgent Patients:</span>
-                  <span className="font-extrabold text-orange-500">
-                    {initialQueue.filter(q => q.priority_level === "urgent").length}
                   </span>
                 </div>
               </div>

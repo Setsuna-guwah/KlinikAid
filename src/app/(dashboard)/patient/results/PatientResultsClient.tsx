@@ -50,6 +50,9 @@ export default function PatientResultsClient({ initialRecords }: PatientResultsC
   const groupedRecords = groupRecordsByDate(filteredRecords);
   const dateKeys = Object.keys(groupedRecords);
 
+  const hasNumericBaseline = (rec: DepartmentRecord) =>
+    rec.reference_range_min !== null && rec.reference_range_max !== null;
+
   const getDepartmentBadge = (dept: string) => {
     switch (dept) {
       case "laboratory":
@@ -159,7 +162,10 @@ export default function PatientResultsClient({ initialRecords }: PatientResultsC
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-850">
-                        {groupedRecords[dateKey].map((rec) => (
+                        {groupedRecords[dateKey].map((rec) => {
+                          const isNumericResult = hasNumericBaseline(rec);
+
+                          return (
                           <tr key={rec.id} className="hover:bg-slate-50/20 dark:hover:bg-slate-900/5 transition">
                             {/* Parameter Name */}
                             <td className="p-3 pl-4 font-bold text-slate-800 dark:text-slate-200">
@@ -187,7 +193,7 @@ export default function PatientResultsClient({ initialRecords }: PatientResultsC
 
                             {/* Reference Range */}
                             <td className="p-3 text-slate-500 dark:text-slate-400 font-mono text-[11px]">
-                              {rec.reference_range_min !== null && rec.reference_range_max !== null ? (
+                              {isNumericResult ? (
                                 `${rec.reference_range_min} - ${rec.reference_range_max} ${rec.unit || ""}`
                               ) : (
                                 "No baseline"
@@ -196,7 +202,11 @@ export default function PatientResultsClient({ initialRecords }: PatientResultsC
 
                             {/* Status Flag */}
                             <td className="p-3">
-                              {rec.is_flagged ? (
+                              {!isNumericResult ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200/60 uppercase tracking-wider dark:bg-slate-900 dark:text-slate-400 dark:border-slate-800">
+                                  N/A
+                                </span>
+                              ) : rec.is_flagged ? (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-red-150 text-red-750 border border-red-200/55 uppercase tracking-wider dark:bg-red-950/20 dark:text-red-450 dark:border-red-900/30">
                                   Out of Range
                                 </span>
@@ -212,7 +222,8 @@ export default function PatientResultsClient({ initialRecords }: PatientResultsC
                               {rec.notes || "--"}
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

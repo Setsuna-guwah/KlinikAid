@@ -123,6 +123,11 @@ export default function SubmissionsClient({
             } else if (updated.status === "rejected") {
               toast.error(`Document rejected: ${updated.file_name}`);
             }
+          } else if (payload.eventType === "DELETE") {
+            const deleted = payload.old as Partial<Document>;
+            if (deleted.id) {
+              setDocuments((current) => current.filter((doc) => doc.id !== deleted.id));
+            }
           }
         }
       )
@@ -172,6 +177,7 @@ export default function SubmissionsClient({
     try {
       const res = await deletePendingDocumentAction(docId);
       if (res.success) {
+        setDocuments((current) => current.filter((doc) => doc.id !== docId));
         toast.success("Submission successfully cancelled and file deleted.");
         router.refresh();
       } else {
@@ -205,17 +211,6 @@ export default function SubmissionsClient({
         return <Badge className="bg-green-500 hover:bg-green-600 text-white font-medium">Completed</Badge>;
       default:
         return <Badge variant="secondary" className="font-medium">Cancelled</Badge>;
-    }
-  };
-
-  const getPriorityBadge = (priority: string) => {
-    switch (priority) {
-      case "emergency":
-        return <Badge variant="destructive" className="font-medium">Emergency</Badge>;
-      case "urgent":
-        return <Badge className="bg-orange-500 hover:bg-orange-600 text-white font-medium">Urgent</Badge>;
-      default:
-        return <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-350 dark:hover:bg-slate-750 font-medium">Routine</Badge>;
     }
   };
 
@@ -296,7 +291,6 @@ export default function SubmissionsClient({
                         </div>
                         <div className="flex flex-col items-end gap-1.5">
                           {getQueueBadge(item.status)}
-                          {getPriorityBadge(item.priority_level)}
                         </div>
                       </div>
 
@@ -314,7 +308,7 @@ export default function SubmissionsClient({
                             <Clock className="h-3.5 w-3.5 text-accentBlue-500" />
                             {item.estimated_wait_minutes !== null 
                               ? `${item.estimated_wait_minutes} mins` 
-                              : "Calculating..."}
+                              : "Not available"}
                           </span>
                         </div>
                       </div>

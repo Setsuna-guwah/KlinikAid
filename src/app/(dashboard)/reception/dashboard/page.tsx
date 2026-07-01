@@ -74,7 +74,6 @@ export default async function ReceptionDashboardPage() {
         id,
         status,
         department,
-        priority_level,
         triage_notes,
         created_at,
         patient:patient_id (
@@ -93,7 +92,6 @@ export default async function ReceptionDashboardPage() {
     id: string;
     status: string;
     department: string;
-    priority_level: string;
     triage_notes: string | null;
     created_at: string;
     patient: { first_name: string; last_name: string } | null;
@@ -107,17 +105,6 @@ export default async function ReceptionDashboardPage() {
       return parsed.queue_number || "—";
     } catch {
       return "—";
-    }
-  };
-
-  const getPriorityBadgeClass = (priority: string) => {
-    switch (priority) {
-      case "emergency":
-        return "bg-rose-500 text-white dark:bg-rose-600";
-      case "urgent":
-        return "bg-amber-500 text-white dark:bg-amber-600";
-      default:
-        return "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200";
     }
   };
 
@@ -276,9 +263,6 @@ export default async function ReceptionDashboardPage() {
                     </div>
 
                     <div className="flex flex-col items-end gap-1.5">
-                      <Badge className={`text-[9px] font-bold px-1.5 py-0.5 uppercase ${getPriorityBadgeClass(entry.priority_level)}`}>
-                        {entry.priority_level}
-                      </Badge>
                       <Badge className={`text-[9px] font-bold px-1.5 py-0.5 uppercase ${getStatusBadgeClass(entry.status)}`}>
                         {entry.status}
                       </Badge>

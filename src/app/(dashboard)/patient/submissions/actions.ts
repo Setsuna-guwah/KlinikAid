@@ -96,10 +96,17 @@ export async function deletePendingDocumentAction(docId: string) {
     .from("documents")
     .select("file_path, status, patient_id, uploader_id")
     .eq("id", docId)
-    .single();
+    .maybeSingle();
 
-  if (fetchError || !doc) {
+  if (fetchError) {
+    console.error("[deletePendingDocumentAction] Document lookup error:", fetchError);
     return { success: false, error: "Document not found." };
+  }
+
+  if (!doc) {
+    revalidatePath("/patient/submissions");
+    revalidatePath("/patient/dashboard");
+    return { success: true };
   }
 
   const isOwner = doc.patient_id === patient.id || doc.uploader_id === user.id;
@@ -112,14 +119,16 @@ export async function deletePendingDocumentAction(docId: string) {
     return { success: false, error: "Only pending documents can be cancelled or deleted." };
   }
 
-  // Step 1: Delete DB row first
-  const { error: dbDeleteError } = await supabase
+  // Step 1: Delete DB row first and verify the row was actually removed.
+  const { data: deletedDoc, error: dbDeleteError } = await supabase
     .from("documents")
     .delete()
     .eq("id", docId)
-    .eq("status", "pending");
+    .eq("status", "pending")
+    .select("id")
+    .maybeSingle();
 
-  if (dbDeleteError) {
+  if (dbDeleteError || !deletedDoc) {
     console.error("[deletePendingDocumentAction] Database delete error:", dbDeleteError);
     return { success: false, error: "Failed to delete document record." };
   }
