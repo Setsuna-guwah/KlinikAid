@@ -34,6 +34,8 @@ interface SidebarProps {
     role: UserRole;
     department: Department | null;
   };
+  onLinkClick?: () => void;
+  className?: string;
 }
 
 interface NavItem {
@@ -42,7 +44,7 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>;
 }
 
-export default function Sidebar({ user }: SidebarProps) {
+export default function Sidebar({ user, onLinkClick, className }: SidebarProps) {
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
 
@@ -88,7 +90,7 @@ export default function Sidebar({ user }: SidebarProps) {
   const deptInfo = user.department ? DEPARTMENTS[user.department] : null;
 
   return (
-    <aside className="flex flex-col w-64 h-screen border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 select-none">
+    <aside className={cn("flex flex-col w-64 h-screen border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 select-none", className)}>
       {/* Sidebar Header / Branding */}
       <div className="flex items-center gap-3 px-6 py-5 border-b border-slate-200/60 dark:border-slate-800/60">
         <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary text-white shadow-md shadow-primary/10">
@@ -113,6 +115,7 @@ export default function Sidebar({ user }: SidebarProps) {
             <Link
               key={item.href}
               href={item.href}
+              onClick={onLinkClick}
               className={cn(
                 "flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group",
                 isActive

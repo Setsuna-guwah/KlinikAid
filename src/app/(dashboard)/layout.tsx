@@ -1,7 +1,7 @@
 import React from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import Sidebar from "@/components/sidebar";
+import DashboardLayoutClient from "@/components/DashboardLayoutClient";
 import { headers } from "next/headers";
 import { logEvent } from "@/lib/logger";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
@@ -113,16 +113,8 @@ export default async function DashboardLayout({ children }: DashboardLayoutProps
   };
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
-      {/* Navigation Sidebar */}
-      <Sidebar user={sidebarUser} />
-
-      {/* Main Content Area */}
-      <main className="flex-1 h-full overflow-y-auto bg-background">
-        <div className="container mx-auto px-6 py-8">
-          {children}
-        </div>
-      </main>
-    </div>
+    <DashboardLayoutClient user={sidebarUser}>
+      {children}
+    </DashboardLayoutClient>
   );
 }
