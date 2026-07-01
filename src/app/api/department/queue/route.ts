@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth/helpers";
 import { errorResponse, successResponse } from "@/lib/api-response";
-import { toZonedTime } from "date-fns-tz";
+import { getPhtStartOfToday } from "@/lib/utils";
 
 export async function GET(request: Request) {
   const supabase = createClient();
@@ -29,12 +29,8 @@ export async function GET(request: Request) {
     }
 
     // 3. Get start of today in Asia/Manila (UTC+8)
-    const timeZone = "Asia/Manila";
-    const now = new Date();
-    const zonedTime = toZonedTime(now, timeZone);
-    const phTodayStart = new Date(zonedTime);
-    phTodayStart.setHours(0, 0, 0, 0);
-    const startOfTodayIso = phTodayStart.toISOString();
+    const startOfTodayIso = getPhtStartOfToday();
+
 
     // 4. Fetch today's waiting or in_progress queue entries for the department
     const { data: queue, error: queueError } = await supabase

@@ -2,7 +2,7 @@ import React from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth/helpers";
-import { toZonedTime } from "date-fns-tz";
+import { getPhtStartOfToday } from "@/lib/utils";
 import DepartmentRecordsClient from "@/components/DepartmentRecordsClient";
 import { Department } from "@/types";
 
@@ -71,12 +71,8 @@ export default async function DepartmentRecordsPage({ searchParams }: PageProps)
   }
 
   // 3. Get start of today in Asia/Manila (UTC+8) to filter daily queue
-  const timeZone = "Asia/Manila";
-  const now = new Date();
-  const zonedTime = toZonedTime(now, timeZone);
-  const phTodayStart = new Date(zonedTime);
-  phTodayStart.setHours(0, 0, 0, 0);
-  const startOfTodayIso = phTodayStart.toISOString();
+  const startOfTodayIso = getPhtStartOfToday();
+
 
   // 4. Fetch daily patient queue (waiting or in_progress)
   const { data: queueData } = await supabase

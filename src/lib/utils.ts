@@ -35,3 +35,14 @@ export function formatPhTimeFull(utcString: string | null): string {
   }
 }
 
+/**
+ * Returns ISO timestamp for 00:00 PHT today in UTC (e.g. previous day 16:00Z).
+ */
+export function getPhtStartOfToday(): string {
+  const now = new Date();
+  const phTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  phTime.setUTCHours(0, 0, 0, 0);
+  return new Date(phTime.getTime() - 8 * 60 * 60 * 1000).toISOString();
+}
+
+

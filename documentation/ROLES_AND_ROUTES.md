@@ -23,7 +23,7 @@ KlinikAid uses Next.js route folders and layouts to partition role access. The r
 
 ## System Event Types (`SYSTEM_EVENT_TYPES`)
 
-Audit logging is structured type-safely. Developers must import events from `src/lib/constants.ts` (never write raw strings). The table below lists the 19 registered event types and the operations that emit them:
+Audit logging is structured type-safely. Developers must import events from `src/lib/constants.ts` (never write raw strings). The table below lists the 21 registered event types and the operations that emit them:
 
 | Event Type Constant | database value | Emitted By / Triggering Operation |
 | :--- | :--- | :--- |
@@ -46,3 +46,6 @@ Audit logging is structured type-safely. Developers must import events from `src
 | `STAFF_ACTION_FAILED` | `"STAFF_ACTION_FAILED"` | Server-side actions triggered by clinic personnel fail during critical transactions. |
 | `DOCUMENT_SUBMITTED` | `"DOCUMENT_SUBMITTED"` | Patient uploads a document to private storage and logs it in [submitDocumentAction](file:///c:/Users/johnr/Desktop/Klinikaid/src/app/(dashboard)/patient/submit/actions.ts). |
 | `PRIVACY_ACCEPTED` | `"PRIVACY_ACCEPTED"` | Patient accepts the DPA Republic Act 10173 consent form in [acceptPrivacyAction](file:///c:/Users/johnr/Desktop/Klinikaid/src/app/(auth)/privacy-agreement/actions.ts). |
+| `QUEUE_COMPLETED` | `"QUEUE_COMPLETED"` | Department records entry workflow completes a patient's waitlist queue status. |
+| `MFA_ENROLLED` | `"MFA_ENROLLED"` | Staff user completes their TOTP MFA authenticator factor enrollment and verification. |
+

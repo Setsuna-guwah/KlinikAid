@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth/helpers";
 import { errorResponse, successResponse } from "@/lib/api-response";
 import { logEvent } from "@/lib/logger";
-import { toZonedTime } from "date-fns-tz";
+import { getPhtStartOfToday } from "@/lib/utils";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 
 export async function GET(request: Request) {
@@ -155,27 +155,28 @@ export async function POST(request: Request) {
       throw insertError;
     }
 
-    // 6. Update today's queue entry status from 'waiting' to 'in_progress'
-    const timeZone = "Asia/Manila";
-    const now = new Date();
-    const zonedTime = toZonedTime(now, timeZone);
-    const phTodayStart = new Date(zonedTime);
-    phTodayStart.setHours(0, 0, 0, 0);
-    const startOfTodayIso = phTodayStart.toISOString();
+    // 6. Update today's queue entry status from 'waiting' or 'in_progress' to 'completed'
+    const startOfTodayIso = getPhtStartOfToday();
 
-    const { error: queueError } = await supabase
+    const { data: updatedQueue, error: queueError } = await supabase
       .from("patient_queue")
-      .update({ status: "in_progress" })
+      .update({ 
+        status: "completed",
+        updated_at: new Date().toISOString()
+      })
       .eq("patient_id", patient_id)
       .eq("department", dept)
-      .eq("status", "waiting")
-      .gte("created_at", startOfTodayIso);
+      .in("status", ["waiting", "in_progress"])
+      .gte("created_at", startOfTodayIso)
+      .select("id");
 
     if (queueError) {
       console.error("Warning: Failed to update patient queue status:", queueError);
     }
 
-    // 7. Log audit trail event
+    const completedCount = updatedQueue?.length || 0;
+
+    // 7. Log audit trail events
     const flaggedCount = results.filter((r) => r.is_flagged).length;
     await logEvent(
       supabase,
@@ -191,6 +192,21 @@ export async function POST(request: Request) {
         total_count: results.length
       }
     );
+
+    if (completedCount > 0) {
+      await logEvent(
+        supabase,
+        user.id,
+        SYSTEM_EVENT_TYPES.QUEUE_COMPLETED,
+        `Patient queue entry marked completed for ${dept} department. Updated rows: ${completedCount}`,
+        null,
+        {
+          patient_id,
+          department: dept,
+          completed_count: completedCount
+        }
+      );
+    }
 
     return successResponse(insertedData, "Department records saved successfully", 201);
   } catch (error: unknown) {

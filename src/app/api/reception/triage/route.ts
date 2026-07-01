@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth/helpers";
 import { errorResponse, successResponse } from "@/lib/api-response";
 import { logEvent } from "@/lib/logger";
-import { toZonedTime } from "date-fns-tz";
+import { getPhtStartOfToday } from "@/lib/utils";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 
 export async function POST(request: Request) {
@@ -29,13 +29,37 @@ export async function POST(request: Request) {
       return errorResponse("Valid department ('laboratory', 'imaging', 'ultrasound', 'ecg') is required", 400);
     }
 
+    // 3.5. Guard Check: Deduplicate Triage Approvals
+    // Check if patient already has an open (waiting or in_progress) queue entry
+    const { data: existingOpen, error: checkError } = await supabase
+      .from("patient_queue")
+      .select("id, department, status")
+      .eq("patient_id", patient_id)
+      .in("status", ["waiting", "in_progress"])
+      .limit(1)
+      .maybeSingle();
+
+    if (checkError) {
+      throw checkError;
+    }
+
+    if (existingOpen) {
+      // Map department identifier to a human-readable title
+      const deptNames: Record<string, string> = {
+        laboratory: "Laboratory",
+        imaging: "Imaging",
+        ultrasound: "Ultrasound",
+        ecg: "ECG",
+      };
+      const deptLabel = deptNames[existingOpen.department] || existingOpen.department;
+      return errorResponse(
+        `Patient already in ${deptLabel} queue. Resolve the existing entry before routing a new one.`,
+        409
+      );
+    }
+
     // 4. Calculate Philippine start of today (UTC+8) (Rule 9)
-    const timeZone = "Asia/Manila";
-    const now = new Date();
-    const zonedTime = toZonedTime(now, timeZone);
-    const phTodayStart = new Date(zonedTime);
-    phTodayStart.setHours(0, 0, 0, 0);
-    const startOfTodayIso = phTodayStart.toISOString(); // This is in UTC for the start of PH day
+    const startOfTodayIso = getPhtStartOfToday();
 
     // 5. Query today's queue entries for this department to calculate queue number
     const { count, error: countError } = await supabase
@@ -77,7 +101,7 @@ export async function POST(request: Request) {
       .insert({
         patient_id,
         department,
-        status: "waiting", // удовлетворяет CHECK (status IN ('waiting', 'in_progress', 'completed', 'cancelled'))
+        status: "waiting", // satisfies CHECK (status IN ('waiting', 'in_progress', 'completed', 'cancelled'))
         priority_level: priority_level || "routine",
         triage_notes: triageNotesJson,
       })

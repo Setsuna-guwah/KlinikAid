@@ -25,6 +25,8 @@ const EVENT_BADGE_STYLES: Record<string, { bg: string; text: string; border: str
   STAFF_ACTION_FAILED:    { bg: '#fef2f2', text: '#991b1b', border: '#fee2e2', label: 'Staff Action Failed' },
   DOCUMENT_SUBMITTED:     { bg: '#ccfbf1', text: '#134e4a', border: '#5eead4', label: 'Doc Submitted' },
   PRIVACY_ACCEPTED:       { bg: '#dcfce7', text: '#166534', border: '#86efac', label: 'Privacy Accepted' },
+  QUEUE_COMPLETED:        { bg: '#dcfce7', text: '#166534', border: '#86efac', label: 'Queue Completed' },
+  MFA_ENROLLED:           { bg: '#dcfce7', text: '#166534', border: '#86efac', label: 'MFA Enrolled' },
 };
 
 const DEFAULT_BADGE_STYLE = { bg: '#f3f4f6', text: '#374151', border: '#d1d5db', label: 'Unknown Event' };

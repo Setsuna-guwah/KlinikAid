@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth/helpers";
+import { getPhtStartOfToday } from "@/lib/utils";
 import { 
   ClipboardList, 
   UserCheck, 
@@ -38,10 +39,8 @@ export default async function ReceptionDashboardPage() {
   const supabase = createClient();
 
   // 2. Calculate start of today in UTC+8 terms, converted back to UTC ISO for database query
-  const now = new Date();
-  const phTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-  phTime.setUTCHours(0, 0, 0, 0);
-  const startOfToday = new Date(phTime.getTime() - 8 * 60 * 60 * 1000).toISOString();
+  const startOfToday = getPhtStartOfToday();
+
 
   // 3. Fetch metrics in parallel
   const [
