@@ -69,8 +69,8 @@ export default function Sidebar({ user, onLinkClick, className }: SidebarProps) 
       { label: "Reception Queue", href: "/reception/queue", icon: ClipboardList },
     ],
     department_staff: [
-      { label: "My Dept Records", href: "/department/records", icon: FileSpreadsheet },
-      { label: "Record Entry", href: "/department/entry", icon: FileText },
+      { label: "Daily Queue", href: "/department/records?tab=queue", icon: ClipboardList },
+      { label: "Records History", href: "/department/records?tab=history", icon: History },
     ],
     medical_specialist: [
       { label: "Dashboard", href: "/specialist/dashboard", icon: LayoutDashboard },
