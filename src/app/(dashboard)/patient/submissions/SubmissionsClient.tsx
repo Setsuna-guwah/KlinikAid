@@ -149,14 +149,17 @@ export default function SubmissionsClient({
 
   const handleView = async (docId: string) => {
     setViewingFileId(docId);
+    const newTab = window.open("", "_blank");
     try {
       const res = await getSignedUrlAction(docId);
-      if (res.success && res.signedUrl) {
-        window.open(res.signedUrl, "_blank");
+      if (res.success && res.signedUrl && newTab) {
+        newTab.location.href = res.signedUrl;
       } else {
+        if (newTab) newTab.close();
         toast.error(res.error || "Failed to view document.");
       }
     } catch (err) {
+      if (newTab) newTab.close();
       console.error(err);
       toast.error("An unexpected error occurred.");
     } finally {

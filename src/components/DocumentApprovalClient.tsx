@@ -151,15 +151,18 @@ export default function DocumentApprovalClient({ document: initialDoc }: Documen
 
   const handleViewOriginal = async () => {
     setIsOpeningFile(true);
+    const newTab = window.open("", "_blank");
     try {
       const result = await getReceptionDocumentSignedUrlAction(doc.id);
-      if (result.success && result.signedUrl) {
-        window.open(result.signedUrl, "_blank", "noopener,noreferrer");
+      if (result.success && result.signedUrl && newTab) {
+        newTab.location.href = result.signedUrl;
         return;
       }
 
+      if (newTab) newTab.close();
       toast.error(result.error || "Failed to generate file access link.");
     } catch (error: unknown) {
+      if (newTab) newTab.close();
       console.error("[DocumentApprovalClient] Error opening document:", error);
       toast.error("Failed to generate file access link.");
     } finally {
