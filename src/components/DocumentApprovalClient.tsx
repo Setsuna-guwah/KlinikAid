@@ -24,6 +24,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { getReceptionDocumentSignedUrlAction } from "@/app/(dashboard)/reception/queue/[documentId]/actions";
 import {
   Dialog,
   DialogContent,
@@ -45,6 +46,7 @@ export default function DocumentApprovalClient({ document: initialDoc }: Documen
   const [isRejectOpen, setIsRejectOpen] = useState(false);
   const [isTriageOpen, setIsTriageOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
+  const [isOpeningFile, setIsOpeningFile] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const metadata = doc.extracted_metadata as unknown as {
@@ -67,13 +69,6 @@ export default function DocumentApprovalClient({ document: initialDoc }: Documen
     } catch {
       return dateString;
     }
-  };
-
-  // Safe file URL construction
-  const getFileUrl = (path: string) => {
-    if (path.startsWith("http")) return path;
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-    return `${supabaseUrl}/storage/v1/object/public/documents/${path}`;
   };
 
   // OCR Flag Highlighting
@@ -146,6 +141,24 @@ export default function DocumentApprovalClient({ document: initialDoc }: Documen
         toast.error(errMsg || "An unexpected error occurred during rejection");
       }
     });
+  };
+
+  const handleViewOriginal = async () => {
+    setIsOpeningFile(true);
+    try {
+      const result = await getReceptionDocumentSignedUrlAction(doc.id);
+      if (result.success && result.signedUrl) {
+        window.open(result.signedUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      toast.error(result.error || "Failed to generate file access link.");
+    } catch (error: unknown) {
+      console.error("[DocumentApprovalClient] Error opening document:", error);
+      toast.error("Failed to generate file access link.");
+    } finally {
+      setIsOpeningFile(false);
+    }
   };
 
   // Style helper for confidence colors
@@ -288,20 +301,19 @@ export default function DocumentApprovalClient({ document: initialDoc }: Documen
               </div>
 
               <div className="pt-2">
-                <a
-                  href={getFileUrl(doc.file_path)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full"
+                <Button
+                  variant="outline"
+                  disabled={isOpeningFile}
+                  onClick={handleViewOriginal}
+                  className="w-full text-xs font-semibold border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-900 flex items-center justify-center gap-1.5"
                 >
-                  <Button
-                    variant="outline"
-                    className="w-full text-xs font-semibold border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-900 flex items-center justify-center gap-1.5"
-                  >
-                    View Original Document
+                  {isOpeningFile ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
                     <ExternalLink className="h-3.5 w-3.5" />
-                  </Button>
-                </a>
+                  )}
+                  View Original Document
+                </Button>
               </div>
             </CardContent>
           </Card>
