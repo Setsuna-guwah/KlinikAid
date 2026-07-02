@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useTransition } from "react";
 import { acceptPrivacyAction } from "./actions";
+import { logoutAction } from "@/app/(auth)/logout/actions";
 import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,9 +12,20 @@ import { toast } from "sonner";
 export default function PrivacyAgreementClient() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [isDisagreeing, startDisagreeTransition] = useTransition();
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
   const [isCheckboxChecked, setIsCheckboxChecked] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleDisagree = () => {
+    startDisagreeTransition(async () => {
+      try {
+        await logoutAction();
+      } catch (err: unknown) {
+        toast.error(err instanceof Error ? err.message : "Failed to sign out.");
+      }
+    });
+  };
 
   const handleScroll = () => {
     const container = scrollContainerRef.current;
@@ -163,7 +175,7 @@ export default function PrivacyAgreementClient() {
             <CardFooter className="flex flex-col space-y-2">
               <Button
                 type="submit"
-                disabled={!isCheckboxChecked || !hasScrolledToBottom || isPending}
+                disabled={!isCheckboxChecked || !hasScrolledToBottom || isPending || isDisagreeing}
                 className="w-full bg-primary hover:bg-primary/90 text-white font-medium shadow-md shadow-primary/10 transition-all duration-200"
               >
                 {isPending ? (
@@ -173,6 +185,22 @@ export default function PrivacyAgreementClient() {
                   </>
                 ) : (
                   "Accept & Continue"
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={handleDisagree}
+                disabled={isPending || isDisagreeing}
+                className="w-full text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800 transition-all"
+              >
+                {isDisagreeing ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Signing Out...
+                  </>
+                ) : (
+                  "I Do Not Agree"
                 )}
               </Button>
             </CardFooter>
