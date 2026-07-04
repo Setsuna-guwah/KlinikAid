@@ -19,6 +19,8 @@ export interface RegisterResult {
   error?: string;
   success?: boolean;
   redirectUrl?: string;
+  emailPending?: boolean;
+  registeredEmail?: string;
 }
 
 export async function registerAction(
@@ -74,7 +76,12 @@ export async function registerAction(
     return { error: res.error || "Signup failed." };
   }
 
-  // 4. Successful registration automatically routes them to login page or patient dashboard
+  // Branch C — confirm-email pending (Confirm email ON, valid signUp)
+  if (res.emailPending) {
+    return { success: true, emailPending: true, registeredEmail: email };
+  }
+
+  // Branch D — session present (Confirm email OFF)
   return {
     success: true,
     redirectUrl: "/login?registered=true",

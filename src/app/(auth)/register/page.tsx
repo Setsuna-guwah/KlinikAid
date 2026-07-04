@@ -8,12 +8,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
-import { Activity, ShieldAlert, Loader2, User, Mail, Lock, Phone, Calendar, MapPin } from "lucide-react";
+import { Activity, ShieldAlert, Loader2, User, Mail, Lock, Phone, Calendar, MapPin, MailCheck } from "lucide-react";
 import Link from "next/link";
 
 function RegisterForm() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const [emailPending, setEmailPending] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const [formData, setFormData] = useState({
@@ -35,6 +36,7 @@ function RegisterForm() {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
+    setEmailPending(null);
 
     startTransition(async () => {
       const data = new FormData();
@@ -46,6 +48,12 @@ function RegisterForm() {
         const result = await registerAction(null, data);
         if (result.error) {
           setError(result.error);
+          return;
+        }
+
+        if (result.emailPending && result.registeredEmail) {
+          setError(null);
+          setEmailPending(result.registeredEmail);
           return;
         }
 
@@ -78,191 +86,217 @@ function RegisterForm() {
           </p>
         </div>
 
-        <Card className="border border-slate-200/80 dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-none bg-white/95 dark:bg-slate-900/95">
-          <CardHeader className="space-y-1">
-            <CardTitle className="text-2xl font-bold tracking-tight text-center">
-              Patient Registration
-            </CardTitle>
-            <CardDescription className="text-center text-slate-500 dark:text-slate-400">
-              Provide your details below to register for the portal
-            </CardDescription>
-          </CardHeader>
-
-          <form onSubmit={handleSubmit}>
-            <CardContent className="space-y-4">
-              {error && (
-                <Alert variant="destructive" className="bg-red-50 dark:bg-red-950/20 border-red-200/60 dark:border-red-900/50">
-                  <ShieldAlert className="h-4 w-4" />
-                  <AlertTitle>Registration Error</AlertTitle>
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-
-              {/* Two Column Fields */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="firstName">First Name</Label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                    <Input
-                      id="firstName"
-                      type="text"
-                      placeholder="John"
-                      className="pl-10"
-                      value={formData.firstName}
-                      onChange={handleChange}
-                      disabled={isPending}
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="lastName">Last Name</Label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                    <Input
-                      id="lastName"
-                      type="text"
-                      placeholder="Doe"
-                      className="pl-10"
-                      value={formData.lastName}
-                      onChange={handleChange}
-                      disabled={isPending}
-                      required
-                    />
-                  </div>
-                </div>
+        {emailPending ? (
+          <Card className="border border-emerald-200/80 dark:border-emerald-800 shadow-xl shadow-slate-200/50 dark:shadow-none bg-white/95 dark:bg-slate-900/95">
+            <CardContent className="pt-8 pb-8 flex flex-col items-center space-y-4 text-center">
+              <div className="flex items-center justify-center w-14 h-14 rounded-full bg-emerald-100 dark:bg-emerald-950/40">
+                <MailCheck className="h-7 w-7 text-emerald-600 dark:text-emerald-400" />
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="dob">Date of Birth</Label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                    <Input
-                      id="dob"
-                      type="date"
-                      className="pl-10"
-                      value={formData.dob}
-                      onChange={handleChange}
-                      disabled={isPending}
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="gender">Gender</Label>
-                  <select
-                    id="gender"
-                    className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-800 dark:bg-slate-950 dark:ring-offset-slate-950 dark:focus-visible:ring-slate-300"
-                    value={formData.gender}
-                    onChange={handleChange}
-                    disabled={isPending}
-                    required
-                  >
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="contactNumber">Contact Number</Label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                  <Input
-                    id="contactNumber"
-                    type="tel"
-                    placeholder="09171234567"
-                    className="pl-10"
-                    value={formData.contactNumber}
-                    onChange={handleChange}
-                    disabled={isPending}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="address">Address</Label>
-                <div className="relative">
-                  <MapPin className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                  <Input
-                    id="address"
-                    type="text"
-                    placeholder="123 Rizal St, Rodriguez, Rizal"
-                    className="pl-10"
-                    value={formData.address}
-                    onChange={handleChange}
-                    disabled={isPending}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="email">Email Address</Label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="john.doe@example.com"
-                    className="pl-10"
-                    value={formData.email}
-                    onChange={handleChange}
-                    disabled={isPending}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="••••••••"
-                    className="pl-10"
-                    value={formData.password}
-                    onChange={handleChange}
-                    disabled={isPending}
-                    required
-                  />
-                </div>
+              <div className="space-y-1">
+                <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
+                  Check your email
+                </h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  We sent a confirmation link to{" "}
+                  <strong className="text-slate-700 dark:text-slate-300">{emailPending}</strong>.
+                </p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Confirm to activate your account, then{" "}
+                  <Link href="/login" className="text-accentBlue-600 hover:underline font-medium">
+                    log in here
+                  </Link>
+                  .
+                </p>
               </div>
             </CardContent>
+          </Card>
+        ) : (
+          <Card className="border border-slate-200/80 dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-none bg-white/95 dark:bg-slate-900/95">
+            <CardHeader className="space-y-1">
+              <CardTitle className="text-2xl font-bold tracking-tight text-center">
+                Patient Registration
+              </CardTitle>
+              <CardDescription className="text-center text-slate-500 dark:text-slate-400">
+                Provide your details below to register for the portal
+              </CardDescription>
+            </CardHeader>
 
-            <CardFooter className="flex flex-col space-y-4">
-              <Button
-                type="submit"
-                className="w-full bg-primary hover:bg-primary/90 text-white font-medium shadow-md shadow-primary/10 transition-all duration-200"
-                disabled={isPending}
-              >
-                {isPending ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Registering...
-                  </>
-                ) : (
-                  "Create Account"
+            <form onSubmit={handleSubmit}>
+              <CardContent className="space-y-4">
+                {error && (
+                  <Alert variant="destructive" className="bg-red-50 dark:bg-red-950/20 border-red-200/60 dark:border-red-900/50">
+                    <ShieldAlert className="h-4 w-4" />
+                    <AlertTitle>Registration Error</AlertTitle>
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
                 )}
-              </Button>
 
-              <div className="text-sm text-center text-slate-500 dark:text-slate-400">
-                Already have an account?{" "}
-                <Link href="/login" className="text-accentBlue-600 hover:underline">
-                  Sign In
-                </Link>
-              </div>
-            </CardFooter>
-          </form>
-        </Card>
+                {/* Two Column Fields */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="firstName">First Name</Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                      <Input
+                        id="firstName"
+                        type="text"
+                        placeholder="John"
+                        className="pl-10"
+                        value={formData.firstName}
+                        onChange={handleChange}
+                        disabled={isPending}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="lastName">Last Name</Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                      <Input
+                        id="lastName"
+                        type="text"
+                        placeholder="Doe"
+                        className="pl-10"
+                        value={formData.lastName}
+                        onChange={handleChange}
+                        disabled={isPending}
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="dob">Date of Birth</Label>
+                    <div className="relative">
+                      <Calendar className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                      <Input
+                        id="dob"
+                        type="date"
+                        className="pl-10"
+                        value={formData.dob}
+                        onChange={handleChange}
+                        disabled={isPending}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="gender">Gender</Label>
+                    <select
+                      id="gender"
+                      className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-800 dark:bg-slate-950 dark:ring-offset-slate-950 dark:focus-visible:ring-slate-300"
+                      value={formData.gender}
+                      onChange={handleChange}
+                      disabled={isPending}
+                      required
+                    >
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="contactNumber">Contact Number</Label>
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                    <Input
+                      id="contactNumber"
+                      type="tel"
+                      placeholder="09171234567"
+                      className="pl-10"
+                      value={formData.contactNumber}
+                      onChange={handleChange}
+                      disabled={isPending}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="address">Address</Label>
+                  <div className="relative">
+                    <MapPin className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                    <Input
+                      id="address"
+                      type="text"
+                      placeholder="123 Rizal St, Rodriguez, Rizal"
+                      className="pl-10"
+                      value={formData.address}
+                      onChange={handleChange}
+                      disabled={isPending}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email Address</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="john.doe@example.com"
+                      className="pl-10"
+                      value={formData.email}
+                      onChange={handleChange}
+                      disabled={isPending}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                    <Input
+                      id="password"
+                      type="password"
+                      placeholder="••••••••"
+                      className="pl-10"
+                      value={formData.password}
+                      onChange={handleChange}
+                      disabled={isPending}
+                      required
+                    />
+                  </div>
+                </div>
+              </CardContent>
+
+              <CardFooter className="flex flex-col space-y-4">
+                <Button
+                  type="submit"
+                  className="w-full bg-primary hover:bg-primary/90 text-white font-medium shadow-md shadow-primary/10 transition-all duration-200"
+                  disabled={isPending}
+                >
+                  {isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Registering...
+                    </>
+                  ) : (
+                    "Create Account"
+                  )}
+                </Button>
+
+                <div className="text-sm text-center text-slate-500 dark:text-slate-400">
+                  Already have an account?{" "}
+                  <Link href="/login" className="text-accentBlue-600 hover:underline">
+                    Sign In
+                  </Link>
+                </div>
+              </CardFooter>
+            </form>
+          </Card>
+        )}
       </div>
     </div>
   );

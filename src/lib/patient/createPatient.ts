@@ -21,6 +21,7 @@ export interface CreatePatientResult {
   patientId?: string;
   passwordUsed?: string;
   error?: string;
+  emailPending?: boolean;
 }
 
 /**
@@ -40,6 +41,7 @@ export async function createPatient(
 
   let userId: string | undefined;
   let passwordUsed = password;
+  let emailPendingConfirmation = false;
 
   try {
     if (isReceptionistCreated) {
@@ -86,12 +88,30 @@ export async function createPatient(
         },
       });
 
-      if (authError || !authData.user) {
+      // Branch A — hard auth error (password policy, etc.)
+      if (authError) {
+        const isUserFacing = authError.status !== 500 && !!authError.message;
         return {
           success: false,
-          error: authError?.message || "Authentication signup failed.",
+          error: isUserFacing
+            ? authError.message
+            : "Registration is currently unavailable. Please try again later.",
         };
       }
+
+      // Branch B — obfuscated / rate-limited (user null, no error)
+      if (!authData.user) {
+        return {
+          success: false,
+          error:
+            "Registration is temporarily unavailable, or this email may already be registered. Please try again later, use the login page, or contact the clinic.",
+        };
+      }
+
+      // Branch C — confirm-email pending (user set, session null)
+      // Branch D — session present (Confirm email OFF)
+      // Both: set userId and emailPendingConfirmation flag; fall through to patients insert.
+      emailPendingConfirmation = !authData.session;
       userId = authData.user.id;
     }
 
@@ -149,6 +169,7 @@ export async function createPatient(
       userId,
       patientId: patientData.id,
       passwordUsed,
+      emailPending: emailPendingConfirmation,
     };
   } catch (err: unknown) {
     // Top-level fallback cleanup
