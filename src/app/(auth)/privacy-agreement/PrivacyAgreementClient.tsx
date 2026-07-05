@@ -6,7 +6,8 @@ import { logoutAction } from "@/app/(auth)/logout/actions";
 import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Activity, ShieldCheck, Loader2 } from "lucide-react";
+import { ShieldCheck, Loader2 } from "lucide-react";
+import Image from "next/image";
 import { toast } from "sonner";
 
 export default function PrivacyAgreementClient() {
@@ -80,9 +81,7 @@ export default function PrivacyAgreementClient() {
       <div className="w-full max-w-2xl z-10 space-y-6 my-8">
         <div className="flex flex-col items-center space-y-2 text-center">
           {/* Clinical Brand Logo */}
-          <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-primary text-white shadow-lg shadow-primary/20 mb-2">
-            <Activity className="h-6 w-6 stroke-[2.5]" />
-          </div>
+          <Image src="/icon.png" alt="KlinikAid" width={64} height={64} className="rounded-xl mb-2 shadow-lg" />
           <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">KlinikAid</h1>
           <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Bloodcare Medical Laboratory</p>
         </div>

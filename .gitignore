@@ -49,3 +49,6 @@ docs/
 scripts/
 scratch/
 skills/
+
+# AI codex output
+CODEX_REPORT/

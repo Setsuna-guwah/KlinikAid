@@ -2,6 +2,7 @@
 
 import React, { useTransition } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { logoutAction } from "@/app/(auth)/logout/actions";
 import { cn } from "@/lib/utils";
@@ -22,7 +23,6 @@ import {
   Upload,
   Search,
   LogOut,
-  Activity,
   Loader2,
 } from "lucide-react";
 
@@ -93,9 +93,7 @@ export default function Sidebar({ user, onLinkClick, className }: SidebarProps) 
     <aside className={cn("flex flex-col w-64 h-screen border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 select-none", className)}>
       {/* Sidebar Header / Branding */}
       <div className="flex items-center gap-3 px-6 py-5 border-b border-slate-200/60 dark:border-slate-800/60">
-        <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary text-white shadow-md shadow-primary/10">
-          <Activity className="h-5 w-5 stroke-[2.5]" />
-        </div>
+        <Image src="/icon.png" alt="KlinikAid" width={36} height={36} className="rounded-lg" />
         <div className="flex flex-col">
           <span className="font-bold text-slate-900 dark:text-white leading-tight">
             KlinikAid

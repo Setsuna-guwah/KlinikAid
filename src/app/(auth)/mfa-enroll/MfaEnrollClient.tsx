@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
-import { Activity, ShieldAlert, KeyRound, Loader2, ArrowRight } from "lucide-react";
+import { ShieldAlert, KeyRound, Loader2, ArrowRight } from "lucide-react";
+import Image from "next/image";
 import { getPhoneFactors, getTotpFactors } from "@/lib/auth/mfa";
 
 export default function MfaEnrollClient() {
@@ -157,9 +158,7 @@ export default function MfaEnrollClient() {
 
       <div className="w-full max-w-lg z-10 space-y-6">
         <div className="flex flex-col items-center space-y-2 text-center">
-          <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-primary text-white shadow-lg shadow-primary/20 mb-2">
-            <Activity className="h-6 w-6 stroke-[2.5]" />
-          </div>
+          <Image src="/icon.png" alt="KlinikAid" width={64} height={64} className="rounded-xl mb-2 shadow-lg" />
           <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
             KlinikAid
           </h1>

@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
-import { Activity, Lock, Mail, Loader2, KeyRound, ShieldAlert } from "lucide-react";
+import { Lock, Mail, Loader2, KeyRound, ShieldAlert } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 
 function LoginForm() {
@@ -22,7 +23,7 @@ function LoginForm() {
   const [totpCode, setTotpCode] = useState("");
   const [mfaRequired, setMfaRequired] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   const [isPending, startTransition] = useTransition();
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -56,7 +57,6 @@ function LoginForm() {
         }
 
         if (result.success && result.redirectUrl) {
-          // Force a full router refresh or hard redirect to ensure cookies take effect
           router.push(redirectPath || result.redirectUrl);
           router.refresh();
         }
@@ -83,9 +83,7 @@ function LoginForm() {
       <div className="w-full max-w-md z-10 space-y-6">
         <div className="flex flex-col items-center space-y-2 text-center animate-fade-in">
           {/* Clinical Brand Logo */}
-          <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-primary text-white shadow-lg shadow-primary/20 mb-2">
-            <Activity className="h-6 w-6 stroke-[2.5]" />
-          </div>
+          <Image src="/icon.png" alt="KlinikAid" width={64} height={64} className="rounded-xl mb-2 shadow-lg" />
           <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
             KlinikAid
           </h1>

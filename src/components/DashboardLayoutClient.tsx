@@ -4,7 +4,8 @@ import React, { useState } from "react";
 import Sidebar from "@/components/sidebar";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { Menu, Activity } from "lucide-react";
+import { Menu } from "lucide-react";
+import Image from "next/image";
 import { UserRole, Department } from "@/types";
 
 interface DashboardLayoutClientProps {
@@ -41,9 +42,7 @@ export default function DashboardLayoutClient({
         {/* Top Navbar for Mobile Viewports */}
         <header className="flex items-center justify-between px-6 py-4 border-b border-slate-200/60 dark:border-slate-800/60 bg-white dark:bg-slate-900 md:hidden z-30 select-none">
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary text-white shadow-md shadow-primary/10">
-              <Activity className="h-4 w-4 stroke-[2.5]" />
-            </div>
+            <Image src="/icon.png" alt="KlinikAid" width={32} height={32} className="rounded-lg" />
             <div className="flex flex-col">
               <span className="font-bold text-sm text-slate-900 dark:text-white leading-tight">
                 KlinikAid
