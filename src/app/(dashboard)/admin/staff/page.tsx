@@ -311,7 +311,7 @@ export default function StaffManagementPage() {
                   return (
                     <TableRow 
                       key={staff.id} 
-                      className={`transition-opacity duration-150 ${!staff.is_active ? "opacity-60 bg-slate-50/30 dark:bg-slate-950/20" : ""}`}
+                      className={`transition-opacity duration-150 ${!staff.is_active ? "opacity-55 bg-slate-50 dark:bg-slate-900/50" : ""}`}
                     >
                       {/* Name */}
                       <TableCell className="font-medium text-slate-900 dark:text-white">
@@ -349,12 +349,12 @@ export default function StaffManagementPage() {
                             onCheckedChange={(checked) => handleStatusToggle(staff, checked)}
                             className="scale-90"
                           />
-                          <Badge className={`text-[9px] font-bold px-1.5 py-0 ${
-                            staff.is_active 
-                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400 border border-emerald-200/40" 
-                              : "bg-rose-100 text-rose-800 dark:bg-rose-950/30 dark:text-rose-400 border border-rose-200/40"
+                          <Badge className={`text-[10px] font-bold px-2 py-0.5 ${
+                            staff.is_active
+                              ? "bg-emerald-500 text-white"
+                              : "bg-slate-400 text-white"
                           }`}>
-                            {staff.is_active ? "Active" : "Inactive"}
+                            {staff.is_active ? "● Active" : "● Inactive"}
                           </Badge>
                         </div>
                       </TableCell>
@@ -380,7 +380,7 @@ export default function StaffManagementPage() {
       </Card>
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen} disablePointerDismissal={true}>
-        <SheetContent className="sm:max-w-md bg-white dark:bg-slate-900 overflow-y-auto">
+        <SheetContent className="sm:max-w-lg bg-white dark:bg-slate-900 overflow-y-auto">
           <SheetHeader className="pb-6 border-b border-slate-100 dark:border-slate-800">
             <SheetTitle>{editingStaff ? "Edit Staff Details" : "Add Staff Account"}</SheetTitle>
             <SheetDescription>
@@ -400,107 +400,115 @@ export default function StaffManagementPage() {
               </div>
             )}
 
-            {/* Name */}
-            <div className="space-y-2">
-              <Label htmlFor="fullName" className="text-xs font-semibold">Full Name</Label>
-              <Input
-                id="fullName"
-                placeholder="e.g. Dr. Maria Santos"
-                {...register("fullName")}
-                className="text-xs"
-              />
-              {errors.fullName && (
-                <p className="text-[10px] text-rose-500">{errors.fullName.message}</p>
-              )}
-            </div>
+            {/* Identity group */}
+            <div className="space-y-4 rounded-lg border border-slate-100 dark:border-slate-800 p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500">Identity</p>
 
-            {/* Email */}
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-xs font-semibold">Email Address</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="maria.santos@bloodcare.com"
-                {...register("email")}
-                className="text-xs font-mono"
-              />
-              {errors.email && (
-                <p className="text-[10px] text-rose-500">{errors.email.message}</p>
-              )}
-            </div>
+              {/* Name */}
+              <div className="space-y-2">
+                <Label htmlFor="fullName" className="text-xs font-semibold">Full Name</Label>
+                <Input
+                  id="fullName"
+                  placeholder="e.g. Dr. Maria Santos"
+                  {...register("fullName")}
+                  className="text-xs"
+                />
+                {errors.fullName && (
+                  <p className="text-[10px] text-rose-500">{errors.fullName.message}</p>
+                )}
+              </div>
 
-            {/* Password (Required for create, optional/blank for edit) */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
+              {/* Email */}
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-xs font-semibold">Email Address</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="maria.santos@bloodcare.com"
+                  {...register("email")}
+                  className="text-xs font-mono"
+                />
+                {errors.email && (
+                  <p className="text-[10px] text-rose-500">{errors.email.message}</p>
+                )}
+              </div>
+
+              {/* Password (Required for create, optional/blank for edit) */}
+              <div className="space-y-2">
                 <Label htmlFor="password" className="text-xs font-semibold">
                   {editingStaff ? "New Password (Leave blank to keep current)" : "Temporary Password"}
                 </Label>
-              </div>
-              <Input
-                id="password"
-                type="text"
-                placeholder={editingStaff ? "••••••••" : "Minimum 6 characters"}
-                {...register("password")}
-                className="text-xs font-mono"
-              />
-              {errors.password && (
-                <p className="text-[10px] text-rose-500">{errors.password.message}</p>
-              )}
-            </div>
-
-            {/* Role Select */}
-            <div className="space-y-2">
-              <Label htmlFor="role" className="text-xs font-semibold">System Role</Label>
-              <Select
-                value={watchRole}
-                onValueChange={(val) => {
-                  setValue("role", val as StaffFormValues["role"]);
-                  if (val !== "department_staff") {
-                    setValue("department", null);
-                  }
-                }}
-              >
-                <SelectTrigger className="text-xs">
-                  <SelectValue placeholder="Select a system role" />
-                </SelectTrigger>
-                <SelectContent className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-                  <SelectItem value="admin" className="text-xs">Administrator</SelectItem>
-                  <SelectItem value="receptionist" className="text-xs">Receptionist</SelectItem>
-                  <SelectItem value="department_staff" className="text-xs">Department Staff</SelectItem>
-                  <SelectItem value="medical_specialist" className="text-xs">Medical Specialist</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Department (Shown conditionally if role is department_staff) */}
-            {watchRole === "department_staff" && (
-              <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
-                <Label htmlFor="department" className="text-xs font-semibold">Clinical Department</Label>
-                <Select
-                  value={watch("department") || undefined}
-                  onValueChange={(val) => setValue("department", val as StaffFormValues["department"])}
-                >
-                  <SelectTrigger className="text-xs">
-                    <SelectValue placeholder="Select clinical department" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-                    <SelectItem value="laboratory" className="text-xs">Laboratory</SelectItem>
-                    <SelectItem value="imaging" className="text-xs">Imaging (X-Ray)</SelectItem>
-                    <SelectItem value="ultrasound" className="text-xs">Ultrasound</SelectItem>
-                    <SelectItem value="ecg" className="text-xs">ECG</SelectItem>
-                  </SelectContent>
-                </Select>
-                {errors.department && (
-                  <p className="text-[10px] text-rose-500">{errors.department.message}</p>
+                <Input
+                  id="password"
+                  type="text"
+                  placeholder={editingStaff ? "••••••••" : "Minimum 6 characters"}
+                  {...register("password")}
+                  className="text-xs font-mono"
+                />
+                {errors.password && (
+                  <p className="text-[10px] text-rose-500">{errors.password.message}</p>
                 )}
               </div>
-            )}
+            </div>
+
+            {/* Access Control group */}
+            <div className="space-y-4 rounded-lg border border-slate-100 dark:border-slate-800 p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500">Access Control</p>
+
+              {/* Role Select */}
+              <div className="space-y-2">
+                <Label htmlFor="role" className="text-xs font-semibold">System Role</Label>
+                <Select
+                  value={watchRole}
+                  onValueChange={(val) => {
+                    setValue("role", val as StaffFormValues["role"]);
+                    if (val !== "department_staff") {
+                      setValue("department", null);
+                    }
+                  }}
+                >
+                  <SelectTrigger className="text-xs">
+                    <SelectValue placeholder="Select a system role" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                    <SelectItem value="admin" className="text-xs">Administrator</SelectItem>
+                    <SelectItem value="receptionist" className="text-xs">Receptionist</SelectItem>
+                    <SelectItem value="department_staff" className="text-xs">Department Staff</SelectItem>
+                    <SelectItem value="medical_specialist" className="text-xs">Medical Specialist</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Department (Shown conditionally if role is department_staff) */}
+              {watchRole === "department_staff" && (
+                <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
+                  <Label htmlFor="department" className="text-xs font-semibold">Clinical Department</Label>
+                  <Select
+                    value={watch("department") || undefined}
+                    onValueChange={(val) => setValue("department", val as StaffFormValues["department"])}
+                  >
+                    <SelectTrigger className="text-xs">
+                      <SelectValue placeholder="Select clinical department" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                      <SelectItem value="laboratory" className="text-xs">Laboratory</SelectItem>
+                      <SelectItem value="imaging" className="text-xs">Imaging (X-Ray)</SelectItem>
+                      <SelectItem value="ultrasound" className="text-xs">Ultrasound</SelectItem>
+                      <SelectItem value="ecg" className="text-xs">ECG</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {errors.department && (
+                    <p className="text-[10px] text-rose-500">{errors.department.message}</p>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* Submit */}
             <Button
               type="submit"
               disabled={submitting}
-              className="w-full mt-4 bg-primary hover:bg-primary/90 text-white font-semibold text-xs"
+              className="w-full bg-primary hover:bg-primary/90 text-white font-semibold text-xs"
             >
               {submitting ? (
                 <>
