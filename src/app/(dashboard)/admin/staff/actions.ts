@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth/helpers";
-import { headers } from "next/headers";
+import { SITE_ORIGIN } from "@/lib/constants";
 
 export async function sendStaffResetEmailAction(email: string) {
   try {
@@ -12,15 +12,10 @@ export async function sendStaffResetEmailAction(email: string) {
       return { success: false, error: "Invalid email address." };
     }
 
-    const reqHeaders = headers();
-    const host = reqHeaders.get("host") || "klinik-aid.vercel.app";
-    const protocol = host.includes("localhost") ? "http" : "https";
-    const origin = `${protocol}://${host}`;
-
     // Use server client to trigger recovery email flow
     const supabase = createClient();
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${origin}/reset-password`,
+      redirectTo: `${SITE_ORIGIN}/reset-password`,
     });
 
     if (error) {

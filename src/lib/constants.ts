@@ -151,4 +151,9 @@ export const SYSTEM_EVENT_TYPES = {
 
 export const WEB_OCR_ENABLED = false;
 
+export const SITE_ORIGIN =
+  process.env.NODE_ENV === "development"
+    ? "http://localhost:3000"
+    : "https://www.klinikaid.com";
+
 

@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { headers } from "next/headers";
+import { SITE_ORIGIN } from "@/lib/constants";
 
 export interface ForgotPasswordResult {
   success: boolean;
@@ -18,18 +18,12 @@ export async function forgotPasswordAction(
     return { success: false, error: "Please enter a valid email address." };
   }
 
-  // Derive origin dynamically for redirect URL
-  const reqHeaders = headers();
-  const host = reqHeaders.get("host") || "klinik-aid.vercel.app";
-  const protocol = host.includes("localhost") ? "http" : "https";
-  const origin = `${protocol}://${host}`;
-
   const supabase = createClient();
 
   try {
     // Send password reset email
     await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${origin}/reset-password`,
+      redirectTo: `${SITE_ORIGIN}/reset-password`,
     });
   } catch (err) {
     console.error("Forgot password API error:", err);
