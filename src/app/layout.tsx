@@ -11,6 +11,9 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "KlinikAid",
   description: "Internal clinic management web portal for Bloodcare Medical Laboratory",
+  icons: {
+    icon: "/icon.png",
+  },
 };
 
 import { Toaster } from "@/components/ui/sonner";
