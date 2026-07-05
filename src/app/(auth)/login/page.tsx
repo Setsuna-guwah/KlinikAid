@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
-import { Lock, Mail, Loader2, KeyRound, ShieldAlert } from "lucide-react";
+import { Lock, Mail, Loader2, KeyRound, ShieldAlert, CheckCircle } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -17,6 +17,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectPath = searchParams.get("redirect") || "";
+  const isResetSuccess = searchParams.get("reset") === "success";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -106,6 +107,16 @@ function LoginForm() {
 
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
+              {isResetSuccess && (
+                <Alert className="bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-900/50 text-emerald-800 dark:text-emerald-300">
+                  <CheckCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                  <AlertTitle className="font-semibold">Password Reset Success</AlertTitle>
+                  <AlertDescription className="text-xs">
+                    Your password has been successfully updated. You can now sign in with your new credentials.
+                  </AlertDescription>
+                </Alert>
+              )}
+
               {error && (
                 <Alert variant="destructive" className="bg-red-50 dark:bg-red-950/20 border-red-200/60 dark:border-red-900/50">
                   <ShieldAlert className="h-4 w-4" />
@@ -137,6 +148,9 @@ function LoginForm() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label htmlFor="password">Password</Label>
+                      <Link href="/forgot-password" className="text-xs text-accentBlue-600 hover:underline">
+                        Forgot password?
+                      </Link>
                     </div>
                     <div className="relative">
                       <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />

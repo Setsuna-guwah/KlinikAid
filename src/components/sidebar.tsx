@@ -24,6 +24,7 @@ import {
   Search,
   LogOut,
   Loader2,
+  User,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -85,7 +86,10 @@ export default function Sidebar({ user, onLinkClick, className }: SidebarProps) 
     ],
   };
 
-  const navItems = navItemsMap[user.role] || [];
+  const navItems = [
+    ...(navItemsMap[user.role] || []),
+    { label: "My Profile", href: "/profile", icon: User }
+  ];
   const roleInfo = USER_ROLES[user.role];
   const deptInfo = user.department ? DEPARTMENTS[user.department] : null;
 

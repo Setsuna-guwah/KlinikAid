@@ -27,6 +27,7 @@ const EVENT_BADGE_STYLES: Record<string, { bg: string; text: string; border: str
   PRIVACY_ACCEPTED:       { bg: '#dcfce7', text: '#166534', border: '#86efac', label: 'Privacy Accepted' },
   QUEUE_COMPLETED:        { bg: '#dcfce7', text: '#166534', border: '#86efac', label: 'Queue Completed' },
   MFA_ENROLLED:           { bg: '#dcfce7', text: '#166534', border: '#86efac', label: 'MFA Enrolled' },
+  PASSWORD_CHANGED:       { bg: '#e0e7ff', text: '#3730a3', border: '#c7d2fe', label: 'Password Changed' },
 };
 
 const DEFAULT_BADGE_STYLE = { bg: '#f3f4f6', text: '#374151', border: '#d1d5db', label: 'Unknown Event' };

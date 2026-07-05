@@ -16,15 +16,18 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { USER_ROLES, DEPARTMENTS } from "@/lib/constants";
 import { UserRole, Department } from "@/types";
-import { 
-  Plus, 
-  Search, 
-  Edit2, 
-  UserMinus, 
-  UserPlus, 
-  Loader2, 
-  ShieldAlert
+import {
+  Plus,
+  Search,
+  Edit2,
+  UserMinus,
+  UserPlus,
+  Loader2,
+  ShieldAlert,
+  Copy,
 } from "lucide-react";
+import { toast } from "sonner";
+import { sendStaffResetEmailAction } from "./actions";
 
 // Form validation schema
 const staffFormSchema = z.object({
@@ -63,15 +66,28 @@ interface StaffMember {
   created_at: string;
 }
 
+function generateTempPassword(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"; // no 0/O/1/l/I
+  const genChunk = (length: number) => {
+    let chunk = "";
+    for (let i = 0; i < length; i++) {
+      chunk += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return chunk;
+  };
+  return `Klinik-${genChunk(4)}-${genChunk(4)}`;
+}
+
 export default function StaffManagementPage() {
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  
+
   // Sheet state
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [sendingReset, setSendingReset] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
   // Confirmation dialog state
@@ -133,7 +149,7 @@ export default function StaffManagementPage() {
     reset({
       fullName: "",
       email: "",
-      password: "",
+      password: generateTempPassword(),
       role: "receptionist",
       department: null,
     });
@@ -309,27 +325,27 @@ export default function StaffManagementPage() {
                   const deptConfig = staff.department ? DEPARTMENTS[staff.department] : null;
 
                   return (
-                    <TableRow 
-                      key={staff.id} 
-                      className={`transition-opacity duration-150 ${!staff.is_active ? "opacity-55 bg-slate-50 dark:bg-slate-900/50" : ""}`}
+                    <TableRow
+                      key={staff.id}
+                      className={`transition-opacity duration-150 ${!staff.is_active ? "opacity-60 bg-slate-50/30 dark:bg-slate-950/20" : ""}`}
                     >
                       {/* Name */}
                       <TableCell className="font-medium text-slate-900 dark:text-white">
                         {staff.full_name}
                       </TableCell>
-                      
+
                       {/* Email */}
                       <TableCell className="font-mono text-xs text-slate-600 dark:text-slate-400">
                         {staff.email}
                       </TableCell>
-                      
+
                       {/* Role Badge */}
                       <TableCell>
                         <Badge className={`text-[10px] font-semibold tracking-wide uppercase px-2 py-0.5 ${ROLE_COLORS[staff.role] || "bg-slate-200 text-slate-800"}`}>
                           {roleConfig?.label || staff.role}
                         </Badge>
                       </TableCell>
-                      
+
                       {/* Department Badge */}
                       <TableCell>
                         {deptConfig ? (
@@ -340,7 +356,7 @@ export default function StaffManagementPage() {
                           <span className="text-slate-400 font-mono text-xs">—</span>
                         )}
                       </TableCell>
-                      
+
                       {/* Status Toggle Switch */}
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -349,16 +365,15 @@ export default function StaffManagementPage() {
                             onCheckedChange={(checked) => handleStatusToggle(staff, checked)}
                             className="scale-90"
                           />
-                          <Badge className={`text-[10px] font-bold px-2 py-0.5 ${
-                            staff.is_active
-                              ? "bg-emerald-500 text-white"
-                              : "bg-slate-400 text-white"
-                          }`}>
-                            {staff.is_active ? "● Active" : "● Inactive"}
+                          <Badge className={`text-[9px] font-bold px-1.5 py-0 ${staff.is_active
+                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400 border border-emerald-200/40"
+                              : "bg-rose-100 text-rose-800 dark:bg-rose-950/30 dark:text-rose-400 border border-rose-200/40"
+                            }`}>
+                            {staff.is_active ? "Active" : "Inactive"}
                           </Badge>
                         </div>
                       </TableCell>
-                      
+
                       {/* Actions */}
                       <TableCell className="text-right">
                         <Button
@@ -380,12 +395,12 @@ export default function StaffManagementPage() {
       </Card>
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen} disablePointerDismissal={true}>
-        <SheetContent className="sm:max-w-lg bg-white dark:bg-slate-900 overflow-y-auto">
+        <SheetContent className="sm:max-w-md bg-white dark:bg-slate-900 overflow-y-auto">
           <SheetHeader className="pb-6 border-b border-slate-100 dark:border-slate-800">
             <SheetTitle>{editingStaff ? "Edit Staff Details" : "Add Staff Account"}</SheetTitle>
             <SheetDescription>
-              {editingStaff 
-                ? "Update user profile. Authentication parameters are updated immediately." 
+              {editingStaff
+                ? "Update user profile. Authentication parameters are updated immediately."
                 : "Create a new clinical or administrative staff member with role-based access."
               }
             </SheetDescription>
@@ -400,115 +415,165 @@ export default function StaffManagementPage() {
               </div>
             )}
 
-            {/* Identity group */}
-            <div className="space-y-4 rounded-lg border border-slate-100 dark:border-slate-800 p-4">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500">Identity</p>
+            {/* Name */}
+            <div className="space-y-2">
+              <Label htmlFor="fullName" className="text-xs font-semibold">Full Name</Label>
+              <Input
+                id="fullName"
+                placeholder="e.g. Dr. Maria Santos"
+                {...register("fullName")}
+                className="text-xs"
+              />
+              {errors.fullName && (
+                <p className="text-[10px] text-rose-500">{errors.fullName.message}</p>
+              )}
+            </div>
 
-              {/* Name */}
-              <div className="space-y-2">
-                <Label htmlFor="fullName" className="text-xs font-semibold">Full Name</Label>
-                <Input
-                  id="fullName"
-                  placeholder="e.g. Dr. Maria Santos"
-                  {...register("fullName")}
-                  className="text-xs"
-                />
-                {errors.fullName && (
-                  <p className="text-[10px] text-rose-500">{errors.fullName.message}</p>
-                )}
-              </div>
+            {/* Email */}
+            <div className="space-y-2">
+              <Label htmlFor="email" className="text-xs font-semibold">Email Address</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="maria.santos@bloodcare.com"
+                {...register("email")}
+                className="text-xs font-mono"
+              />
+              {errors.email && (
+                <p className="text-[10px] text-rose-500">{errors.email.message}</p>
+              )}
+            </div>
 
-              {/* Email */}
+            {/* Password (Only shown for creation) */}
+            {!editingStaff ? (
               <div className="space-y-2">
-                <Label htmlFor="email" className="text-xs font-semibold">Email Address</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="maria.santos@bloodcare.com"
-                  {...register("email")}
-                  className="text-xs font-mono"
-                />
-                {errors.email && (
-                  <p className="text-[10px] text-rose-500">{errors.email.message}</p>
-                )}
-              </div>
-
-              {/* Password (Required for create, optional/blank for edit) */}
-              <div className="space-y-2">
-                <Label htmlFor="password" className="text-xs font-semibold">
-                  {editingStaff ? "New Password (Leave blank to keep current)" : "Temporary Password"}
-                </Label>
-                <Input
-                  id="password"
-                  type="text"
-                  placeholder={editingStaff ? "••••••••" : "Minimum 6 characters"}
-                  {...register("password")}
-                  className="text-xs font-mono"
-                />
+                <Label htmlFor="password" className="text-xs font-semibold">Temporary Password</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="password"
+                    type="text"
+                    {...register("password")}
+                    className="text-xs font-mono flex-1 bg-slate-50 dark:bg-slate-900/50"
+                    readOnly
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      const pwValue = watch("password") || "";
+                      if (pwValue) {
+                        navigator.clipboard.writeText(pwValue);
+                        toast.success("Temporary password copied to clipboard!");
+                      }
+                    }}
+                    className="px-3"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                  Make sure to share this password securely. The user should update it upon first login.
+                </p>
                 {errors.password && (
                   <p className="text-[10px] text-rose-500">{errors.password.message}</p>
                 )}
               </div>
+            ) : (
+              // Reset Password Trigger (Only shown for edit)
+              <div className="space-y-2 rounded-lg border border-slate-100 dark:border-slate-800 p-4">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500">Security</p>
+                <div className="space-y-2 pt-2">
+                  <Label className="text-xs font-semibold">Account Password</Label>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                    Administrators cannot view or change passwords. Click below to email a password recovery link to this user.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        setSendingReset(true);
+                        const res = await sendStaffResetEmailAction(editingStaff.email);
+                        if (res.success) {
+                          toast.success(`Password reset email sent to ${editingStaff.email}!`);
+                        } else {
+                          throw new Error(res.error || "Failed to send reset email.");
+                        }
+                      } catch (err: unknown) {
+                        toast.error(err instanceof Error ? err.message : "Failed to send reset email.");
+                      } finally {
+                        setSendingReset(false);
+                      }
+                    }}
+                    disabled={sendingReset}
+                    className="w-full text-xs font-semibold gap-2 border-primary/30 text-primary hover:bg-primary/5"
+                  >
+                    {sendingReset ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Sending Email...
+                      </>
+                    ) : (
+                      "Send Password Reset Email"
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Role Select */}
+            <div className="space-y-2">
+              <Label htmlFor="role" className="text-xs font-semibold">System Role</Label>
+              <Select
+                value={watchRole}
+                onValueChange={(val) => {
+                  setValue("role", val as StaffFormValues["role"]);
+                  if (val !== "department_staff") {
+                    setValue("department", null);
+                  }
+                }}
+              >
+                <SelectTrigger className="text-xs">
+                  <SelectValue placeholder="Select a system role" />
+                </SelectTrigger>
+                <SelectContent className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                  <SelectItem value="admin" className="text-xs">Administrator</SelectItem>
+                  <SelectItem value="receptionist" className="text-xs">Receptionist</SelectItem>
+                  <SelectItem value="department_staff" className="text-xs">Department Staff</SelectItem>
+                  <SelectItem value="medical_specialist" className="text-xs">Medical Specialist</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
-            {/* Access Control group */}
-            <div className="space-y-4 rounded-lg border border-slate-100 dark:border-slate-800 p-4">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500">Access Control</p>
-
-              {/* Role Select */}
-              <div className="space-y-2">
-                <Label htmlFor="role" className="text-xs font-semibold">System Role</Label>
+            {/* Department (Shown conditionally if role is department_staff) */}
+            {watchRole === "department_staff" && (
+              <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
+                <Label htmlFor="department" className="text-xs font-semibold">Clinical Department</Label>
                 <Select
-                  value={watchRole}
-                  onValueChange={(val) => {
-                    setValue("role", val as StaffFormValues["role"]);
-                    if (val !== "department_staff") {
-                      setValue("department", null);
-                    }
-                  }}
+                  value={watch("department") || undefined}
+                  onValueChange={(val) => setValue("department", val as StaffFormValues["department"])}
                 >
                   <SelectTrigger className="text-xs">
-                    <SelectValue placeholder="Select a system role" />
+                    <SelectValue placeholder="Select clinical department" />
                   </SelectTrigger>
                   <SelectContent className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-                    <SelectItem value="admin" className="text-xs">Administrator</SelectItem>
-                    <SelectItem value="receptionist" className="text-xs">Receptionist</SelectItem>
-                    <SelectItem value="department_staff" className="text-xs">Department Staff</SelectItem>
-                    <SelectItem value="medical_specialist" className="text-xs">Medical Specialist</SelectItem>
+                    <SelectItem value="laboratory" className="text-xs">Laboratory</SelectItem>
+                    <SelectItem value="imaging" className="text-xs">Imaging (X-Ray)</SelectItem>
+                    <SelectItem value="ultrasound" className="text-xs">Ultrasound</SelectItem>
+                    <SelectItem value="ecg" className="text-xs">ECG</SelectItem>
                   </SelectContent>
                 </Select>
+                {errors.department && (
+                  <p className="text-[10px] text-rose-500">{errors.department.message}</p>
+                )}
               </div>
-
-              {/* Department (Shown conditionally if role is department_staff) */}
-              {watchRole === "department_staff" && (
-                <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
-                  <Label htmlFor="department" className="text-xs font-semibold">Clinical Department</Label>
-                  <Select
-                    value={watch("department") || undefined}
-                    onValueChange={(val) => setValue("department", val as StaffFormValues["department"])}
-                  >
-                    <SelectTrigger className="text-xs">
-                      <SelectValue placeholder="Select clinical department" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-                      <SelectItem value="laboratory" className="text-xs">Laboratory</SelectItem>
-                      <SelectItem value="imaging" className="text-xs">Imaging (X-Ray)</SelectItem>
-                      <SelectItem value="ultrasound" className="text-xs">Ultrasound</SelectItem>
-                      <SelectItem value="ecg" className="text-xs">ECG</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {errors.department && (
-                    <p className="text-[10px] text-rose-500">{errors.department.message}</p>
-                  )}
-                </div>
-              )}
-            </div>
+            )}
 
             {/* Submit */}
             <Button
               type="submit"
               disabled={submitting}
-              className="w-full bg-primary hover:bg-primary/90 text-white font-semibold text-xs"
+              className="w-full mt-4 bg-primary hover:bg-primary/90 text-white font-semibold text-xs"
             >
               {submitting ? (
                 <>
@@ -526,8 +591,8 @@ export default function StaffManagementPage() {
       </Sheet>
 
       {/* Confirmation Dialog for Status Toggle */}
-      <Dialog 
-        open={confirmDialog.open} 
+      <Dialog
+        open={confirmDialog.open}
         onOpenChange={(isOpen) => setConfirmDialog((prev) => ({ ...prev, open: isOpen }))}
       >
         <DialogContent className="bg-white dark:bg-slate-900 sm:max-w-md">
