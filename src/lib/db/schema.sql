@@ -182,9 +182,9 @@ CREATE POLICY "Receptionists can manage patients"
   ON public.patients FOR ALL 
   USING (public.get_auth_user_role() = 'receptionist');
 
-CREATE POLICY "Staff and specialists can view all patients" 
+CREATE POLICY "Staff can view all patients" 
   ON public.patients FOR SELECT 
-  USING (public.get_auth_user_role() IN ('department_staff', 'medical_specialist'));
+  USING (public.get_auth_user_role() = 'department_staff');
 
 CREATE POLICY "Patients can view own patient record" 
   ON public.patients FOR SELECT 
@@ -261,9 +261,6 @@ CREATE POLICY "Department staff can only view/insert/update within their own dep
     department = public.get_auth_user_dept()
   );
 
-CREATE POLICY "Medical specialists can read all department records" 
-  ON public.department_records FOR SELECT 
-  USING (public.get_auth_user_role() = 'medical_specialist');
 
 CREATE POLICY "Patients can view only their own department records" 
   ON public.department_records FOR SELECT 
@@ -377,3 +374,55 @@ GRANT EXECUTE ON FUNCTION public.get_daily_token_usage(TIMESTAMPTZ) TO service_r
 
 -- Index for session-based chatbot log retrieval
 CREATE INDEX IF NOT EXISTS idx_chatbot_logs_session_id ON public.chatbot_logs(session_id);
+
+
+-- =========================================================================
+-- SPECIALIST PRIVATE DATA (Model A)
+-- =========================================================================
+
+-- Specialist private patients
+CREATE TABLE public.specialist_patients (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  specialist_id uuid REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+  first_name text NOT NULL,
+  last_name text NOT NULL,
+  date_of_birth date NOT NULL,
+  gender text NOT NULL CHECK (gender IN ('male', 'female', 'other')),
+  contact_number text,
+  email text,
+  address text,
+  created_at timestamptz DEFAULT timezone('utc', now()) NOT NULL,
+  updated_at timestamptz DEFAULT timezone('utc', now()) NOT NULL
+);
+
+-- Specialist private records
+CREATE TABLE public.specialist_records (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  specialist_patient_id uuid REFERENCES public.specialist_patients(id) ON DELETE CASCADE NOT NULL,
+  specialist_id uuid REFERENCES public.profiles(id) ON DELETE SET NULL NOT NULL,
+  test_type text NOT NULL,
+  test_name text NOT NULL,
+  test_value text NOT NULL,
+  unit text,
+  reference_range_min numeric,
+  reference_range_max numeric,
+  is_flagged boolean NOT NULL DEFAULT false,
+  notes text,
+  created_at timestamptz DEFAULT timezone('utc', now()) NOT NULL,
+  updated_at timestamptz DEFAULT timezone('utc', now()) NOT NULL
+);
+
+-- Enable Row Level Security
+ALTER TABLE public.specialist_patients ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.specialist_records ENABLE ROW LEVEL SECURITY;
+
+-- Owner-only RLS policies
+CREATE POLICY "Specialist manages own patients"
+  ON public.specialist_patients FOR ALL
+  USING (specialist_id = auth.uid())
+  WITH CHECK (specialist_id = auth.uid());
+
+CREATE POLICY "Specialist manages own records"
+  ON public.specialist_records FOR ALL
+  USING (specialist_id = auth.uid())
+  WITH CHECK (specialist_id = auth.uid());

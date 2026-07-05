@@ -30,8 +30,8 @@ export async function GET(request: Request) {
     const startDateFilter = searchParams.get("startDate")?.trim() || "";
     const endDateFilter = searchParams.get("endDate")?.trim() || "";
 
-    // 1. Fetch patients
-    let queryBuilder = supabase.from("patients").select("*");
+    // 1. Fetch patients from specialist_patients
+    let queryBuilder = supabase.from("specialist_patients").select("*");
 
     if (searchVal) {
       if (searchVal.toLowerCase().startsWith("pt-")) {
@@ -60,14 +60,14 @@ export async function GET(request: Request) {
       return successResponse([], "No patients found");
     }
 
-    // 2. Fetch records for these patients
+    // 2. Fetch records for these patients from specialist_records
     let recordsQuery = supabase
-      .from("department_records")
-      .select("patient_id, department, is_flagged, created_at")
-      .in("patient_id", patients.map((p) => p.id));
+      .from("specialist_records")
+      .select("specialist_patient_id, test_type, is_flagged, created_at")
+      .in("specialist_patient_id", patients.map((p) => p.id));
 
     if (departmentFilter) {
-      recordsQuery = recordsQuery.eq("department", departmentFilter);
+      recordsQuery = recordsQuery.eq("test_type", departmentFilter);
     }
     if (startDateFilter) {
       recordsQuery = recordsQuery.gte("created_at", startDateFilter);
@@ -85,7 +85,7 @@ export async function GET(request: Request) {
     // 3. Aggregate stats in-memory
     const results = patients
       .map((patient) => {
-        const patientRecords = (records || []).filter((r) => r.patient_id === patient.id);
+        const patientRecords = (records || []).filter((r) => r.specialist_patient_id === patient.id);
 
         if ((departmentFilter || startDateFilter || endDateFilter) && patientRecords.length === 0) {
           // If filtering by records and none matched, exclude this patient from search results

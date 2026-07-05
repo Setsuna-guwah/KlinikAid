@@ -22,9 +22,9 @@ interface PatientData {
   last_name: string;
   date_of_birth: string;
   gender: string;
-  contact_number: string;
+  contact_number: string | null;
   email: string | null;
-  address: string;
+  address: string | null;
   patient_code: string;
   total_records: number;
   flagged_count: number;
@@ -34,6 +34,18 @@ interface PatientData {
 interface SpecialistPatientsClientProps {
   initialPatients: PatientData[];
 }
+
+import { 
+  Plus,
+  Trash2,
+  Lock
+} from "lucide-react";
+import { toast } from "sonner";
+import { createSpecialistPatientAction, deleteSpecialistPatientAction } from "@/app/(dashboard)/specialist/patients/actions";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 
 export default function SpecialistPatientsClient({
   initialPatients
@@ -46,11 +58,14 @@ export default function SpecialistPatientsClient({
   const [loading, setLoading] = useState(false);
   const isFirstMount = useRef(true);
 
+  // Specialist Modal & Action States
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSavingPatient, setIsSavingPatient] = useState(false);
+  const [isDeletingPatient, setIsDeletingPatient] = useState<string | null>(null);
+
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
-
-  // Age helper is imported from @/lib/utils
 
   const fetchFilteredPatients = useCallback(async (
     query: string, 
@@ -78,6 +93,47 @@ export default function SpecialistPatientsClient({
       setCurrentPage(1); // reset to page 1 on new search
     }
   }, []);
+
+  const handleCreatePatient = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsSavingPatient(true);
+    const formData = new FormData(e.currentTarget);
+    try {
+      const res = await createSpecialistPatientAction(null, formData);
+      if (res.success) {
+        toast.success("Private patient created successfully!");
+        setIsModalOpen(false);
+        // Refresh the list
+        fetchFilteredPatients(searchQuery, deptFilter, startDate, endDate);
+      } else {
+        toast.error(res.error || "Failed to create patient");
+      }
+    } catch {
+      toast.error("An error occurred");
+    } finally {
+      setIsSavingPatient(false);
+    }
+  };
+
+  const handleDeletePatient = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this patient and all their records? This cannot be undone.")) {
+      return;
+    }
+    setIsDeletingPatient(id);
+    try {
+      const res = await deleteSpecialistPatientAction(id);
+      if (res.success) {
+        toast.success("Patient record deleted.");
+        fetchFilteredPatients(searchQuery, deptFilter, startDate, endDate);
+      } else {
+        toast.error(res.error || "Failed to delete patient");
+      }
+    } catch {
+      toast.error("Failed to delete patient");
+    } finally {
+      setIsDeletingPatient(null);
+    }
+  };
 
   // Trigger search on parameter updates (debounced query/filter search)
   useEffect(() => {
@@ -110,13 +166,25 @@ export default function SpecialistPatientsClient({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-slate-900 to-indigo-900 dark:from-white dark:to-indigo-300 bg-clip-text text-transparent">
-          Patient Directory
-        </h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Search patient history, view aggregated record statuses, and access longitudinal trend dashboards.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-slate-900 to-indigo-900 dark:from-white dark:to-indigo-300 bg-clip-text text-transparent flex items-center gap-2">
+            <Lock className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+            Private Patient Directory
+          </h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+            Secure, isolated directory of your private patient roster. Invisible to administrators.
+          </p>
+        </div>
+        <div>
+          <Button 
+            onClick={() => setIsModalOpen(true)}
+            className="bg-indigo-600 hover:bg-indigo-750 text-white font-semibold flex items-center gap-2"
+          >
+            <Plus className="h-4 w-4" />
+            Add Private Patient
+          </Button>
+        </div>
       </div>
 
       {/* Filters Card */}
@@ -253,7 +321,13 @@ export default function SpecialistPatientsClient({
                       <td className="p-4 font-mono text-[10px] text-slate-450 dark:text-slate-500">
                         {formatPhDate(patient.last_test_date)}
                       </td>
-                      <td className="p-4 pr-6 text-right">
+                      <td className="p-4 pr-6 text-right flex items-center justify-end gap-2">
+                        <Link 
+                          href={`/specialist/patients/${patient.id}/record-entry`}
+                          className="inline-flex items-center gap-1 font-semibold text-emerald-650 hover:text-emerald-850 dark:text-emerald-400 dark:hover:text-emerald-350 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/45 px-2.5 py-1.5 rounded-lg transition"
+                        >
+                          Enter Record
+                        </Link>
                         <Link 
                           href={`/specialist/patients/${patient.id}/analytics`}
                           className="inline-flex items-center gap-1 font-semibold text-indigo-650 hover:text-indigo-850 dark:text-indigo-400 dark:hover:text-indigo-300 bg-indigo-50/50 hover:bg-indigo-100/70 dark:bg-slate-800 dark:hover:bg-slate-750 px-2.5 py-1.5 rounded-lg transition"
@@ -261,6 +335,15 @@ export default function SpecialistPatientsClient({
                           Analytics
                           <ArrowRight className="h-3 w-3" />
                         </Link>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDeletePatient(patient.id)}
+                          disabled={isDeletingPatient === patient.id}
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 h-8 w-8 transition"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </td>
                     </tr>
                   ))
@@ -306,6 +389,88 @@ export default function SpecialistPatientsClient({
           <span className="font-bold">No AI Diagnostics Inference:</span> This directory provides clinical descriptive analytics only. No machine learning diagnostics or automated diagnostic suggestions are applied to this patient data (SO-C Compliance).
         </div>
       </div>
+
+      {/* Add Patient Modal */}
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="max-w-md bg-white dark:bg-slate-950">
+          <form onSubmit={handleCreatePatient}>
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold text-slate-900 dark:text-white">
+                Add Private Patient
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-500">
+                Create a patient record visible exclusively to your specialist account.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 my-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="firstName" className="text-xs">First Name *</Label>
+                  <Input id="firstName" name="firstName" required className="text-xs h-9" />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="lastName" className="text-xs">Last Name *</Label>
+                  <Input id="lastName" name="lastName" required className="text-xs h-9" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="dob" className="text-xs">Date of Birth *</Label>
+                  <Input id="dob" name="dob" type="date" required className="text-xs h-9" />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="gender" className="text-xs">Gender *</Label>
+                  <select
+                    id="gender"
+                    name="gender"
+                    required
+                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-xs bg-white dark:bg-slate-950 text-slate-850 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 h-9"
+                  >
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="contactNumber" className="text-xs">Contact Number</Label>
+                <Input id="contactNumber" name="contactNumber" placeholder="e.g. 09171234567" className="text-xs h-9" />
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="email" className="text-xs">Email Address</Label>
+                <Input id="email" name="email" type="email" placeholder="e.g. name@domain.com" className="text-xs h-9" />
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="address" className="text-xs">Home Address</Label>
+                <Input id="address" name="address" placeholder="Street, Barangay, City, Province" className="text-xs h-9" />
+              </div>
+            </div>
+
+            <DialogFooter className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsModalOpen(false)}
+                className="text-xs h-9"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSavingPatient}
+                className="bg-indigo-600 hover:bg-indigo-750 text-white text-xs h-9 font-semibold"
+              >
+                {isSavingPatient ? "Saving..." : "Save Patient"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

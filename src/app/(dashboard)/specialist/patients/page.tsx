@@ -2,7 +2,6 @@ import React from "react";
 import { requireRole } from "@/lib/auth/helpers";
 import { createClient } from "@/lib/supabase/server";
 import SpecialistPatientsClient from "@/components/SpecialistPatientsClient";
-import { Patient } from "@/types";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +13,7 @@ export default async function SpecialistPatientsPage() {
 
   // 1. Fetch patients (prevent unbounded scan)
   const { data: patients, error: patientsError } = await supabase
-    .from("patients")
+    .from("specialist_patients")
     .select("*")
     .order("last_name", { ascending: true })
     .limit(100);
@@ -24,12 +23,12 @@ export default async function SpecialistPatientsPage() {
   }
 
   // 2. Fetch records for these patients in a separate query to prevent massive nested scans (capped at 50000)
-  let records: { patient_id: string; is_flagged: boolean; created_at: string }[] = [];
+  let records: { specialist_patient_id: string; is_flagged: boolean; created_at: string }[] = [];
   if (patients && patients.length > 0) {
     const { data: recordsData, error: recordsError } = await supabase
-      .from("department_records")
-      .select("patient_id, is_flagged, created_at")
-      .in("patient_id", patients.map((p) => p.id))
+      .from("specialist_records")
+      .select("specialist_patient_id, is_flagged, created_at")
+      .in("specialist_patient_id", patients.map((p) => p.id))
       .limit(50000);
     
     if (recordsError) {
@@ -39,10 +38,8 @@ export default async function SpecialistPatientsPage() {
     }
   }
 
-  const typedPatients = (patients || []) as Patient[];
-
-  const formattedPatients = (typedPatients || []).map((patient) => {
-    const patientRecords = records.filter((r) => r.patient_id === patient.id);
+  const formattedPatients = (patients || []).map((patient) => {
+    const patientRecords = records.filter((r) => r.specialist_patient_id === patient.id);
     const totalRecords = patientRecords.length;
     const flaggedCount = patientRecords.filter((r) => r.is_flagged).length;
     

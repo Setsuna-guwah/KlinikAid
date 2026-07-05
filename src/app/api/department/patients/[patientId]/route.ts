@@ -15,7 +15,7 @@ export async function GET(
 
   try {
     // 1. Enforce roles
-    const profile = await requireRole(["admin", "department_staff", "medical_specialist"]);
+    const profile = await requireRole(["admin", "department_staff"]);
 
     // 2. Determine target department
     const { searchParams } = new URL(request.url);

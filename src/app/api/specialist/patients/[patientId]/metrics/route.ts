@@ -31,11 +31,11 @@ export async function GET(
       return errorResponse("Patient ID is required", 400);
     }
 
-    // Fetch distinct test names for the patient
+    // Fetch distinct test names for the patient from specialist_records
     const { data: records, error: recordsError } = await supabase
-      .from("department_records")
+      .from("specialist_records")
       .select("test_name")
-      .eq("patient_id", patientId);
+      .eq("specialist_patient_id", patientId);
 
     if (recordsError) {
       throw recordsError;

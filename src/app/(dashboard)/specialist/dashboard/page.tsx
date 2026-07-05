@@ -11,19 +11,19 @@ export default async function SpecialistDashboardPage() {
 
   const supabase = createClient();
 
-  // 1. Fetch total count of patients
+  // 1. Fetch total count of patients from specialist_patients
   const { count: totalPatients, error: totalPatientsError } = await supabase
-    .from("patients")
+    .from("specialist_patients")
     .select("id", { count: "exact", head: true });
 
   if (totalPatientsError) {
     console.error("Error fetching total patients:", totalPatientsError);
   }
 
-  // 2. Fetch flagged count in the last 7 days
+  // 2. Fetch flagged count in the last 7 days from specialist_records
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { count: flaggedThisWeek, error: flaggedError } = await supabase
-    .from("department_records")
+    .from("specialist_records")
     .select("id", { count: "exact", head: true })
     .eq("is_flagged", true)
     .gte("created_at", sevenDaysAgo);
@@ -32,26 +32,26 @@ export default async function SpecialistDashboardPage() {
     console.error("Error fetching flagged count:", flaggedError);
   }
 
-  // 3. Get count of distinct active departments in records
-  const departments = ["laboratory", "imaging", "ultrasound", "ecg"];
-  const deptCounts = await Promise.all(
-    departments.map(async (dept) => {
+  // 3. Get count of distinct test groups in records
+  const testGroups = ["Complete Blood Count (CBC)", "Fasting Blood Sugar (FBS)", "Renal Function", "Lipid Profile"];
+  const groupCounts = await Promise.all(
+    testGroups.map(async (group) => {
       const { count, error } = await supabase
-        .from("department_records")
+        .from("specialist_records")
         .select("id", { count: "exact", head: true })
-        .eq("department", dept);
+        .eq("test_type", group);
       if (error) {
-        console.error(`Error counting records for department ${dept}:`, error);
+        console.error(`Error counting records for group ${group}:`, error);
         return 0;
       }
       return count || 0;
     })
   );
-  const departmentsCovered = deptCounts.filter((c) => c > 0).length;
+  const departmentsCovered = groupCounts.filter((c) => c > 0).length;
 
-  // 4. Fetch 10 most recent flagged results
+  // 4. Fetch 10 most recent flagged results joining specialist_patients (referenced as patient)
   const { data: recentFlaggedData, error: flaggedListError } = await supabase
-    .from("department_records")
+    .from("specialist_records")
     .select(`
       id,
       test_name,
@@ -60,7 +60,7 @@ export default async function SpecialistDashboardPage() {
       reference_range_min,
       reference_range_max,
       created_at,
-      patient:patient_id (
+      patient:specialist_patient_id (
         id,
         first_name,
         last_name
@@ -75,12 +75,11 @@ export default async function SpecialistDashboardPage() {
   }
 
   // 5. Fetch recent patient activity (last 5 active patients)
-  // Cap at 100 to optimize query performance while maintaining high probability of finding 5 unique patients.
   const { data: recentActivity, error: activityError } = await supabase
-    .from("department_records")
+    .from("specialist_records")
     .select(`
       created_at,
-      patient:patient_id (
+      patient:specialist_patient_id (
         id,
         first_name,
         last_name

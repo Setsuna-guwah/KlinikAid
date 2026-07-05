@@ -39,9 +39,9 @@ export default async function PatientAnalyticsPage({
   const supabase = createClient();
   const { patientId } = params;
 
-  // 1. Fetch patient details
+  // 1. Fetch patient details from specialist_patients
   const { data: patient, error: patientError } = await supabase
-    .from("patients")
+    .from("specialist_patients")
     .select("*")
     .eq("id", patientId)
     .single();
@@ -50,11 +50,11 @@ export default async function PatientAnalyticsPage({
     notFound();
   }
 
-  // 2. Fetch distinct metrics (test names) recorded for this patient
+  // 2. Fetch distinct metrics (test names) recorded for this patient from specialist_records
   const { data: metricsData, error: metricsError } = await supabase
-    .from("department_records")
+    .from("specialist_records")
     .select("test_name")
-    .eq("patient_id", patientId);
+    .eq("specialist_patient_id", patientId);
 
   if (metricsError) {
     console.error("Error fetching patient metrics list:", metricsError);
@@ -68,7 +68,7 @@ export default async function PatientAnalyticsPage({
   let initialRecords: RecordData[] = [];
   if (distinctMetrics.length > 0) {
     const { data: records, error: recordsError } = await supabase
-      .from("department_records")
+      .from("specialist_records")
       .select(`
         id,
         test_name,
@@ -79,13 +79,13 @@ export default async function PatientAnalyticsPage({
         is_flagged,
         notes,
         created_at,
-        department,
-        recorder:recorder_id (
+        test_type,
+        recorder:specialist_id (
           id,
           full_name
         )
       `)
-      .eq("patient_id", patientId)
+      .eq("specialist_patient_id", patientId)
       .eq("test_name", distinctMetrics[0])
       .order("created_at", { ascending: true });
 
@@ -111,7 +111,7 @@ export default async function PatientAnalyticsPage({
           created_at: rec.created_at,
           result_date: rec.created_at,
           recorder: recorderObj ? { id: recorderObj.id, full_name: recorderObj.full_name } : null,
-          department: rec.department
+          department: r.test_type
         };
       });
     }

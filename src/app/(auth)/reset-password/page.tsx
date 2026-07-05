@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useTransition } from "react";
+import React, { useState, useEffect, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
@@ -23,28 +23,56 @@ export default function ResetPasswordPage() {
   const [hasSession, setHasSession] = useState(false);
   const [isPending, startTransition] = useTransition();
 
+  const codeExchanged = useRef(false);
+
   useEffect(() => {
+    let active = true;
+    let authListener: { unsubscribe: () => void } | null = null;
+
     async function checkSession() {
       try {
+        // Read code from URL search params client-side (safe from build-time static generation issues)
+        const searchParams = new URLSearchParams(window.location.search);
+        const code = searchParams.get("code");
+
+        if (code && !codeExchanged.current) {
+          codeExchanged.current = true;
+          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+          if (exchangeError) {
+            console.error("Code exchange failed:", exchangeError.message);
+          }
+        }
+
+        if (!active) return;
+
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
           setHasSession(true);
         } else {
           // If no session immediately, listen to auth state changes in case the hash exchange is in progress
           const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-            if (session) {
+            if (session && active) {
               setHasSession(true);
             }
           });
-          return () => subscription.unsubscribe();
+          authListener = subscription;
         }
       } catch (err) {
         console.error("Session check error:", err);
       } finally {
-        setIsCheckingSession(false);
+        if (active) {
+          setIsCheckingSession(false);
+        }
       }
     }
     checkSession();
+
+    return () => {
+      active = false;
+      if (authListener) {
+        authListener.unsubscribe();
+      }
+    };
   }, [supabase]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {

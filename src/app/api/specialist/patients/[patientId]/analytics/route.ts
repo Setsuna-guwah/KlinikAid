@@ -35,12 +35,11 @@ export async function GET(
     const metric = searchParams.get("metric")?.trim() || "";
 
     let queryBuilder = supabase
-      .from("department_records")
+      .from("specialist_records")
       .select(`
         id,
-        patient_id,
-        recorder_id,
-        department,
+        specialist_patient_id,
+        specialist_id,
         test_type,
         test_name,
         test_value,
@@ -51,12 +50,12 @@ export async function GET(
         notes,
         created_at,
         updated_at,
-        recorder:recorder_id (
+        recorder:specialist_id (
           id,
           full_name
         )
       `)
-      .eq("patient_id", patientId)
+      .eq("specialist_patient_id", patientId)
       .order("created_at", { ascending: true });
 
     if (metric) {
@@ -78,6 +77,8 @@ export async function GET(
 
       return {
         ...r,
+        patient_id: r.specialist_patient_id,
+        department: r.test_type,
         result_date: r.created_at,
         recorder: recorderObj ? { id: recorderObj.id, full_name: recorderObj.full_name } : null,
       };

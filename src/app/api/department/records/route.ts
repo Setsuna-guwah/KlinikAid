@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   const supabase = createClient();
 
   try {
-    const profile = await requireRole(["admin", "department_staff", "medical_specialist"]);
+    const profile = await requireRole(["admin", "department_staff"]);
 
     // Determine target department
     const { searchParams } = new URL(request.url);
@@ -20,9 +20,6 @@ export async function GET(request: Request) {
       if (!dept) {
         return errorResponse("Staff member is not assigned to a department", 400);
       }
-    } else if (profile.role === "medical_specialist") {
-      // Specialists can read all records, allow specifying or default to lab
-      dept = dept || "laboratory";
     } else {
       // Admin
       dept = dept || "laboratory";
