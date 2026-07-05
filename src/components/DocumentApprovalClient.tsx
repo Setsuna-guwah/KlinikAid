@@ -314,16 +314,16 @@ export default function DocumentApprovalClient({ document: initialDoc }: Documen
               <div className="pt-2">
                 <Button
                   variant="outline"
-                  disabled={isOpeningFile}
+                  disabled={isOpeningFile || doc.file_type === "template"}
                   onClick={handleViewOriginal}
-                  className="w-full text-xs font-semibold border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-900 flex items-center justify-center gap-1.5"
+                  className="w-full text-xs font-semibold border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-900 flex items-center justify-center gap-1.5 disabled:opacity-50"
                 >
                   {isOpeningFile ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
                     <ExternalLink className="h-3.5 w-3.5" />
                   )}
-                  View Original Document
+                  {doc.file_type === "template" ? "Structured Form (No Image)" : "View Original Document"}
                 </Button>
               </div>
             </CardContent>
@@ -360,9 +360,42 @@ export default function DocumentApprovalClient({ document: initialDoc }: Documen
                 </div>
               )}
 
-              <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-800 rounded-lg p-3.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap select-text text-slate-800 dark:text-slate-300">
-                {highlightOcrText(doc.ocr_text, ocrFlags)}
-              </div>
+              {doc.file_type === "template" ? (
+                <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-800 rounded-lg p-4 space-y-3">
+                  <div className="border-b border-slate-200 dark:border-slate-800 pb-2 mb-2">
+                    <span className="text-[10px] font-bold text-indigo-650 dark:text-indigo-400 uppercase tracking-wider">
+                      Template Name
+                    </span>
+                    <h4 className="text-sm font-bold text-slate-800 dark:text-white">
+                      {((doc.extracted_metadata as Record<string, unknown>)?.template_name as string) || "Unknown Form"}
+                    </h4>
+                  </div>
+                  <div className="divide-y divide-slate-100 dark:divide-slate-850 text-xs">
+                    {Object.entries(doc.extracted_metadata || {})
+                      .filter(([key]) => !["template_id", "template_name", "submission_type", "submitted_at"].includes(key))
+                      .map(([key, value]) => {
+                        const formattedKey = key
+                          .split("_")
+                          .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+                          .join(" ");
+                        return (
+                          <div key={key} className="py-2.5 flex flex-col gap-1">
+                            <span className="font-semibold text-slate-400 text-[10px] uppercase">
+                              {formattedKey}
+                            </span>
+                            <span className="font-medium text-slate-805 dark:text-slate-200 whitespace-pre-wrap">
+                              {String(value)}
+                            </span>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-800 rounded-lg p-3.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap select-text text-slate-800 dark:text-slate-300">
+                  {highlightOcrText(doc.ocr_text, ocrFlags)}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -380,67 +413,87 @@ export default function DocumentApprovalClient({ document: initialDoc }: Documen
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-4 space-y-5">
-              
-              {/* Overall Confidence */}
-              <div className="space-y-2">
-                <div className="flex justify-between items-end">
-                  <span className="text-xs font-semibold text-slate-500">Overall AI Confidence</span>
-                  <span className={`text-sm font-extrabold ${ocrConfidence !== undefined ? getConfidenceTextColorClass(ocrConfidence) : "text-slate-400"}`}>
-                    {ocrConfidence !== undefined ? `${ocrConfidence}%` : "No OCR Score"}
-                  </span>
+              {doc.file_type === "template" ? (
+                <div className="space-y-4 text-xs">
+                  <div className="p-3 rounded-lg bg-blue-50 border border-blue-100 text-blue-808 dark:bg-blue-950/20 dark:border-blue-900/20 dark:text-blue-350 leading-relaxed">
+                    <span className="font-bold block mb-1">Validated Template Form</span>
+                    This document was submitted as a structured digital form. Fields were validated upon input. No OCR extraction or signature verification is needed.
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-b border-slate-50 dark:border-slate-900">
+                    <span className="font-semibold text-slate-500">Validation Status</span>
+                    <span className="font-bold text-emerald-650">100% Validated</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-b border-slate-50 dark:border-slate-900">
+                    <span className="font-semibold text-slate-500">Form Type</span>
+                    <span className="font-medium text-slate-800 dark:text-slate-200">
+                      {((doc.extracted_metadata as Record<string, unknown>)?.template_name as string) || "Clinic Form"}
+                    </span>
+                  </div>
                 </div>
-                {ocrConfidence !== undefined ? (
-                  <div className="space-y-1.5">
-                    <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${getConfidenceColorClass(ocrConfidence)}`}
-                        style={{ width: `${ocrConfidence}%` }}
-                      />
+              ) : (
+                <>
+                  {/* Overall Confidence */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-end">
+                      <span className="text-xs font-semibold text-slate-500">Overall AI Confidence</span>
+                      <span className={`text-sm font-extrabold ${ocrConfidence !== undefined ? getConfidenceTextColorClass(ocrConfidence) : "text-slate-400"}`}>
+                        {ocrConfidence !== undefined ? `${ocrConfidence}%` : "No OCR Score"}
+                      </span>
                     </div>
-                    <div className="text-[10px] font-semibold text-slate-400">
-                      {getConfidenceLabel(ocrConfidence)}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-[10px] text-slate-400 italic">
-                    Confidence score not available for this upload.
-                  </div>
-                )}
-              </div>
-
-              {/* Field Confidences */}
-              {fieldConfidences && Object.keys(fieldConfidences).length > 0 && (
-                <div className="space-y-3.5 pt-2 border-t border-slate-100 dark:border-slate-900">
-                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Field Matching Scores</span>
-                  <div className="space-y-3">
-                    {Object.entries(fieldConfidences).map(([field, score]) => {
-                      // Map field key to friendly text
-                      const friendlyLabels: Record<string, string> = {
-                        patient_name: "Patient Name",
-                        date_of_birth: "Date of Birth",
-                        test_type: "Test Type",
-                        clinic_header: "Clinic Header",
-                        doctor_signature: "Doctor Signature",
-                      };
-                      const label = friendlyLabels[field] || field.replace(/_/g, " ");
-
-                      return (
-                        <div key={field} className="space-y-1">
-                          <div className="flex justify-between items-center text-[10px]">
-                            <span className="capitalize font-medium text-slate-600 dark:text-slate-400">{label}</span>
-                            <span className={`font-bold ${getConfidenceTextColorClass(score)}`}>{score}%</span>
-                          </div>
-                          <div className="w-full bg-slate-100 dark:bg-slate-800/80 h-1.5 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all duration-300 ${getConfidenceColorClass(score)}`}
-                              style={{ width: `${score}%` }}
-                            />
-                          </div>
+                    {ocrConfidence !== undefined ? (
+                      <div className="space-y-1.5">
+                        <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${getConfidenceColorClass(ocrConfidence)}`}
+                            style={{ width: `${ocrConfidence}%` }}
+                          />
                         </div>
-                      );
-                    })}
+                        <div className="text-[10px] font-semibold text-slate-400">
+                          {getConfidenceLabel(ocrConfidence)}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-slate-400 italic">
+                        Confidence score not available for this upload.
+                      </div>
+                    )}
                   </div>
-                </div>
+
+                  {/* Field Confidences */}
+                  {fieldConfidences && Object.keys(fieldConfidences).length > 0 && (
+                    <div className="space-y-3.5 pt-2 border-t border-slate-100 dark:border-slate-900">
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Field Matching Scores</span>
+                      <div className="space-y-3">
+                        {Object.entries(fieldConfidences).map(([field, score]) => {
+                          // Map field key to friendly text
+                          const friendlyLabels: Record<string, string> = {
+                            patient_name: "Patient Name",
+                            date_of_birth: "Date of Birth",
+                            test_type: "Test Type",
+                            clinic_header: "Clinic Header",
+                            doctor_signature: "Doctor Signature",
+                          };
+                          const label = friendlyLabels[field] || field.replace(/_/g, " ");
+
+                          return (
+                            <div key={field} className="space-y-1">
+                              <div className="flex justify-between items-center text-[10px]">
+                                <span className="capitalize font-medium text-slate-600 dark:text-slate-400">{label}</span>
+                                <span className={`font-bold ${getConfidenceTextColorClass(score)}`}>{score}%</span>
+                              </div>
+                              <div className="w-full bg-slate-100 dark:bg-slate-800/80 h-1.5 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all duration-300 ${getConfidenceColorClass(score)}`}
+                                  style={{ width: `${score}%` }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>

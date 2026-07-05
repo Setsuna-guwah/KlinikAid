@@ -205,6 +205,14 @@ export default function ReceptionKanban({ initialDocuments }: ReceptionKanbanPro
 
   // Helper to render OCR badge
   const renderOcrBadge = (doc: Document) => {
+    if (doc.file_type === "template") {
+      return (
+        <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950/20 dark:text-blue-400 dark:border-blue-900/10 font-bold">
+          Structured Form
+        </Badge>
+      );
+    }
+
     const metadata = doc.extracted_metadata as { ocr_confidence_score?: number } | null;
     const score = metadata?.ocr_confidence_score;
 

@@ -81,6 +81,7 @@ export default function Sidebar({ user, onLinkClick, className }: SidebarProps) 
       { label: "Dashboard", href: "/patient/dashboard", icon: LayoutDashboard },
       { label: "AI Assistant", href: "/patient/chat", icon: Bot },
       { label: "Submit Document", href: "/patient/submit", icon: Upload },
+      { label: "Document Templates", href: "/patient/templates", icon: ClipboardList },
       { label: "Track Submission", href: "/patient/submissions", icon: Search },
       { label: "My Results", href: "/patient/results", icon: FileText },
     ],
