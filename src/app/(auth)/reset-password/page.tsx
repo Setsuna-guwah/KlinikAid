@@ -13,6 +13,7 @@ import Link from "next/link";
 import Image from "next/image";
 
 import { EmailOtpType } from "@supabase/supabase-js";
+import { getTotpFactors } from "@/lib/auth/mfa";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -22,6 +23,12 @@ export default function ResetPasswordPage() {
   const [verifyType, setVerifyType] = useState<EmailOtpType>("recovery");
   const [isVerifying, setIsVerifying] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
+  
+  // MFA states
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [totpCode, setTotpCode] = useState("");
+  const [verifyingMfa, setVerifyingMfa] = useState(false);
+
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -71,12 +78,79 @@ export default function ResetPasswordPage() {
         verifyTriggered.current = false;
         return;
       }
+
+      // Check MFA state
+      const { data: mfaData, error: mfaError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (!mfaError && mfaData) {
+        if (mfaData.nextLevel === "aal2" && mfaData.currentLevel === "aal1") {
+          setMfaRequired(true);
+        }
+      }
       setIsVerified(true);
     } catch {
       setError("Failed to establish a recovery session. Please request a new link.");
       verifyTriggered.current = false;
     } finally {
       setIsVerifying(false);
+    }
+  };
+
+  const verifyMfaTriggered = useRef(false);
+
+  const handleVerifyMfa = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (verifyingMfa || verifyMfaTriggered.current) return;
+    setError(null);
+    setVerifyingMfa(true);
+    verifyMfaTriggered.current = true;
+
+    try {
+      const { data: factors, error: factorsError } = await supabase.auth.mfa.listFactors();
+      if (factorsError || !factors) {
+        setError(`Failed to retrieve MFA factors: ${factorsError?.message || "Unknown error"}`);
+        setVerifyingMfa(false);
+        verifyMfaTriggered.current = false;
+        return;
+      }
+
+      const totpFactor = getTotpFactors(factors).find((factor) => factor.status === "verified");
+      if (!totpFactor) {
+        setError("Verified MFA factor not found on account.");
+        setVerifyingMfa(false);
+        verifyMfaTriggered.current = false;
+        return;
+      }
+
+      const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({
+        factorId: totpFactor.id,
+      });
+
+      if (challengeError || !challenge) {
+        setError(`MFA challenge failed: ${challengeError?.message || "Failed to create challenge"}`);
+        setVerifyingMfa(false);
+        verifyMfaTriggered.current = false;
+        return;
+      }
+
+      const { error: verifyError } = await supabase.auth.mfa.verify({
+        factorId: totpFactor.id,
+        challengeId: challenge.id,
+        code: totpCode,
+      });
+
+      if (verifyError) {
+        setError("Invalid verification code. Please try again.");
+        setVerifyingMfa(false);
+        verifyMfaTriggered.current = false;
+        return;
+      }
+
+      setMfaRequired(false);
+    } catch {
+      setError("An unexpected error occurred during verification.");
+      verifyMfaTriggered.current = false;
+    } finally {
+      setVerifyingMfa(false);
     }
   };
 
@@ -135,13 +209,15 @@ export default function ResetPasswordPage() {
         <Card className="border border-slate-200/80 dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-none backdrop-blur-sm bg-white/95 dark:bg-slate-900/95">
           <CardHeader className="space-y-1">
             <CardTitle className="text-2xl font-bold tracking-tight text-center">
-              {(!tokenHash || error) ? "Invalid Session" : !isVerified ? "Reset Password" : "Create New Password"}
+              {(!tokenHash || error) ? "Invalid Session" : !isVerified ? "Reset Password" : mfaRequired ? "Verify Identity" : "Create New Password"}
             </CardTitle>
             <CardDescription className="text-center text-slate-500 dark:text-slate-400">
               {(!tokenHash || error)
                 ? "There was a problem with your password reset request"
                 : !isVerified
                 ? "Confirm your request to begin setting up a new secure password"
+                : mfaRequired
+                ? "Enter the 6-digit verification code from your authenticator app"
                 : "Provide a new secure password for your account"}
             </CardDescription>
           </CardHeader>
@@ -190,9 +266,67 @@ export default function ResetPasswordPage() {
                 </Button>
               </CardFooter>
             </>
+          ) : mfaRequired ? (
+            <form onSubmit={handleVerifyMfa}>
+              <CardContent className="space-y-4">
+                {error && (
+                  <Alert variant="destructive" className="bg-red-50 dark:bg-red-950/20 border-red-200/60 dark:border-red-900/50">
+                    <ShieldAlert className="h-4 w-4" />
+                    <AlertTitle>Error</AlertTitle>
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
+
+                <div className="space-y-2">
+                  <Label htmlFor="totpCode">Authentication Code</Label>
+                  <div className="relative">
+                    <Loader2 className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 animate-spin" style={{ display: verifyingMfa ? "block" : "none" }} />
+                    <Input
+                      id="totpCode"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={6}
+                      placeholder="123456"
+                      className="pl-10 text-center tracking-widest font-mono text-lg"
+                      value={totpCode}
+                      onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+                      disabled={verifyingMfa}
+                      required
+                      autoFocus
+                    />
+                  </div>
+                </div>
+              </CardContent>
+
+              <CardFooter className="flex flex-col space-y-4">
+                <Button
+                  type="submit"
+                  className="w-full bg-primary hover:bg-primary/90 text-white font-medium shadow-md shadow-primary/10 transition-all duration-200"
+                  disabled={verifyingMfa}
+                >
+                  {verifyingMfa ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Verifying...
+                    </>
+                  ) : (
+                    "Verify & Continue"
+                  )}
+                </Button>
+              </CardFooter>
+            </form>
           ) : (
             <form onSubmit={handleSubmit}>
               <CardContent className="space-y-4">
+                {error && (
+                  <Alert variant="destructive" className="bg-red-50 dark:bg-red-950/20 border-red-200/60 dark:border-red-900/50">
+                    <ShieldAlert className="h-4 w-4" />
+                    <AlertTitle>Error</AlertTitle>
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
+
                 <div className="space-y-2">
                   <Label htmlFor="password">New Password</Label>
                   <div className="relative">
