@@ -12,11 +12,14 @@ import { Lock, Loader2, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 
+import { EmailOtpType } from "@supabase/supabase-js";
+
 export default function ResetPasswordPage() {
   const router = useRouter();
   const supabase = createClient();
 
   const [tokenHash, setTokenHash] = useState<string | null>(null);
+  const [verifyType, setVerifyType] = useState<EmailOtpType>("recovery");
   const [isVerifying, setIsVerifying] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
   const [password, setPassword] = useState("");
@@ -29,6 +32,7 @@ export default function ResetPasswordPage() {
     // Read parameters from URL search params client-side
     const searchParams = new URLSearchParams(window.location.search);
     const urlTokenHash = searchParams.get("token_hash");
+    const urlType = searchParams.get("type") as EmailOtpType;
     
     // Read any explicit redirect errors from Supabase
     const urlError = searchParams.get("error_description") || searchParams.get("error");
@@ -38,6 +42,10 @@ export default function ResetPasswordPage() {
     
     if (urlTokenHash) {
       setTokenHash(urlTokenHash);
+    }
+    
+    if (urlType) {
+      setVerifyType(urlType);
     }
     
     setIsCheckingParams(false);
@@ -54,7 +62,7 @@ export default function ResetPasswordPage() {
     try {
       const { error: verifyError } = await supabase.auth.verifyOtp({
         token_hash: tokenHash,
-        type: "recovery",
+        type: verifyType,
       });
 
       if (verifyError) {
