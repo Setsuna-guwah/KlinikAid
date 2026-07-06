@@ -16,9 +16,9 @@ export default function ResetPasswordPage() {
   const router = useRouter();
   const supabase = createClient();
 
-  const [code, setCode] = useState<string | null>(null);
-  const [isExchanging, setIsExchanging] = useState(false);
-  const [isExchanged, setIsExchanged] = useState(false);
+  const [tokenHash, setTokenHash] = useState<string | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isVerified, setIsVerified] = useState(false);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -26,9 +26,9 @@ export default function ResetPasswordPage() {
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
-    // Read code from URL search params client-side (safe from build-time static generation issues)
+    // Read parameters from URL search params client-side
     const searchParams = new URLSearchParams(window.location.search);
-    const urlCode = searchParams.get("code");
+    const urlTokenHash = searchParams.get("token_hash");
     
     // Read any explicit redirect errors from Supabase
     const urlError = searchParams.get("error_description") || searchParams.get("error");
@@ -36,35 +36,39 @@ export default function ResetPasswordPage() {
       setError(urlError);
     }
     
-    if (urlCode) {
-      setCode(urlCode);
+    if (urlTokenHash) {
+      setTokenHash(urlTokenHash);
     }
     
     setIsCheckingParams(false);
   }, []);
 
-  const exchangeExchanged = useRef(false);
+  const verifyTriggered = useRef(false);
 
-  const handleStartExchange = async () => {
-    if (!code || isExchanging || isExchanged || exchangeExchanged.current) return;
+  const handleStartVerify = async () => {
+    if (!tokenHash || isVerifying || isVerified || verifyTriggered.current) return;
     setError(null);
-    setIsExchanging(true);
-    exchangeExchanged.current = true;
+    setIsVerifying(true);
+    verifyTriggered.current = true;
 
     try {
-      const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-      if (exchangeError) {
-        setError(exchangeError.message);
-        setIsExchanging(false);
-        exchangeExchanged.current = false;
+      const { error: verifyError } = await supabase.auth.verifyOtp({
+        token_hash: tokenHash,
+        type: "recovery",
+      });
+
+      if (verifyError) {
+        setError(verifyError.message);
+        setIsVerifying(false);
+        verifyTriggered.current = false;
         return;
       }
-      setIsExchanged(true);
+      setIsVerified(true);
     } catch {
       setError("Failed to establish a recovery session. Please request a new link.");
-      exchangeExchanged.current = false;
+      verifyTriggered.current = false;
     } finally {
-      setIsExchanging(false);
+      setIsVerifying(false);
     }
   };
 
@@ -123,12 +127,12 @@ export default function ResetPasswordPage() {
         <Card className="border border-slate-200/80 dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-none backdrop-blur-sm bg-white/95 dark:bg-slate-900/95">
           <CardHeader className="space-y-1">
             <CardTitle className="text-2xl font-bold tracking-tight text-center">
-              {(!code || error) ? "Invalid Session" : !isExchanged ? "Reset Password" : "Create New Password"}
+              {(!tokenHash || error) ? "Invalid Session" : !isVerified ? "Reset Password" : "Create New Password"}
             </CardTitle>
             <CardDescription className="text-center text-slate-500 dark:text-slate-400">
-              {(!code || error)
+              {(!tokenHash || error)
                 ? "There was a problem with your password reset request"
-                : !isExchanged
+                : !isVerified
                 ? "Confirm your request to begin setting up a new secure password"
                 : "Provide a new secure password for your account"}
             </CardDescription>
@@ -139,7 +143,7 @@ export default function ResetPasswordPage() {
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
               <span className="text-xs font-medium">Validating recovery session...</span>
             </CardContent>
-          ) : (!code || error) ? (
+          ) : (!tokenHash || error) ? (
             <CardContent className="space-y-4 pt-4">
               <Alert variant="destructive" className="bg-red-50 dark:bg-red-950/20 border-red-200/60 dark:border-red-900/50">
                 <ShieldAlert className="h-4 w-4" />
@@ -154,7 +158,7 @@ export default function ResetPasswordPage() {
                 </Link>
               </div>
             </CardContent>
-          ) : !isExchanged ? (
+          ) : !isVerified ? (
             <>
               <CardContent className="space-y-4 pt-4 text-center">
                 <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800/80 text-sm text-slate-600 dark:text-slate-400">
@@ -163,11 +167,11 @@ export default function ResetPasswordPage() {
               </CardContent>
               <CardFooter className="flex flex-col space-y-4">
                 <Button
-                  onClick={handleStartExchange}
+                  onClick={handleStartVerify}
                   className="w-full bg-primary hover:bg-primary/90 text-white font-medium shadow-md shadow-primary/10 transition-all duration-200"
-                  disabled={isExchanging}
+                  disabled={isVerifying}
                 >
-                  {isExchanging ? (
+                  {isVerifying ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Authorizing recovery session...
