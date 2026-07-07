@@ -142,6 +142,13 @@ The same pipeline exists in **two parallel implementations** — one per client 
 The mobile client uses `supabase.functions.invoke('chat', ...)` and stays within Supabase's API surface. The web client calls the Next.js API route directly. Both use identical rate limits, model strings, RPC arguments, and system prompt text. See [`supabase/functions/chat/README.md`](../supabase/functions/chat/README.md) for the function's full contract and deploy instructions.
 
 > **Sync rule:** Any change to rate limit, model strings, `match_documents` thresholds, system prompt, or `chatbot_logs` columns must be applied to **both** files.
+> Ensure the following parameters remain in exact synchronization:
+> - **Model Name**: Pinned `gemini-2.5-flash` model identifier.
+> - **Embedding Dimensions**: `768` dimensions vector configuration.
+> - **RAG Similarity Threshold**: Cosine similarity cutoff (`0.6` by default).
+> - **Hourly Rate Limit**: Hardcoded limit checks (e.g. `20` requests per hour).
+> - **System Prompt Text**: Grounding system instructions context.
+> - **Audit/Log Database Schema**: Database column layout matching variables for `chatbot_logs`.
 
 
 

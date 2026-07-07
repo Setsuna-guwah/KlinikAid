@@ -31,6 +31,8 @@ All feature development and refactoring passes must adhere to these eleven found
     Do not construct complex PostgreSQL database joins inside real-time subscriptions. Send raw model primary keys and handle relation queries on the client side to avoid rendering glitches.
 11. **`process.env` is Server-Only**:
     Do not call `process.env` from client-side code. Retrieve environment variables in Server Components and pass them down as typed props.
+12. **No AI Diagnostics**:
+    The system performs NO AI diagnostic inference on patient data anywhere. All analytics are descriptive only (SO-C). AI (Gemini) is used for RAG chatbot grounding and document text extraction ONLY — never clinical interpretation, diagnosis, or prognosis. Human clinicians (specialists) make all diagnostic judgments; the system stores and displays, never interprets. This applies equally to the specialist private workspace — descriptive charts only, no AI-generated clinical conclusions.
 
 ---
 
