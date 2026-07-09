@@ -51,4 +51,7 @@ scratch/
 skills/
 
 # AI codex output
-CODEX_REPORT/
+CODEX_REPORT/
+
+# IDE / Agent Settings
+.agents/
