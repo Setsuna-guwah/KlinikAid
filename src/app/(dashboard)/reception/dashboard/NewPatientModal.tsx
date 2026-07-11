@@ -29,6 +29,7 @@ import {
   Phone,
   MapPin
 } from "lucide-react";
+import { validateAge } from "@/lib/validation";
 
 export default function NewPatientModal() {
   const [open, setOpen] = useState(false);
@@ -58,6 +59,8 @@ export default function NewPatientModal() {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const dobValidation = formData.dob ? validateAge(formData.dob) : { valid: true };
 
   const resetForm = () => {
     setFormData({
@@ -176,6 +179,14 @@ export default function NewPatientModal() {
                 <ShieldAlert className="h-4 w-4" />
                 <AlertTitle>Operation Failed</AlertTitle>
                 <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+
+            {formData.dob && !dobValidation.valid && (
+              <Alert variant="destructive" className="bg-amber-50 dark:bg-amber-950/20 border-amber-200/60 dark:border-amber-900/50">
+                <ShieldAlert className="h-4 w-4" />
+                <AlertTitle>Date of Birth Check</AlertTitle>
+                <AlertDescription>{dobValidation.error}</AlertDescription>
               </Alert>
             )}
 

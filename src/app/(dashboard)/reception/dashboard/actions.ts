@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createPatient } from "@/lib/patient/createPatient";
+import { validateAge } from "@/lib/validation";
 import { z } from "zod";
 
 const receptionPatientSchema = z.object({
@@ -64,6 +65,11 @@ export async function createPatientByStaffAction(
 
   if (!validation.success) {
     return { error: validation.error.issues.map((e) => e.message).join(". ") };
+  }
+
+  const ageValidation = validateAge(dob);
+  if (!ageValidation.valid) {
+    return { error: ageValidation.error || "Invalid date of birth." };
   }
 
   // 3. Invoke Patient Creation

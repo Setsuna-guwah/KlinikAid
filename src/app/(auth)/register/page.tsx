@@ -11,12 +11,14 @@ import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { ShieldAlert, Loader2, User, Mail, Lock, Phone, Calendar, MapPin, MailCheck } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { PASSWORD_REQUIREMENT_TEXT, validateAge, validatePassword } from "@/lib/validation";
 
 function RegisterForm() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [emailPending, setEmailPending] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [passwordTouched, setPasswordTouched] = useState(false);
 
   const [formData, setFormData] = useState({
     email: "",
@@ -33,6 +35,12 @@ function RegisterForm() {
     const { id, value } = e.target;
     setFormData((prev) => ({ ...prev, [id]: value }));
   };
+
+  const dobValidation = formData.dob ? validateAge(formData.dob) : { valid: true };
+  const passwordError =
+    passwordTouched && formData.password && !validatePassword(formData.password)
+      ? PASSWORD_REQUIREMENT_TEXT
+      : null;
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -175,13 +183,18 @@ function RegisterForm() {
                       <Input
                         id="dob"
                         type="date"
-                        className="pl-10"
+                        className={`pl-10 ${formData.dob && !dobValidation.valid ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                         value={formData.dob}
                         onChange={handleChange}
                         disabled={isPending}
                         required
                       />
                     </div>
+                    {formData.dob && !dobValidation.valid && (
+                      <p className="text-xs font-medium text-red-600 dark:text-red-400">
+                        {dobValidation.error}
+                      </p>
+                    )}
                   </div>
 
                   <div className="space-y-2">
@@ -263,11 +276,16 @@ function RegisterForm() {
                       className="pl-10"
                       value={formData.password}
                       onChange={handleChange}
+                      onBlur={() => setPasswordTouched(true)}
                       disabled={isPending}
                       required
                     />
                   </div>
+                  <p className={`text-xs ${passwordError ? "font-medium text-red-600 dark:text-red-400" : "text-slate-500 dark:text-slate-400"}`}>
+                    {passwordError || PASSWORD_REQUIREMENT_TEXT}
+                  </p>
                 </div>
+
               </CardContent>
 
               <CardFooter className="flex flex-col space-y-4">

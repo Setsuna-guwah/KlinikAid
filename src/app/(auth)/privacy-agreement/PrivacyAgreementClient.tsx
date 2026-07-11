@@ -15,8 +15,15 @@ export default function PrivacyAgreementClient() {
   const [isPending, startTransition] = useTransition();
   const [isDisagreeing, startDisagreeTransition] = useTransition();
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
-  const [isCheckboxChecked, setIsCheckboxChecked] = useState(false);
+  const [acknowledgements, setAcknowledgements] = useState({
+    readAgreement: false,
+    consentProcessing: false,
+    authorizedAccess: false,
+    rightsAndAccuracy: false,
+  });
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const allAcknowledgementsChecked = Object.values(acknowledgements).every(Boolean);
 
   const handleDisagree = () => {
     startDisagreeTransition(async () => {
@@ -53,7 +60,7 @@ export default function PrivacyAgreementClient() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isCheckboxChecked || !hasScrolledToBottom) return;
+    if (!allAcknowledgementsChecked || !hasScrolledToBottom) return;
 
     startTransition(async () => {
       try {
@@ -146,35 +153,65 @@ export default function PrivacyAgreementClient() {
                 </p>
               </div>
 
-              <div className="flex items-start gap-2 pt-2">
-                <input
-                  id="privacyConsent"
-                  type="checkbox"
-                  checked={isCheckboxChecked}
-                  onChange={(e) => setIsCheckboxChecked(e.target.checked)}
-                  disabled={!hasScrolledToBottom}
-                  className="mt-1 h-4 w-4 rounded border-slate-350 text-accentBlue-600 focus:ring-accentBlue-500 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
-                  required
-                />
-                <label 
-                  htmlFor="privacyConsent" 
-                  className={`text-xs select-none ${
-                    hasScrolledToBottom 
-                      ? "text-slate-700 dark:text-slate-300 cursor-pointer" 
-                      : "text-slate-400 dark:text-slate-650 cursor-not-allowed"
-                  }`}
-                >
-                  {hasScrolledToBottom 
-                    ? "I have read and fully accept the Data Privacy Agreement (RA 10173) terms."
-                    : "Please scroll to the bottom of the agreement text to enable acceptance."}
-                </label>
+              <div className="space-y-3 pt-3 pb-4">
+                {!hasScrolledToBottom && (
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                    Please scroll to the bottom of the agreement text to enable acceptance.
+                  </p>
+                )}
+
+                {[
+                  {
+                    id: "readAgreement",
+                    label: "I have read and understood the KlinikAid Data Privacy Agreement under RA 10173.",
+                  },
+                  {
+                    id: "consentProcessing",
+                    label: "I consent to the collection, storage, and processing of my personal, contact, submitted document, queue, and diagnostic record information for clinic services.",
+                  },
+                  {
+                    id: "authorizedAccess",
+                    label: "I understand that only authorized clinic personnel may access my records according to their role and clinical duties.",
+                  },
+                  {
+                    id: "rightsAndAccuracy",
+                    label: "I understand my data privacy rights and confirm that the information I provide should be accurate and up to date.",
+                  },
+                ].map((item) => (
+                  <div key={item.id} className="grid grid-cols-[1rem_1fr] items-start gap-3">
+                    <input
+                      id={item.id}
+                      type="checkbox"
+                      checked={acknowledgements[item.id as keyof typeof acknowledgements]}
+                      onChange={(e) =>
+                        setAcknowledgements((prev) => ({
+                          ...prev,
+                          [item.id]: e.target.checked,
+                        }))
+                      }
+                      disabled={!hasScrolledToBottom}
+                      className="mt-0.5 h-4 w-4 min-h-4 min-w-4 shrink-0 rounded border-slate-350 text-accentBlue-600 focus:ring-accentBlue-500 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                      required
+                    />
+                    <label
+                      htmlFor={item.id}
+                      className={`text-xs leading-relaxed select-none ${
+                        hasScrolledToBottom
+                          ? "text-slate-700 dark:text-slate-300 cursor-pointer"
+                          : "text-slate-400 dark:text-slate-650 cursor-not-allowed"
+                      }`}
+                    >
+                      {item.label}
+                    </label>
+                  </div>
+                ))}
               </div>
             </CardContent>
 
-            <CardFooter className="flex flex-col space-y-2">
+            <CardFooter className="flex flex-col space-y-2 pt-5">
               <Button
                 type="submit"
-                disabled={!isCheckboxChecked || !hasScrolledToBottom || isPending || isDisagreeing}
+                disabled={!allAcknowledgementsChecked || !hasScrolledToBottom || isPending || isDisagreeing}
                 className="w-full bg-primary hover:bg-primary/90 text-white font-medium shadow-md shadow-primary/10 transition-all duration-200"
               >
                 {isPending ? (

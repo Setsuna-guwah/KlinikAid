@@ -2,11 +2,12 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createPatient } from "@/lib/patient/createPatient";
+import { PASSWORD_REQUIREMENT_TEXT, validateAge, validatePassword } from "@/lib/validation";
 import { z } from "zod";
 
 const registerSchema = z.object({
   email: z.string().email("Invalid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  password: z.string().refine(validatePassword, PASSWORD_REQUIREMENT_TEXT),
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
   dob: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date of birth format"),
@@ -53,6 +54,11 @@ export async function registerAction(
     return { error: errorMsg };
   }
 
+  const ageValidation = validateAge(dob);
+  if (!ageValidation.valid) {
+    return { error: ageValidation.error || "Invalid date of birth." };
+  }
+
   // 2. Initialize Client
   const client = createClient();
 
@@ -73,6 +79,13 @@ export async function registerAction(
   );
 
   if (!res.success || res.error) {
+    if (res.error?.toLowerCase().includes("already registered")) {
+      return {
+        error:
+          "An account already exists for this email. Please sign in instead, or use Forgot password if you cannot access the account.",
+      };
+    }
+
     return { error: res.error || "Signup failed." };
   }
 

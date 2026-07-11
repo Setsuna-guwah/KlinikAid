@@ -28,6 +28,7 @@ const EVENT_BADGE_STYLES: Record<string, { bg: string; text: string; border: str
   QUEUE_COMPLETED:        { bg: '#dcfce7', text: '#166534', border: '#86efac', label: 'Queue Completed' },
   MFA_ENROLLED:           { bg: '#dcfce7', text: '#166534', border: '#86efac', label: 'MFA Enrolled' },
   PASSWORD_CHANGED:       { bg: '#e0e7ff', text: '#3730a3', border: '#c7d2fe', label: 'Password Changed' },
+  PROFILE_UPDATED:        { bg: '#e0f2fe', text: '#0369a1', border: '#bae6fd', label: 'Profile Updated' },
   SPECIALIST_PATIENT_CREATED: { bg: '#e0f2fe', text: '#0369a1', border: '#bae6fd', label: 'Spec Patient Created' },
   SPECIALIST_RECORD_ENTERED: { bg: '#fae8ff', text: '#86198f', border: '#f5d0fe', label: 'Spec Record Entered' },
 };

@@ -14,6 +14,7 @@ import Image from "next/image";
 
 import { EmailOtpType } from "@supabase/supabase-js";
 import { getTotpFactors } from "@/lib/auth/mfa";
+import { PASSWORD_REQUIREMENT_TEXT, validatePassword } from "@/lib/validation";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -158,8 +159,8 @@ export default function ResetPasswordPage() {
     e.preventDefault();
     setError(null);
 
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters long.");
+    if (!validatePassword(password)) {
+      setError(PASSWORD_REQUIREMENT_TEXT);
       return;
     }
 
@@ -296,6 +297,9 @@ export default function ResetPasswordPage() {
                       autoFocus
                     />
                   </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {PASSWORD_REQUIREMENT_TEXT}
+                  </p>
                 </div>
               </CardContent>
 
