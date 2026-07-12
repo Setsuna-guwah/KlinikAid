@@ -142,6 +142,9 @@ export default function PrivacyAgreementClient() {
                 <p>
                   Your data is encrypted in transit and at rest, stored securely using Supabase database infrastructure. Uploaded medical documents are kept in private, restricted-access storage buckets. Only authorized medical specialists, receptionist staff, and clinical department personnel can view your data, governed strictly by Role-Based Access Control (RBAC). We will not share your records with external third parties without your explicit request or a lawful subpoena.
                 </p>
+                <p>
+                  I understand and consent that my uploaded medical documents may be processed by Google Generative AI for verbatim text extraction.
+                </p>
 
                 <h5 className="font-semibold text-slate-850 dark:text-slate-200 text-xs">4. Your Rights under RA 10173</h5>
                 <p>

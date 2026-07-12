@@ -92,14 +92,34 @@ export async function submitDocumentAction(formData: FormData) {
 
   // 7. Non-blocking pluggable text extraction
   try {
-    const extractedText = await extractDocumentText(fileBuffer, file.type);
-    if (extractedText) {
-      const { error: updateError } = await supabase
-        .from("documents")
-        .update({ ocr_text: extractedText })
-        .eq("id", docRow.id);
-      if (updateError) {
-        console.error("[submitDocumentAction] Failed to update OCR text in document row:", updateError);
+    const extractionResult = await extractDocumentText(fileBuffer, file.type);
+    if (extractionResult) {
+      if (extractionResult.text) {
+        const { error: updateError } = await supabase
+          .from("documents")
+          .update({ ocr_text: extractionResult.text })
+          .eq("id", docRow.id);
+        if (updateError) {
+          console.error("[submitDocumentAction] Failed to update OCR text in document row:", updateError);
+        }
+      }
+
+      try {
+        await logEvent(
+          supabase,
+          user.id,
+          SYSTEM_EVENT_TYPES.DOCUMENT_OCR_PROCESSED,
+          "Document OCR processed via Google Generative AI",
+          null,
+          {
+            document_id: docRow.id,
+            prompt_token_count: extractionResult.promptTokenCount,
+            candidates_token_count: extractionResult.candidatesTokenCount,
+            total_token_count: extractionResult.totalTokenCount,
+          }
+        );
+      } catch (logError) {
+        console.error("[submitDocumentAction] Non-blocking OCR event logging error:", logError);
       }
     }
   } catch (ocrError) {
