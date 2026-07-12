@@ -3,7 +3,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth/helpers";
 import { logEvent } from "@/lib/logger";
-import { SYSTEM_EVENT_TYPES, LAB_REFERENCE_RANGES } from "@/lib/constants";
+import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
+import { validateLabResult } from "@/lib/records/validateLabResult";
 import { revalidatePath } from "next/cache";
 
 export interface RecordResult {
@@ -48,35 +49,20 @@ export async function createSpecialistRecordAction(
       return { success: false, error: "Unauthorized: Patient does not belong to your private roster." };
     }
 
-    // 2. Map results, calculate flagged states based on LAB_REFERENCE_RANGES and patient gender
-    const isFemale = patient.gender?.toLowerCase() === "female";
-    
+    // 2. Map results, validate numeric values, and calculate flagged states server-side.
     const recordsToInsert = payload.results.map((r) => {
-      const val = parseFloat(r.test_value);
-      const range = LAB_REFERENCE_RANGES.find((ref) => ref.parameter === r.test_name);
-      
-      let isFlagged = false;
-      let min: number | null = null;
-      let max: number | null = null;
-
-      if (range) {
-        min = isFemale ? range.femaleMin : range.maleMin;
-        max = isFemale ? range.femaleMax : range.maleMax;
-        if (!isNaN(val)) {
-          isFlagged = val < min || val > max;
-        }
-      }
+      const validated = validateLabResult(r.test_name, r.test_value, patient.gender);
 
       return {
         specialist_patient_id: patientId,
         specialist_id: profile.id,
         test_type: payload.test_type,
         test_name: r.test_name,
-        test_value: r.test_value,
-        unit: range?.unit || null,
-        reference_range_min: min,
-        reference_range_max: max,
-        is_flagged: isFlagged,
+        test_value: validated.test_value,
+        unit: validated.unit,
+        reference_range_min: validated.reference_range_min,
+        reference_range_max: validated.reference_range_max,
+        is_flagged: validated.is_flagged,
         notes: payload.notes || null,
       };
     });

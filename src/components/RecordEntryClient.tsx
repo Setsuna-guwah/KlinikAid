@@ -13,6 +13,10 @@ import {
 import { LAB_REFERENCE_RANGES, DEPARTMENTS } from "@/lib/constants";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
+const STRICT_NUMBER_REGEX = /^-?\d+(\.\d+)?$/;
 
 interface Patient {
   id: string;
@@ -87,6 +91,7 @@ export default function RecordEntryClient({
   const [paramValues, setParamValues] = useState<{ [key: string]: string }>({});
   const [paramFlags, setParamFlags] = useState<{ [key: string]: boolean }>({});
   const [paramTouched, setParamTouched] = useState<{ [key: string]: boolean }>({});
+  const [outOfRangeConfirm, setOutOfRangeConfirm] = useState<string[]>([]);
 
   // Imaging / narrative states
   const [findings, setFindings] = useState<string>("");
@@ -102,11 +107,16 @@ export default function RecordEntryClient({
 
   // Check out-of-range status
   const checkRange = (paramName: string, valueStr: string) => {
-    const val = parseFloat(valueStr);
-    if (isNaN(val)) return { isFlagged: false, rangeText: "" };
+    const trimmed = valueStr.trim();
+    if (!STRICT_NUMBER_REGEX.test(trimmed)) {
+      return { isFlagged: false, rangeText: "", isNumeric: false };
+    }
+
+    const val = Number(trimmed);
+    if (!Number.isFinite(val)) return { isFlagged: false, rangeText: "", isNumeric: false };
 
     const range = LAB_REFERENCE_RANGES.find(r => r.parameter === paramName);
-    if (!range) return { isFlagged: false, rangeText: "" };
+    if (!range) return { isFlagged: false, rangeText: "", isNumeric: false };
 
     const isFemale = patient.gender?.toLowerCase() === "female";
     const min = isFemale ? range.femaleMin : range.maleMin;
@@ -115,7 +125,8 @@ export default function RecordEntryClient({
     const isFlagged = val < min || val > max;
     return {
       isFlagged,
-      rangeText: `Ref: ${min} - ${max} ${range.unit}`
+      rangeText: `Ref: ${min} - ${max} ${range.unit}`,
+      isNumeric: true
     };
   };
 
@@ -131,16 +142,19 @@ export default function RecordEntryClient({
       return;
     }
 
-    const { isFlagged } = checkRange(paramName, val);
+    const { isFlagged, isNumeric } = checkRange(paramName, val);
+    if (!isNumeric) {
+      setParamTouched(prev => ({ ...prev, [paramName]: false }));
+      setParamFlags(prev => ({ ...prev, [paramName]: false }));
+      return;
+    }
+
     setParamTouched(prev => ({ ...prev, [paramName]: true }));
     setParamFlags(prev => ({ ...prev, [paramName]: isFlagged }));
   };
 
   // Submit Handler
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-
+  const submitRecords = async (skipOutOfRangeConfirm = false) => {
     try {
       const payload: RecordPayload = {
         patient_id: patient.id,
@@ -160,13 +174,19 @@ export default function RecordEntryClient({
           return;
         }
 
+        const outOfRangeValues: string[] = [];
+
         payload.results = enteredParams.map(paramName => {
           const range = LAB_REFERENCE_RANGES.find(r => r.parameter === paramName);
           const isFemale = patient.gender?.toLowerCase() === "female";
           const min = range ? (isFemale ? range.femaleMin : range.maleMin) : null;
           const max = range ? (isFemale ? range.femaleMax : range.maleMax) : null;
           const val = paramValues[paramName];
-          const { isFlagged } = checkRange(paramName, val);
+          const { isFlagged, rangeText } = checkRange(paramName, val);
+
+          if (isFlagged) {
+            outOfRangeValues.push(`${paramName}: ${val} (${rangeText})`);
+          }
 
           return {
             test_name: paramName,
@@ -177,6 +197,11 @@ export default function RecordEntryClient({
             is_flagged: isFlagged
           };
         });
+
+        if (outOfRangeValues.length > 0 && !skipOutOfRangeConfirm) {
+          setOutOfRangeConfirm(outOfRangeValues);
+          return;
+        }
       } else {
         // Imaging / Ultrasound / ECG
         const resolvedTestType = customTestType.trim();
@@ -211,6 +236,7 @@ export default function RecordEntryClient({
         ];
       }
 
+      setIsSubmitting(true);
       // POST to API
       const res = await fetch("/api/department/records", {
         method: "POST",
@@ -232,6 +258,11 @@ export default function RecordEntryClient({
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await submitRecords(false);
   };
 
   return (
@@ -392,7 +423,8 @@ export default function RecordEntryClient({
 
                         <div className="relative">
                           <input
-                            type="text"
+                            type="number"
+                            step="any"
                             placeholder={`Enter value (e.g. ${min + (max-min)/2})`}
                             value={value}
                             onChange={(e) => handleParamChange(paramName, e.target.value)}
@@ -519,6 +551,42 @@ export default function RecordEntryClient({
           </form>
         </div>
       </div>
+
+      <Dialog open={outOfRangeConfirm.length > 0} onOpenChange={(open) => !open && setOutOfRangeConfirm([])}>
+        <DialogContent className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirm Out-of-Range Values</DialogTitle>
+            <DialogDescription className="text-xs leading-relaxed">
+              One or more values are outside the normal reference range. Do you want to save these results as flagged?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40 p-3 text-xs text-amber-900 dark:text-amber-200 space-y-1">
+            {outOfRangeConfirm.map((item) => (
+              <div key={item}>{item}</div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOutOfRangeConfirm([])}
+              className="text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={async () => {
+                setOutOfRangeConfirm([]);
+                await submitRecords(true);
+              }}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold"
+            >
+              Save Flagged Results
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { errorResponse, successResponse } from "@/lib/api-response";
 import { logEvent } from "@/lib/logger";
 import { getPhtStartOfToday } from "@/lib/utils";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
+import { validateLabResult } from "@/lib/records/validateLabResult";
 
 export async function GET(request: Request) {
   const supabase = createClient();
@@ -118,6 +119,21 @@ export async function POST(request: Request) {
       return errorResponse("Valid department assignment is required", 400);
     }
 
+    let patientGender: string | null = null;
+    if (dept === "laboratory") {
+      const { data: patient, error: patientError } = await supabase
+        .from("patients")
+        .select("gender")
+        .eq("id", patient_id)
+        .single();
+
+      if (patientError || !patient) {
+        return errorResponse("Patient record not found", 404);
+      }
+
+      patientGender = patient.gender;
+    }
+
     // 4. Format rows for bulk relational insert
     const rowsToInsert = results.map((res) => {
       if (!res.test_name) {
@@ -125,6 +141,24 @@ export async function POST(request: Request) {
       }
       if (res.test_value === undefined || res.test_value === null) {
         throw new Error(`test_value is required for test ${res.test_name}`);
+      }
+
+      if (dept === "laboratory") {
+        const validated = validateLabResult(res.test_name, res.test_value, patientGender);
+
+        return {
+          patient_id,
+          recorder_id: user.id,
+          department: dept,
+          test_type,
+          test_name: res.test_name,
+          test_value: validated.test_value,
+          unit: validated.unit,
+          reference_range_min: validated.reference_range_min,
+          reference_range_max: validated.reference_range_max,
+          is_flagged: validated.is_flagged,
+          notes: notes || null
+        };
       }
 
       return {
@@ -135,9 +169,9 @@ export async function POST(request: Request) {
         test_name: res.test_name,
         test_value: String(res.test_value),
         unit: res.unit || null,
-        reference_range_min: res.reference_range_min !== undefined && res.reference_range_min !== null ? Number(res.reference_range_min) : null,
-        reference_range_max: res.reference_range_max !== undefined && res.reference_range_max !== null ? Number(res.reference_range_max) : null,
-        is_flagged: !!res.is_flagged,
+        reference_range_min: null,
+        reference_range_max: null,
+        is_flagged: false,
         notes: notes || null
       };
     });
@@ -174,7 +208,7 @@ export async function POST(request: Request) {
     const completedCount = updatedQueue?.length || 0;
 
     // 7. Log audit trail events
-    const flaggedCount = results.filter((r) => r.is_flagged).length;
+    const flaggedCount = rowsToInsert.filter((r) => r.is_flagged).length;
     await logEvent(
       supabase,
       user.id,

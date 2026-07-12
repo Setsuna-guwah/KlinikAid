@@ -17,8 +17,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LAB_REFERENCE_RANGES } from "@/lib/constants";
 import { createSpecialistRecordAction } from "@/app/(dashboard)/specialist/patients/[patientId]/actions";
+
+const STRICT_NUMBER_REGEX = /^-?\d+(\.\d+)?$/;
 
 const LAB_TEST_GROUPS = {
   "Complete Blood Count (CBC)": ["Hemoglobin", "White Blood Cells (WBC)", "Platelets"],
@@ -48,15 +51,21 @@ export default function SpecialistRecordEntryClient({ patient }: SpecialistRecor
   const [notes, setNotes] = useState("");
   const [paramValues, setParamValues] = useState<{ [key: string]: string }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [outOfRangeConfirm, setOutOfRangeConfirm] = useState<string[]>([]);
 
 
   // Range checker for visual alerts
   const checkRange = (paramName: string, valueStr: string) => {
-    const val = parseFloat(valueStr);
-    if (isNaN(val)) return { isFlagged: false, rangeText: "" };
+    const trimmed = valueStr.trim();
+    if (!STRICT_NUMBER_REGEX.test(trimmed)) {
+      return { isFlagged: false, rangeText: "", isNumeric: false };
+    }
+
+    const val = Number(trimmed);
+    if (!Number.isFinite(val)) return { isFlagged: false, rangeText: "", isNumeric: false };
 
     const range = LAB_REFERENCE_RANGES.find(r => r.parameter === paramName);
-    if (!range) return { isFlagged: false, rangeText: "" };
+    if (!range) return { isFlagged: false, rangeText: "", isNumeric: false };
 
     const isFemale = patient.gender?.toLowerCase() === "female";
     const min = isFemale ? range.femaleMin : range.maleMin;
@@ -65,7 +74,8 @@ export default function SpecialistRecordEntryClient({ patient }: SpecialistRecor
     const isFlagged = val < min || val > max;
     return {
       isFlagged,
-      rangeText: `Ref: ${min} - ${max} ${range.unit}`
+      rangeText: `Ref: ${min} - ${max} ${range.unit}`,
+      isNumeric: true
     };
   };
 
@@ -73,10 +83,7 @@ export default function SpecialistRecordEntryClient({ patient }: SpecialistRecor
     setParamValues(prev => ({ ...prev, [paramName]: val }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-
+  const submitRecord = async (skipOutOfRangeConfirm = false) => {
     try {
       const activeParams = LAB_TEST_GROUPS[selectedTestType as keyof typeof LAB_TEST_GROUPS] || [];
       const enteredResults = activeParams
@@ -92,6 +99,19 @@ export default function SpecialistRecordEntryClient({ patient }: SpecialistRecor
         return;
       }
 
+      const outOfRangeValues = enteredResults
+        .map((result) => {
+          const { isFlagged, rangeText } = checkRange(result.test_name, result.test_value);
+          return isFlagged ? `${result.test_name}: ${result.test_value} (${rangeText})` : null;
+        })
+        .filter((value): value is string => value !== null);
+
+      if (outOfRangeValues.length > 0 && !skipOutOfRangeConfirm) {
+        setOutOfRangeConfirm(outOfRangeValues);
+        return;
+      }
+
+      setIsSubmitting(true);
       const res = await createSpecialistRecordAction(patient.id, {
         test_type: selectedTestType,
         notes,
@@ -111,6 +131,11 @@ export default function SpecialistRecordEntryClient({ patient }: SpecialistRecor
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await submitRecord(false);
   };
 
   const activeParams = LAB_TEST_GROUPS[selectedTestType as keyof typeof LAB_TEST_GROUPS] || [];
@@ -177,7 +202,7 @@ export default function SpecialistRecordEntryClient({ patient }: SpecialistRecor
               <div className="space-y-4">
                 {activeParams.map(paramName => {
                   const val = paramValues[paramName] || "";
-                  const { isFlagged, rangeText } = checkRange(paramName, val);
+                  const { isFlagged, rangeText, isNumeric } = checkRange(paramName, val);
 
                   return (
                     <div key={paramName} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center border-b border-slate-50 dark:border-slate-900 pb-3">
@@ -192,7 +217,8 @@ export default function SpecialistRecordEntryClient({ patient }: SpecialistRecor
                       <div className="md:col-span-4 relative">
                         <Input
                           id={`param-${paramName}`}
-                          type="text"
+                          type="number"
+                          step="any"
                           placeholder="Enter value"
                           value={val}
                           onChange={(e) => handleParamChange(paramName, e.target.value)}
@@ -211,7 +237,7 @@ export default function SpecialistRecordEntryClient({ patient }: SpecialistRecor
                             <AlertCircle className="h-3 w-3" />
                             Out of Range
                           </span>
-                        ) : val ? (
+                        ) : val && isNumeric ? (
                           <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 px-2 py-0.5 rounded border border-emerald-100 dark:border-emerald-900/10">
                             Normal
                           </span>
@@ -262,6 +288,42 @@ export default function SpecialistRecordEntryClient({ patient }: SpecialistRecor
           </Button>
         </div>
       </form>
+
+      <Dialog open={outOfRangeConfirm.length > 0} onOpenChange={(open) => !open && setOutOfRangeConfirm([])}>
+        <DialogContent className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirm Out-of-Range Values</DialogTitle>
+            <DialogDescription className="text-xs leading-relaxed">
+              One or more values are outside the normal reference range. Do you want to save these results as flagged?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40 p-3 text-xs text-amber-900 dark:text-amber-200 space-y-1">
+            {outOfRangeConfirm.map((item) => (
+              <div key={item}>{item}</div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOutOfRangeConfirm([])}
+              className="text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={async () => {
+                setOutOfRangeConfirm([]);
+                await submitRecord(true);
+              }}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold"
+            >
+              Save Flagged Results
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
