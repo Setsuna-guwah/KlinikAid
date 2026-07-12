@@ -53,5 +53,9 @@ skills/
 # AI codex output
 CODEX_REPORT/
 
+# Re-defense planning context (not project source)
+REDEFENSE_CHANGES.md
+issues.md
+
 # IDE / Agent Settings
-.agents/
+.agents/
