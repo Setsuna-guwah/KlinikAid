@@ -13,14 +13,19 @@ import {
   Loader2, 
   ArrowRight,
   Info,
-  X
+  X,
+  TriangleAlert
 } from "lucide-react";
 import Link from "next/link";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
-import { submitDocumentAction } from "./actions";
+import {
+  assessDocumentQualityAction,
+  confirmSubmitDocumentAction,
+  discardAssessedDocumentAction,
+} from "./actions";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ACCEPTED_FILE_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/jpg"];
@@ -47,6 +52,7 @@ export default function DocumentSubmitClient() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [qualityWarningAssessmentId, setQualityWarningAssessmentId] = useState<string | null>(null);
 
   const { handleSubmit, setValue, formState: { errors }, reset } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -71,6 +77,8 @@ export default function DocumentSubmitClient() {
       const file = e.dataTransfer.files[0];
       setSelectedFile(file);
       setValue("file", file, { shouldValidate: true });
+      setQualityWarningAssessmentId(null);
+      setSubmitError(null);
     }
   };
 
@@ -79,14 +87,30 @@ export default function DocumentSubmitClient() {
       const file = e.target.files[0];
       setSelectedFile(file);
       setValue("file", file, { shouldValidate: true });
+      setQualityWarningAssessmentId(null);
+      setSubmitError(null);
     }
   };
 
-  const removeFile = () => {
+  const removeFile = async () => {
+    if (qualityWarningAssessmentId) {
+      await discardAssessedDocumentAction(qualityWarningAssessmentId);
+    }
     setSelectedFile(null);
+    setQualityWarningAssessmentId(null);
     setValue("file", undefined as unknown as File, { shouldValidate: false });
     reset();
     setSubmitError(null);
+  };
+
+  const confirmSubmission = async (assessmentId: string) => {
+    const result = await confirmSubmitDocumentAction(assessmentId);
+    if (result.success) {
+      setSubmitSuccess(true);
+      return;
+    }
+
+    setSubmitError(result.error || "An unexpected error occurred during submission.");
   };
 
   const onSubmit = async (values: FormValues) => {
@@ -95,16 +119,32 @@ export default function DocumentSubmitClient() {
     setSubmitError(null);
 
     try {
+      if (qualityWarningAssessmentId) {
+        await confirmSubmission(qualityWarningAssessmentId);
+        return;
+      }
+
       const formData = new FormData();
       formData.append("file", values.file);
 
-      const result = await submitDocumentAction(formData);
+      const result = await assessDocumentQualityAction(formData);
 
-      if (result.success) {
-        setSubmitSuccess(true);
-      } else {
+      if (!result.success) {
         setSubmitError(result.error || "An unexpected error occurred during submission.");
+        return;
       }
+
+      if (!result.assessmentId) {
+        setSubmitError("Document assessment did not return a valid reference. Please try again.");
+        return;
+      }
+
+      if (result.isOcrTextEmpty) {
+        setQualityWarningAssessmentId(result.assessmentId);
+        return;
+      }
+
+      await confirmSubmission(result.assessmentId);
     } catch (err) {
       console.error(err);
       setSubmitError("Failed to connect to the server. Please check your internet connection.");
@@ -259,7 +299,7 @@ export default function DocumentSubmitClient() {
               </div>
               <button
                 type="button"
-                onClick={removeFile}
+                onClick={() => void removeFile()}
                 disabled={isSubmitting}
                 className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors disabled:opacity-50"
               >
@@ -272,6 +312,16 @@ export default function DocumentSubmitClient() {
             <p className="text-xs font-semibold text-red-500 flex items-center gap-1.5">
               <AlertCircle className="h-3.5 w-3.5" /> {errors.file.message as string}
             </p>
+          )}
+
+          {qualityWarningAssessmentId && (
+            <Alert className="bg-amber-50 dark:bg-amber-950/20 border-amber-200/80 dark:border-amber-900/50 text-amber-900 dark:text-amber-200">
+              <TriangleAlert className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              <AlertTitle>Text Extraction Warning</AlertTitle>
+              <AlertDescription className="text-amber-800 dark:text-amber-200/90">
+                We could not extract readable text from this file. The image may be blurry, unclear, or too low-quality for reliable text extraction. You may submit it as-is for receptionist review, but processing may be inaccurate, incomplete, or delayed. You can also upload a clearer image instead.
+              </AlertDescription>
+            </Alert>
           )}
 
           <div className="p-4 bg-slate-50/50 dark:bg-slate-900/20 rounded-lg border border-slate-100 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400 leading-relaxed flex items-start gap-3">
@@ -292,10 +342,10 @@ export default function DocumentSubmitClient() {
             type="button"
             variant="outline"
             disabled={isSubmitting || !selectedFile}
-            onClick={removeFile}
+            onClick={() => void removeFile()}
             className="border-slate-200 dark:border-slate-850 hover:bg-slate-50 dark:hover:bg-slate-900/60"
           >
-            Clear
+            {qualityWarningAssessmentId ? "Upload Clearer Image" : "Clear"}
           </Button>
           <Button
             type="submit"
@@ -305,10 +355,10 @@ export default function DocumentSubmitClient() {
             {isSubmitting ? (
               <>
                 <Loader2 className="mr-2 h-4.5 w-4.5 animate-spin" />
-                Submitting lab request...
+                {qualityWarningAssessmentId ? "Submitting anyway..." : "Submitting lab request..."}
               </>
             ) : (
-              "Submit Lab Request"
+              qualityWarningAssessmentId ? "Submit Anyway" : "Submit Lab Request"
             )}
           </Button>
         </CardFooter>
