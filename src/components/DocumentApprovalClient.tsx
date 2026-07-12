@@ -42,6 +42,37 @@ interface DocumentApprovalClientProps {
   document: Document;
 }
 
+const REJECTION_REASON_PRESETS = [
+  {
+    label: "Illegible text",
+    text: "The uploaded document text is not legible. Please retake a clearer, well-lit photo and resubmit.",
+  },
+  {
+    label: "Unrelated files",
+    text: "The uploaded file does not appear to be a valid medical referral or requisition. Please upload the correct document.",
+  },
+  {
+    label: "Wrong patient",
+    text: "The patient name on this document does not match your account details. Please upload a document that belongs to you.",
+  },
+  {
+    label: "Incomplete document",
+    text: "This document appears to be incomplete or missing pages. Please upload the full document and resubmit.",
+  },
+  {
+    label: "Expired referral",
+    text: "This referral appears to be expired or outdated. Please provide a current referral from your physician.",
+  },
+  {
+    label: "Wrong test requisition",
+    text: "The test requisition does not match the requested service. Please upload the correct requisition form.",
+  },
+  {
+    label: "Duplicate submission",
+    text: "This document has already been submitted and processed. A duplicate is not required.",
+  },
+] as const;
+
 export default function DocumentApprovalClient({ document: initialDoc }: DocumentApprovalClientProps) {
   const router = useRouter();
   const [doc, setDoc] = useState<Document>(initialDoc);
@@ -586,6 +617,26 @@ export default function DocumentApprovalClient({ document: initialDoc }: Documen
           </DialogHeader>
 
           <div className="space-y-3.5 py-2">
+            <div className="space-y-1.5">
+              <p className="text-xs font-semibold text-slate-500">
+                Common Reasons (tap to fill, then edit)
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {REJECTION_REASON_PRESETS.map((preset) => (
+                  <Button
+                    key={preset.label}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isPending}
+                    onClick={() => setRejectionReason(preset.text)}
+                    className="h-7 rounded-full border-slate-200 px-3 text-[11px] font-medium dark:border-slate-800"
+                  >
+                    {preset.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
             <div className="space-y-1.5">
               <label htmlFor="rejection_reason" className="text-xs font-semibold text-slate-500">
                 Rejection Reason (Minimum 20 characters)
