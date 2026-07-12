@@ -190,6 +190,9 @@ export default function DocumentSubmitClient() {
         <div>
           <CardTitle>File Upload Portal</CardTitle>
           <CardDescription>Upload a digital PDF or image scan (JPG, PNG) of your doctor&apos;s referral script</CardDescription>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            Upload your lab request here. It will be sent to the clinic for processing and receptionist review.
+          </p>
         </div>
       </CardHeader>
 
@@ -302,10 +305,10 @@ export default function DocumentSubmitClient() {
             {isSubmitting ? (
               <>
                 <Loader2 className="mr-2 h-4.5 w-4.5 animate-spin" />
-                Uploading document...
+                Submitting lab request...
               </>
             ) : (
-              "Submit Document"
+              "Submit Lab Request"
             )}
           </Button>
         </CardFooter>
