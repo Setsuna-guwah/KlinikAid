@@ -11,6 +11,7 @@ export interface Profile {
   full_name: string;
   role: UserRole;
   department: Department | null;
+  employee_type: string | null;
   created_at: string;
   updated_at: string;
 }

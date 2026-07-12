@@ -7,6 +7,12 @@ import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
 
+function normalizeEmployeeType(value: unknown) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, 80) : null;
+}
+
 function getStaffCreateErrorMessage(error: unknown): { message: string; status: number } {
   const code =
     typeof error === "object" && error !== null && "code" in error
@@ -70,6 +76,7 @@ export async function POST(request: Request) {
     const adminProfile = await requireRole(["admin"]);
     const body = await request.json();
     const { email, password, fullName, role, department } = body;
+    const employeeType = normalizeEmployeeType(body.employeeType);
 
     // Validate request body
     if (!email || !password || !fullName || !role) {
@@ -91,6 +98,7 @@ export async function POST(request: Request) {
         full_name: fullName,
         role,
         department: role === "department_staff" ? department : null,
+        employee_type: employeeType,
       },
     });
 
@@ -122,6 +130,19 @@ export async function POST(request: Request) {
       throw new Error("Trigger failed to create public.profiles record.");
     }
 
+    const { data: updatedProfile, error: employeeTypeError } = await supabase
+      .from("profiles")
+      .update({ employee_type: employeeType })
+      .eq("id", authData.user.id)
+      .select()
+      .single();
+
+    if (employeeTypeError) {
+      throw employeeTypeError;
+    }
+
+    profile = updatedProfile;
+
     // 3. Log the administrative audit event
     await logEvent(
       supabase,
@@ -129,7 +150,7 @@ export async function POST(request: Request) {
       SYSTEM_EVENT_TYPES.STAFF_CREATED,
       `Staff user created: ${fullName} (${email}) as ${role}`,
       null,
-      { target_user_id: authData.user.id, role, department }
+      { target_user_id: authData.user.id, role, department, employee_type: employeeType }
     );
 
     return successResponse(

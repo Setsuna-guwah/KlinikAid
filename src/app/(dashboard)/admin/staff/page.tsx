@@ -36,6 +36,7 @@ const staffFormSchema = z.object({
   password: z.string().min(6, "Password must be at least 6 characters").or(z.string().length(0)), // optional on edit
   role: z.enum(["admin", "receptionist", "department_staff", "medical_specialist"]),
   department: z.enum(["laboratory", "imaging", "ultrasound", "ecg"]).nullable().optional(),
+  employeeType: z.string().max(80, "Employee type must be 80 characters or fewer").optional(),
 }).superRefine((data, ctx) => {
   if (data.role === "department_staff" && (!data.department || data.department === null)) {
     ctx.addIssue({
@@ -62,6 +63,7 @@ interface StaffMember {
   email: string;
   role: UserRole;
   department: Department | null;
+  employee_type: string | null;
   is_active: boolean;
   created_at: string;
 }
@@ -118,6 +120,7 @@ export default function StaffManagementPage() {
       password: "",
       role: "receptionist",
       department: null,
+      employeeType: "",
     },
   });
 
@@ -152,6 +155,7 @@ export default function StaffManagementPage() {
       password: generateTempPassword(),
       role: "receptionist",
       department: null,
+      employeeType: "",
     });
     setErrorMsg("");
     setSheetOpen(true);
@@ -166,6 +170,7 @@ export default function StaffManagementPage() {
       password: "", // password blank by default on edit
       role: staff.role as StaffFormValues["role"],
       department: staff.department as StaffFormValues["department"],
+      employeeType: staff.employee_type || "",
     });
     setErrorMsg("");
     setSheetOpen(true);
@@ -254,7 +259,8 @@ export default function StaffManagementPage() {
     return (
       s.full_name.toLowerCase().includes(query) ||
       s.email.toLowerCase().includes(query) ||
-      s.role.toLowerCase().includes(query)
+      s.role.toLowerCase().includes(query) ||
+      (s.employee_type || "").toLowerCase().includes(query)
     );
   });
 
@@ -330,8 +336,13 @@ export default function StaffManagementPage() {
                       className={`transition-opacity duration-150 ${!staff.is_active ? "opacity-60 bg-slate-50/30 dark:bg-slate-950/20" : ""}`}
                     >
                       {/* Name */}
-                      <TableCell className="font-medium text-slate-900 dark:text-white">
-                        {staff.full_name}
+                      <TableCell>
+                        <div className="font-medium text-slate-900 dark:text-white">{staff.full_name}</div>
+                        {staff.employee_type && (
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                            {staff.employee_type}
+                          </div>
+                        )}
                       </TableCell>
 
                       {/* Email */}
@@ -520,6 +531,21 @@ export default function StaffManagementPage() {
                 </div>
               </div>
             )}
+
+            {/* Employee Type */}
+            <div className="space-y-2">
+              <Label htmlFor="employeeType" className="text-xs font-semibold">Employee Type / Title</Label>
+              <Input
+                id="employeeType"
+                placeholder="e.g. Radiologic Technologist"
+                maxLength={80}
+                {...register("employeeType")}
+                className="text-xs"
+              />
+              {errors.employeeType && (
+                <p className="text-[10px] text-rose-500">{errors.employeeType.message}</p>
+              )}
+            </div>
 
             {/* Role Select */}
             <div className="space-y-2">

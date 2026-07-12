@@ -8,6 +8,12 @@ import { validateName } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
+function normalizeEmployeeType(value: unknown) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, 80) : null;
+}
+
 // PUT: update staff details (full name, email, role, department)
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
   try {
@@ -15,6 +21,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     const { id } = params;
     const body = await request.json();
     const { email, fullName, role, department } = body;
+    const employeeType = normalizeEmployeeType(body.employeeType);
 
     if (!email || !fullName || !role) {
       return errorResponse("Missing required fields: email, fullName, role", 400);
@@ -39,6 +46,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
         full_name: string;
         role: string;
         department: string | null;
+        employee_type: string | null;
       };
     } = {
       email,
@@ -46,6 +54,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
         full_name: fullName,
         role,
         department: role === "department_staff" ? department : null,
+        employee_type: employeeType,
       },
     };
 
@@ -62,6 +71,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
         full_name: fullName,
         role,
         department: role === "department_staff" ? department : null,
+        employee_type: employeeType,
       })
       .eq("id", id)
       .select()
@@ -78,7 +88,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       SYSTEM_EVENT_TYPES.STAFF_UPDATED,
       `Staff user updated: ${fullName} (${email}) as ${role}`,
       null,
-      { target_user_id: id, role, department }
+      { target_user_id: id, role, department, employee_type: employeeType }
     );
 
     return successResponse({ ...profile, email }, "Staff member updated successfully");
