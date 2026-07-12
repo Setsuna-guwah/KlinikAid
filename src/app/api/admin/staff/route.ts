@@ -7,6 +7,23 @@ import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
 
+function getStaffCreateErrorMessage(error: unknown): { message: string; status: number } {
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? (error as { code?: unknown }).code
+      : undefined;
+
+  if (code === "email_exists") {
+    return { message: "An account with this email address already exists.", status: 409 };
+  }
+
+  if (error instanceof Error && /user already registered/i.test(error.message)) {
+    return { message: "An account with this email address already exists.", status: 409 };
+  }
+
+  return { message: "Failed to create staff member", status: 500 };
+}
+
 // GET: list all staff members (non-patients) with merged email from Auth
 export async function GET() {
   try {
@@ -121,7 +138,8 @@ export async function POST(request: Request) {
       201
     );
   } catch (error: unknown) {
+    const safeError = getStaffCreateErrorMessage(error);
     const message = error instanceof Error ? error.message : String(error);
-    return errorResponse("Failed to create staff member", 500, message);
+    return errorResponse(safeError.message, safeError.status, message);
   }
 }
