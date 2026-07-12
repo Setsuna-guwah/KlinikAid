@@ -380,7 +380,7 @@ export default function DocumentApprovalClient({ document: initialDoc }: Documen
             </CardHeader>
             <CardContent className="pt-4 flex-1 overflow-hidden flex flex-col">
               {ocrFlags.length > 0 && (
-                <div className="mb-3.5 p-2.5 bg-rose-50 border border-rose-200/50 text-rose-800 text-[11px] rounded-lg dark:bg-rose-950/20 dark:border-rose-900/40 dark:text-rose-350 flex items-start gap-1.5 leading-normal shrink-0">
+                <div className="mb-3.5 p-2.5 bg-rose-50 border border-rose-200/50 text-rose-800 text-[11px] rounded-lg dark:bg-rose-950/20 dark:border-rose-900/40 dark:text-rose-400 flex items-start gap-1.5 leading-normal shrink-0">
                   <AlertTriangle className="h-4 w-4 text-rose-500 shrink-0 mt-0.5" />
                   <div>
                     <span className="font-bold">Verification Suggested:</span> The following parameters were flagged in the document:{" "}
@@ -394,7 +394,7 @@ export default function DocumentApprovalClient({ document: initialDoc }: Documen
               {doc.file_type === "template" ? (
                 <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-800 rounded-lg p-4 space-y-3">
                   <div className="border-b border-slate-200 dark:border-slate-800 pb-2 mb-2">
-                    <span className="text-[10px] font-bold text-indigo-650 dark:text-indigo-400 uppercase tracking-wider">
+                    <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
                       Template Name
                     </span>
                     <h4 className="text-sm font-bold text-slate-800 dark:text-white">
@@ -446,13 +446,13 @@ export default function DocumentApprovalClient({ document: initialDoc }: Documen
             <CardContent className="pt-4 space-y-5">
               {doc.file_type === "template" ? (
                 <div className="space-y-4 text-xs">
-                  <div className="p-3 rounded-lg bg-blue-50 border border-blue-100 text-blue-808 dark:bg-blue-950/20 dark:border-blue-900/20 dark:text-blue-350 leading-relaxed">
+                  <div className="p-3 rounded-lg bg-blue-50 border border-blue-100 text-blue-800 dark:bg-blue-950/20 dark:border-blue-900/20 dark:text-blue-400 leading-relaxed">
                     <span className="font-bold block mb-1">Validated Template Form</span>
                     This document was submitted as a structured digital form. Fields were validated upon input. No OCR extraction or signature verification is needed.
                   </div>
                   <div className="flex justify-between items-center py-2 border-b border-slate-50 dark:border-slate-900">
                     <span className="font-semibold text-slate-500">Validation Status</span>
-                    <span className="font-bold text-emerald-650">100% Validated</span>
+                    <span className="font-bold text-emerald-600">100% Validated</span>
                   </div>
                   <div className="flex justify-between items-center py-2 border-b border-slate-50 dark:border-slate-900">
                     <span className="font-semibold text-slate-500">Form Type</span>
@@ -557,7 +557,7 @@ export default function DocumentApprovalClient({ document: initialDoc }: Documen
               </div>
               <p className="text-slate-500">
                 Processed on {metadata?.reviewed_at ? formatZonedDate(metadata.reviewed_at) : formatZonedDate(doc.updated_at)} by{" "}
-                <span className="font-semibold text-slate-850 dark:text-slate-300">{metadata?.reviewed_by_name || "Staff"}</span>.
+                <span className="font-semibold text-slate-800 dark:text-slate-300">{metadata?.reviewed_by_name || "Staff"}</span>.
               </p>
               {doc.status === "rejected" && doc.rejection_reason && (
                 <div className="mt-1 bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200/30 p-2 rounded text-rose-800 dark:text-rose-300 font-medium">

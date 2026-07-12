@@ -201,7 +201,7 @@ export default function SpecialistDashboardClient({
                           {record.patient?.id ? (
                             <Link 
                               href={`/specialist/patients/${record.patient.id}/analytics`}
-                              className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-850 dark:text-indigo-400 dark:hover:text-indigo-300"
+                              className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300"
                             >
                               Analyze
                               <ArrowRight className="h-3 w-3" />
@@ -253,7 +253,7 @@ export default function SpecialistDashboardClient({
                   </div>
                   <Link 
                     href={`/specialist/patients/${p.id}/analytics`}
-                    className="p-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-slate-800 dark:hover:bg-slate-750 text-indigo-600 dark:text-indigo-400 transition"
+                    className="p-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400 transition"
                   >
                     <ArrowRight className="h-4 w-4" />
                   </Link>

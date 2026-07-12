@@ -434,7 +434,7 @@ export default function SpecialistAnalyticsClient({
                             Flagged
                           </Badge>
                         ) : (
-                          <Badge variant="secondary" className="bg-emerald-50 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-450 font-bold text-[9px] px-1.5 py-0.5 uppercase tracking-wider border border-emerald-100 dark:border-emerald-900/10">
+                          <Badge variant="secondary" className="bg-emerald-50 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-400 font-bold text-[9px] px-1.5 py-0.5 uppercase tracking-wider border border-emerald-100 dark:border-emerald-900/10">
                             Clear
                           </Badge>
                         )}

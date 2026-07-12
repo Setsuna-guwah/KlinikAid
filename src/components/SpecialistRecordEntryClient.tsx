@@ -207,12 +207,12 @@ export default function SpecialistRecordEntryClient({ patient }: SpecialistRecor
                       </div>
                       <div className="md:col-span-4 flex items-center gap-2">
                         {isFlagged ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-650 bg-red-50 dark:bg-red-950/20 px-2 py-0.5 rounded border border-red-100 dark:border-red-900/10">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-600 bg-red-50 dark:bg-red-950/20 px-2 py-0.5 rounded border border-red-100 dark:border-red-900/10">
                             <AlertCircle className="h-3 w-3" />
                             Out of Range
                           </span>
                         ) : val ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-650 bg-emerald-50 dark:bg-emerald-950/20 px-2 py-0.5 rounded border border-emerald-100 dark:border-emerald-900/10">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 px-2 py-0.5 rounded border border-emerald-100 dark:border-emerald-900/10">
                             Normal
                           </span>
                         ) : (
@@ -255,7 +255,7 @@ export default function SpecialistRecordEntryClient({ patient }: SpecialistRecor
           <Button
             type="submit"
             disabled={isSubmitting}
-            className="bg-indigo-650 hover:bg-indigo-750 text-white text-xs font-semibold flex items-center gap-2"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-2"
           >
             <Save className="h-4 w-4" />
             {isSubmitting ? "Saving..." : "Save Record"}

@@ -179,7 +179,7 @@ export default function SpecialistPatientsClient({
         <div>
           <Button 
             onClick={() => setIsModalOpen(true)}
-            className="bg-indigo-600 hover:bg-indigo-750 text-white font-semibold flex items-center gap-2"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold flex items-center gap-2"
           >
             <Plus className="h-4 w-4" />
             Add Private Patient
@@ -311,7 +311,7 @@ export default function SpecialistPatientsClient({
                             {patient.flagged_count} Flagged
                           </Badge>
                         ) : patient.total_records > 0 ? (
-                          <Badge variant="secondary" className="bg-emerald-50 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-450 font-semibold text-[10px] px-2 py-0.5 border border-emerald-100 dark:border-emerald-900/10">
+                          <Badge variant="secondary" className="bg-emerald-50 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-400 font-semibold text-[10px] px-2 py-0.5 border border-emerald-100 dark:border-emerald-900/10">
                             Clear
                           </Badge>
                         ) : (
@@ -324,13 +324,13 @@ export default function SpecialistPatientsClient({
                       <td className="p-4 pr-6 text-right flex items-center justify-end gap-2">
                         <Link 
                           href={`/specialist/patients/${patient.id}/record-entry`}
-                          className="inline-flex items-center gap-1 font-semibold text-emerald-650 hover:text-emerald-850 dark:text-emerald-400 dark:hover:text-emerald-350 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/45 px-2.5 py-1.5 rounded-lg transition"
+                          className="inline-flex items-center gap-1 font-semibold text-emerald-600 hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-400 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/45 px-2.5 py-1.5 rounded-lg transition"
                         >
                           Enter Record
                         </Link>
                         <Link 
                           href={`/specialist/patients/${patient.id}/analytics`}
-                          className="inline-flex items-center gap-1 font-semibold text-indigo-650 hover:text-indigo-850 dark:text-indigo-400 dark:hover:text-indigo-300 bg-indigo-50/50 hover:bg-indigo-100/70 dark:bg-slate-800 dark:hover:bg-slate-750 px-2.5 py-1.5 rounded-lg transition"
+                          className="inline-flex items-center gap-1 font-semibold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 bg-indigo-50/50 hover:bg-indigo-100/70 dark:bg-slate-800 dark:hover:bg-slate-700 px-2.5 py-1.5 rounded-lg transition"
                         >
                           Analytics
                           <ArrowRight className="h-3 w-3" />
@@ -463,7 +463,7 @@ export default function SpecialistPatientsClient({
               <Button
                 type="submit"
                 disabled={isSavingPatient}
-                className="bg-indigo-600 hover:bg-indigo-750 text-white text-xs h-9 font-semibold"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-9 font-semibold"
               >
                 {isSavingPatient ? "Saving..." : "Save Patient"}
               </Button>

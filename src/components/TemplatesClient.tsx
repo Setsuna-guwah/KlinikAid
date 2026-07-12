@@ -129,7 +129,7 @@ export default function TemplatesClient({ patientIdentity }: TemplatesClientProp
               className="border border-slate-200/80 dark:border-slate-800 hover:border-indigo-500 hover:shadow-md cursor-pointer transition flex flex-col h-full group bg-slate-50/10 hover:bg-white dark:hover:bg-slate-900/50"
             >
               <CardHeader className="pb-3 flex-grow">
-                <div className="h-8 w-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-650 dark:text-indigo-400 flex items-center justify-center mb-3 group-hover:bg-indigo-600 group-hover:text-white transition duration-200">
+                <div className="h-8 w-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mb-3 group-hover:bg-indigo-600 group-hover:text-white transition duration-200">
                   <FileText className="h-4.5 w-4.5" />
                 </div>
                 <CardTitle className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition">
@@ -269,7 +269,7 @@ export default function TemplatesClient({ patientIdentity }: TemplatesClientProp
             <Button
               type="submit"
               disabled={isSubmitting || !isFormValid()}
-              className="bg-indigo-650 hover:bg-indigo-750 text-white text-xs font-semibold flex items-center gap-2"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-2"
             >
               <Send className="h-3.5 w-3.5" />
               {isSubmitting ? "Submitting Form..." : "Submit to Reception"}

@@ -207,11 +207,11 @@ export default function PatientResultsClient({ initialRecords }: PatientResultsC
                                   N/A
                                 </span>
                               ) : rec.is_flagged ? (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-red-150 text-red-750 border border-red-200/55 uppercase tracking-wider dark:bg-red-950/20 dark:text-red-450 dark:border-red-900/30">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200/55 uppercase tracking-wider dark:bg-red-950/20 dark:text-red-400 dark:border-red-900/30">
                                   Out of Range
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200/35 uppercase tracking-wider dark:bg-emerald-950/20 dark:text-emerald-450 dark:border-emerald-900/10">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200/35 uppercase tracking-wider dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/10">
                                   Normal
                                 </span>
                               )}
