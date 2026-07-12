@@ -2,17 +2,21 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createPatient } from "@/lib/patient/createPatient";
-import { PASSWORD_REQUIREMENT_TEXT, validateAge, validatePassword } from "@/lib/validation";
+import { PASSWORD_REQUIREMENT_TEXT, validateAge, validatePassword, validateName, CONTACT_REQUIREMENT_TEXT, validateContactNumber } from "@/lib/validation";
 import { z } from "zod";
 
 const registerSchema = z.object({
   email: z.string().email("Invalid email address"),
   password: z.string().refine(validatePassword, PASSWORD_REQUIREMENT_TEXT),
-  firstName: z.string().min(1, "First name is required"),
-  lastName: z.string().min(1, "Last name is required"),
+  firstName: z.string().refine((v) => validateName(v, "First name").valid, {
+    message: "First name must be at least 3 characters and contain only letters, spaces, hyphens, apostrophes, or periods."
+  }),
+  lastName: z.string().refine((v) => validateName(v, "Last name").valid, {
+    message: "Last name must be at least 3 characters and contain only letters, spaces, hyphens, apostrophes, or periods."
+  }),
   dob: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date of birth format"),
   gender: z.enum(["male", "female", "other"], { message: "Select a valid gender" }),
-  contactNumber: z.string().min(1, "Contact number is required"),
+  contactNumber: z.string().refine((v) => validateContactNumber(v).valid, CONTACT_REQUIREMENT_TEXT),
   address: z.string().min(1, "Address is required"),
 });
 

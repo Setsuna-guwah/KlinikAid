@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { logEvent } from "@/lib/logger";
 import { revalidatePath } from "next/cache";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
+import { validateAge } from "@/lib/validation";
 
 export interface TemplateSubmitResult {
   success: boolean;
@@ -25,15 +26,29 @@ export async function submitTemplateDocumentAction(
       return { success: false, error: "Unauthorized: Please log in." };
     }
 
-    // 2. Get corresponding patient record
+    // 2. Get corresponding patient record along with profile information
     const { data: patient, error: patientError } = await supabase
       .from("patients")
-      .select("id")
+      .select("id, first_name, last_name, date_of_birth, contact_number, address")
       .eq("profile_id", user.id)
       .single();
 
     if (patientError || !patient) {
       return { success: false, error: "Patient profile is not configured. Contact clinic staff." };
+    }
+
+    const patientDob = patient.date_of_birth || "";
+    const fullName = `${patient.first_name || ""} ${patient.last_name || ""}`.trim();
+
+    // Server-side age validation for intake forms
+    if (templateId === "patient-intake") {
+      const ageValidation = validateAge(patientDob);
+      if (!ageValidation.valid) {
+        return {
+          success: false,
+          error: ageValidation.error || "Submission restricted: age must be 18 or above."
+        };
+      }
     }
 
     // 3. Format dynamic file details
@@ -47,9 +62,15 @@ export async function submitTemplateDocumentAction(
     const fileName = `${templateName} - ${formattedDate}`;
     const filePath = `template://${templateId}-${timestamp}`;
 
-    // Combine payload for extracted_metadata
+    // Combine payload for extracted_metadata and force-inject authenticated user credentials
     const extractedMetadata = {
       ...fieldsPayload,
+      patient_name: fullName,
+      ...(templateId === "patient-intake" ? {
+        date_of_birth: patientDob,
+        contact_number: patient.contact_number || "",
+        address: patient.address || ""
+      } : {}),
       template_id: templateId,
       template_name: templateName,
       submission_type: "template",
@@ -95,3 +116,4 @@ export async function submitTemplateDocumentAction(
     };
   }
 }
+

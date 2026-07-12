@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { logEvent } from "@/lib/logger";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
-import { PASSWORD_REQUIREMENT_TEXT, validatePassword } from "@/lib/validation";
+import { PASSWORD_REQUIREMENT_TEXT, validatePassword, validateContactNumber, CONTACT_REQUIREMENT_TEXT } from "@/lib/validation";
 import { headers } from "next/headers";
 
 export interface ChangePasswordResult {
@@ -87,6 +87,11 @@ export async function updatePatientDetailsAction(
 
   if (!contactNumber) {
     return { success: false, error: "Contact number is required." };
+  }
+
+  const contactCheck = validateContactNumber(contactNumber);
+  if (!contactCheck.valid) {
+    return { success: false, error: contactCheck.error ?? CONTACT_REQUIREMENT_TEXT };
   }
 
   if (!address) {

@@ -70,3 +70,49 @@ export function validateAge(dobString: string): { valid: boolean; error?: string
 
   return { valid: true };
 }
+
+// Shared name rule — applied to firstName, lastName, and fullName on every form surface.
+// Min 3 / Max 100 / Letters (including accented characters) + spaces + hyphens + apostrophes + periods.
+export const NAME_REGEX = /^[A-Za-zÀ-ÿ\s\-'\.]+$/;
+export const NAME_MIN = 3;
+export const NAME_MAX = 100;
+
+export function validateName(
+  name: string,
+  label = "Name"
+): { valid: boolean; error?: string } {
+  const trimmed = name.trim();
+  if (trimmed.length < NAME_MIN) {
+    return {
+      valid: false,
+      error: `${label} must be at least ${NAME_MIN} characters.`,
+    };
+  }
+  if (trimmed.length > NAME_MAX) {
+    return {
+      valid: false,
+      error: `${label} must be no more than ${NAME_MAX} characters.`,
+    };
+  }
+  if (!NAME_REGEX.test(trimmed)) {
+    return {
+      valid: false,
+      error: `${label} may only contain letters, spaces, hyphens, apostrophes, or periods.`,
+    };
+  }
+  return { valid: true };
+}
+
+// Shared contact rule — Philippine mobile only: 09XXXXXXXXX (11 digits).
+export const CONTACT_REGEX = /^09\d{9}$/;
+export const CONTACT_REQUIREMENT_TEXT =
+  "Contact number must be a valid Philippine mobile number (e.g. 09171234567).";
+
+export function validateContactNumber(
+  contact: string
+): { valid: boolean; error?: string } {
+  if (!CONTACT_REGEX.test(contact.trim())) {
+    return { valid: false, error: CONTACT_REQUIREMENT_TEXT };
+  }
+  return { valid: true };
+}

@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/auth/helpers";
 import { errorResponse, successResponse } from "@/lib/api-response";
 import { logEvent } from "@/lib/logger";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
+import { validateName } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,11 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
     if (!email || !fullName || !role) {
       return errorResponse("Missing required fields: email, fullName, role", 400);
+    }
+
+    const nameCheck = validateName(fullName, "Full name");
+    if (!nameCheck.valid) {
+      return errorResponse(nameCheck.error ?? "Invalid full name.", 400);
     }
 
     if (role === "department_staff" && (!department || department === null)) {

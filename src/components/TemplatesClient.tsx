@@ -7,7 +7,8 @@ import {
   ArrowLeft, 
   Send, 
   HelpCircle,
-  FileText
+  FileText,
+  User
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,8 +18,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { CLINIC_TEMPLATES, DocumentTemplate } from "@/lib/documentTemplates";
 import { submitTemplateDocumentAction } from "@/app/(dashboard)/patient/templates/actions";
+import type { PatientIdentityProps } from "@/app/(dashboard)/patient/templates/page";
 
-export default function TemplatesClient() {
+interface TemplatesClientProps {
+  patientIdentity: PatientIdentityProps;
+}
+
+export default function TemplatesClient({ patientIdentity }: TemplatesClientProps) {
   const router = useRouter();
   const [selectedTemplate, setSelectedTemplate] = useState<DocumentTemplate | null>(null);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
@@ -26,7 +32,7 @@ export default function TemplatesClient() {
 
   const handleSelectTemplate = (template: DocumentTemplate) => {
     setSelectedTemplate(template);
-    // Reset values for new form
+    // Reset editable values only (identity is always server-provided)
     const initialValues: Record<string, string> = {};
     template.fields.forEach(f => {
       initialValues[f.key] = "";
@@ -44,7 +50,6 @@ export default function TemplatesClient() {
 
   const isFormValid = () => {
     if (!selectedTemplate) return false;
-    // Check if every required field has a non-empty value
     return selectedTemplate.fields.every(f => {
       if (!f.required) return true;
       const val = formValues[f.key];
@@ -144,8 +149,39 @@ export default function TemplatesClient() {
           ))}
         </div>
       ) : (
-        /* STEP 2: Fillable Form Form */
+        /* STEP 2: Fillable Form */
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Identity card — server-prefilled, read-only (#41) */}
+          <Card className="border border-slate-200/80 dark:border-slate-800 shadow-sm bg-slate-50/60 dark:bg-slate-900/40">
+            <CardHeader className="pb-2 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <User className="h-4 w-4 text-slate-400" />
+                <CardTitle className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+                  Patient Identity (auto-filled from your profile)
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs text-slate-500">Full Name</Label>
+                <Input value={patientIdentity.fullName || "—"} disabled className="text-xs h-9 bg-white dark:bg-slate-950 cursor-not-allowed opacity-70" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-slate-500">Date of Birth</Label>
+                <Input value={patientIdentity.dateOfBirth || "—"} disabled className="text-xs h-9 bg-white dark:bg-slate-950 cursor-not-allowed opacity-70" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-slate-500">Contact Number</Label>
+                <Input value={patientIdentity.contactNumber || "—"} disabled className="text-xs h-9 bg-white dark:bg-slate-950 cursor-not-allowed opacity-70" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-slate-500">Address</Label>
+                <Input value={patientIdentity.address || "—"} disabled className="text-xs h-9 bg-white dark:bg-slate-950 cursor-not-allowed opacity-70" />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Editable template fields */}
           <Card className="border border-slate-200/80 dark:border-slate-800 shadow-sm">
             <CardHeader className="pb-3 border-b border-slate-100 dark:border-slate-850">
               <CardTitle className="text-sm font-semibold">Structured Input Fields</CardTitle>
