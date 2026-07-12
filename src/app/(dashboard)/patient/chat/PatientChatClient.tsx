@@ -126,7 +126,7 @@ export default function PatientChatClient() {
             <div
               className={`flex items-center justify-center w-8 h-8 rounded-full shrink-0 ${
                 msg.role === "user"
-                  ? "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-350"
+                  ? "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-400"
                   : "bg-accentBlue-100 text-accentBlue-600 dark:bg-accentBlue-950/40 dark:text-accentBlue-400"
               }`}
             >
@@ -137,7 +137,7 @@ export default function PatientChatClient() {
               className={`p-3.5 rounded-2xl max-w-[75%] text-sm leading-relaxed shadow-sm ${
                 msg.role === "user"
                   ? "bg-accentBlue-600 text-white rounded-tr-none"
-                  : "bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-250 rounded-tl-none border border-slate-200/40 dark:border-slate-800/40"
+                  : "bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-200 rounded-tl-none border border-slate-200/40 dark:border-slate-800/40"
               }`}
             >
               <p className="whitespace-pre-line">{msg.content}</p>

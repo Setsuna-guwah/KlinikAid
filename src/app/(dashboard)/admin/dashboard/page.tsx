@@ -270,7 +270,7 @@ export default async function AdminDashboardPage() {
                           {formatPhTime(log.created_at)}
                         </span>
                       </div>
-                      <p className="text-slate-750 dark:text-slate-300 font-medium">
+                      <p className="text-slate-700 dark:text-slate-300 font-medium">
                         {log.description}
                       </p>
                       <div className="flex items-center gap-2 text-[10px] text-slate-400">

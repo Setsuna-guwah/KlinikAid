@@ -206,8 +206,8 @@ export default function MfaEnrollClient() {
                     </div>
                   )}
 
-                  <div className="flex-1 space-y-3 text-sm text-slate-600 dark:text-slate-350">
-                    <p className="font-semibold text-slate-850 dark:text-slate-200">
+                  <div className="flex-1 space-y-3 text-sm text-slate-600 dark:text-slate-400">
+                    <p className="font-semibold text-slate-800 dark:text-slate-200">
                       To complete setup:
                     </p>
                     <ol className="list-decimal pl-5 space-y-2">

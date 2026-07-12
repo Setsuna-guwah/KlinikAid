@@ -123,14 +123,14 @@ export default function PatientResultsClient({ initialRecords }: PatientResultsC
         <CardContent className="p-0">
           {initialRecords.length === 0 ? (
             <div className="text-center py-16 text-slate-400 dark:text-slate-500 flex flex-col items-center justify-center space-y-2">
-              <FileText className="h-12 w-12 text-slate-350 stroke-1 animate-pulse" />
+              <FileText className="h-12 w-12 text-slate-400 stroke-1 animate-pulse" />
               <p className="text-sm font-semibold">No medical records found</p>
               <p className="text-xs max-w-xs leading-relaxed">
                 Your medical releases and lab sheets will appear here once officially logged.
               </p>
             </div>
           ) : dateKeys.length === 0 ? (
-            <div className="text-center py-16 text-slate-450 dark:text-slate-500 text-xs">
+            <div className="text-center py-16 text-slate-400 dark:text-slate-500 text-xs">
               No results matches your filter parameters.
             </div>
           ) : (
@@ -152,7 +152,7 @@ export default function PatientResultsClient({ initialRecords }: PatientResultsC
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs border-collapse">
                       <thead>
-                        <tr className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 font-semibold border-y border-slate-100 dark:border-slate-850">
+                        <tr className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 font-semibold border-y border-slate-100 dark:border-slate-800">
                           <th className="p-3 pl-4">Parameter Name</th>
                           <th className="p-3">Department</th>
                           <th className="p-3 text-center">Observed Value</th>
@@ -235,10 +235,10 @@ export default function PatientResultsClient({ initialRecords }: PatientResultsC
       </Card>
 
       {/* Prominent NO AI Disclaimer */}
-      <div className="p-4 rounded-xl border border-amber-100 dark:border-amber-900/30 bg-amber-50/20 dark:bg-amber-950/10 text-amber-850 dark:text-amber-300 text-xs leading-relaxed flex gap-2.5 shadow-sm">
+      <div className="p-4 rounded-xl border border-amber-100 dark:border-amber-900/30 bg-amber-50/20 dark:bg-amber-950/10 text-amber-800 dark:text-amber-300 text-xs leading-relaxed flex gap-2.5 shadow-sm">
         <AlertCircle className="h-4.5 w-4.5 text-amber-500 shrink-0 mt-0.5" />
         <div>
-          <span className="font-bold uppercase tracking-wider text-[10px] bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 rounded mr-1.5 text-amber-900 dark:text-amber-250">
+          <span className="font-bold uppercase tracking-wider text-[10px] bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 rounded mr-1.5 text-amber-900 dark:text-amber-200">
             SO-C Disclaimer
           </span>
           <span className="font-bold">No AI Diagnostic Inference Applied:</span> This results registry compiles released laboratory parameter values directly from clinic database storage. No automated machine diagnostics, diagnosis suggestions, interpretation models, or clinical prognoses are applied (Specific Objective C compliant).

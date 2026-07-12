@@ -132,7 +132,7 @@ export default async function PatientDashboardPage() {
         </CardHeader>
         <CardContent className="pt-6">
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
-            <div className="p-4 border border-slate-200/60 dark:border-slate-850 rounded-lg space-y-2 text-center flex flex-col items-center justify-center">
+            <div className="p-4 border border-slate-200/60 dark:border-slate-800 rounded-lg space-y-2 text-center flex flex-col items-center justify-center">
               <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Queue Status</span>
               {activeQueue ? (
                 <div className="flex flex-col items-center gap-1.5 pt-1">
@@ -148,19 +148,19 @@ export default async function PatientDashboardPage() {
               )}
             </div>
             
-            <div className="p-4 border border-slate-200/60 dark:border-slate-850 rounded-lg space-y-2 text-center flex flex-col items-center justify-center">
+            <div className="p-4 border border-slate-200/60 dark:border-slate-800 rounded-lg space-y-2 text-center flex flex-col items-center justify-center">
               <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Pending Referrals</span>
               <p className="text-2xl font-bold text-slate-900 dark:text-white pt-1">{pendingSubmissions}</p>
               <p className="text-[9px] text-slate-400">Waiting for review</p>
             </div>
 
-            <div className="p-4 border border-slate-200/60 dark:border-slate-850 rounded-lg space-y-2 text-center flex flex-col items-center justify-center">
+            <div className="p-4 border border-slate-200/60 dark:border-slate-800 rounded-lg space-y-2 text-center flex flex-col items-center justify-center">
               <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Total Submissions</span>
               <p className="text-2xl font-bold text-slate-900 dark:text-white pt-1">{totalSubmissions}</p>
               <p className="text-[9px] text-slate-400">Historical uploads</p>
             </div>
 
-            <div className="p-4 border border-slate-200/60 dark:border-slate-850 rounded-lg space-y-2 text-center flex flex-col items-center justify-center">
+            <div className="p-4 border border-slate-200/60 dark:border-slate-800 rounded-lg space-y-2 text-center flex flex-col items-center justify-center">
               <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Available Results</span>
               <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 pt-1">{resultsCount}</p>
               <p className="text-[9px] text-slate-400">Released parameters</p>

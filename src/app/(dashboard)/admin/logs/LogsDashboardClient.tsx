@@ -1022,7 +1022,7 @@ export default function LogsDashboardClient({ profiles, freeTierTokenLimit }: Lo
                     </TableRow>
                   ) : (
                     weeklyBreakdown.map((week) => (
-                      <TableRow key={week.weekLabel} className="border-b border-slate-100 dark:border-slate-850">
+                      <TableRow key={week.weekLabel} className="border-b border-slate-100 dark:border-slate-800">
                         <TableCell className="font-semibold text-slate-950 dark:text-slate-50">
                           Week of {week.weekLabel} {week.isPartialWeek && <span className="text-[10px] text-amber-500 font-normal italic">(Partial)</span>}
                         </TableCell>
@@ -1075,7 +1075,7 @@ export default function LogsDashboardClient({ profiles, freeTierTokenLimit }: Lo
           </DialogHeader>
 
           {/* Messages Scroll Feed */}
-          <div className="h-96 overflow-y-auto p-4 space-y-4 bg-slate-50/50 dark:bg-slate-950/40 rounded-xl border border-slate-100 dark:border-slate-850 mt-4 flex flex-col">
+          <div className="h-96 overflow-y-auto p-4 space-y-4 bg-slate-50/50 dark:bg-slate-950/40 rounded-xl border border-slate-100 dark:border-slate-800 mt-4 flex flex-col">
             {sessionLoading ? (
               <div className="my-auto flex flex-col items-center justify-center space-y-2">
                 <Loader2 className="h-8 w-8 animate-spin text-teal-600" />

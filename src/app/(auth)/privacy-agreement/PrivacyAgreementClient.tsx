@@ -109,7 +109,7 @@ export default function PrivacyAgreementClient() {
               <div 
                 ref={scrollContainerRef}
                 onScroll={handleScroll}
-                className="h-80 overflow-y-auto p-4 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-650 dark:text-slate-350 space-y-4 leading-relaxed scrollbar-thin select-none"
+                className="h-80 overflow-y-auto p-4 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-600 dark:text-slate-400 space-y-4 leading-relaxed scrollbar-thin select-none"
               >
                 <h4 className="font-bold text-sm text-slate-900 dark:text-white">Republic Act No. 10173 (Data Privacy Act of 2012) Consent</h4>
                 
@@ -117,7 +117,7 @@ export default function PrivacyAgreementClient() {
                   Welcome to KlinikAid, the internal clinic management web portal for Bloodcare Medical Laboratory (located in Burgos, Rodriguez, Rizal). We are committed to protecting your personal and medical information in accordance with the Data Privacy Act of 2012 (Republic Act No. 10173) of the Philippines.
                 </p>
                 
-                <h5 className="font-semibold text-slate-850 dark:text-slate-200 text-xs">1. Information We Collect</h5>
+                <h5 className="font-semibold text-slate-800 dark:text-slate-200 text-xs">1. Information We Collect</h5>
                 <p>
                   To provide clinical services and allow secure digital access to your diagnostic results, we collect and process the following data points:
                 </p>
@@ -127,7 +127,7 @@ export default function PrivacyAgreementClient() {
                   <li><strong>Medical Records:</strong> Laboratory referral slips, test results, physician information, and basic vitals (blood pressure, temperature, weight).</li>
                 </ul>
 
-                <h5 className="font-semibold text-slate-850 dark:text-slate-200 text-xs">2. Purpose of Collection</h5>
+                <h5 className="font-semibold text-slate-800 dark:text-slate-200 text-xs">2. Purpose of Collection</h5>
                 <p>
                   Your information is collected and processed solely for the following purposes:
                 </p>
@@ -138,7 +138,7 @@ export default function PrivacyAgreementClient() {
                   <li>Providing access to our AI Assistant chatbot for basic clinic inquiry services.</li>
                 </ul>
 
-                <h5 className="font-semibold text-slate-850 dark:text-slate-200 text-xs">3. Information Security & Storage</h5>
+                <h5 className="font-semibold text-slate-800 dark:text-slate-200 text-xs">3. Information Security & Storage</h5>
                 <p>
                   Your data is encrypted in transit and at rest, stored securely using Supabase database infrastructure. Uploaded medical documents are kept in private, restricted-access storage buckets. Only authorized medical specialists, receptionist staff, and clinical department personnel can view your data, governed strictly by Role-Based Access Control (RBAC). We will not share your records with external third parties without your explicit request or a lawful subpoena.
                 </p>
@@ -146,7 +146,7 @@ export default function PrivacyAgreementClient() {
                   I understand and consent that my uploaded medical documents may be processed by Google Generative AI for verbatim text extraction.
                 </p>
 
-                <h5 className="font-semibold text-slate-850 dark:text-slate-200 text-xs">4. Your Rights under RA 10173</h5>
+                <h5 className="font-semibold text-slate-800 dark:text-slate-200 text-xs">4. Your Rights under RA 10173</h5>
                 <p>
                   As a data subject, you hold the right to be informed of collection, object to processing, access your clinical logs, request corrections of discrepancies, and withdraw consent.
                 </p>
@@ -193,7 +193,7 @@ export default function PrivacyAgreementClient() {
                         }))
                       }
                       disabled={!hasScrolledToBottom}
-                      className="mt-0.5 h-4 w-4 min-h-4 min-w-4 shrink-0 rounded border-slate-350 text-accentBlue-600 focus:ring-accentBlue-500 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                      className="mt-0.5 h-4 w-4 min-h-4 min-w-4 shrink-0 rounded border-slate-400 text-accentBlue-600 focus:ring-accentBlue-500 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                       required
                     />
                     <label
@@ -201,7 +201,7 @@ export default function PrivacyAgreementClient() {
                       className={`text-xs leading-relaxed select-none ${
                         hasScrolledToBottom
                           ? "text-slate-700 dark:text-slate-300 cursor-pointer"
-                          : "text-slate-400 dark:text-slate-650 cursor-not-allowed"
+                          : "text-slate-400 dark:text-slate-600 cursor-not-allowed"
                       }`}
                     >
                       {item.label}

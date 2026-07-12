@@ -276,7 +276,7 @@ export default function SubmissionsClient({
             <CardContent className="pt-6 space-y-4">
               {activeQueueList.length === 0 ? (
                 <div className="text-center py-8 text-slate-400 dark:text-slate-500 flex flex-col items-center justify-center space-y-2">
-                  <Clock className="h-10 w-10 text-slate-350 stroke-1" />
+                  <Clock className="h-10 w-10 text-slate-400 stroke-1" />
                   <p className="text-sm font-semibold">Not currently in clinic queue</p>
                   <p className="text-xs max-w-[200px] leading-relaxed">
                     Once receptionist approves your referral, you will enter the department queue.
@@ -325,21 +325,21 @@ export default function SubmissionsClient({
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Triage Vitals Check</span>
                           <div className="grid grid-cols-3 gap-2.5 text-center">
                             {triage.vitals.blood_pressure && (
-                              <div className="bg-slate-50 dark:bg-slate-900/60 p-2 rounded-lg border border-slate-150 dark:border-slate-850">
+                              <div className="bg-slate-50 dark:bg-slate-900/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
                                 <Heart className="h-3.5 w-3.5 mx-auto text-red-500 mb-0.5" />
                                 <p className="text-[10px] text-slate-400">Blood Pressure</p>
                                 <p className="text-xs font-bold text-slate-800 dark:text-slate-200 font-mono mt-0.5">{triage.vitals.blood_pressure}</p>
                               </div>
                             )}
                             {triage.vitals.temperature_c && (
-                              <div className="bg-slate-50 dark:bg-slate-900/60 p-2 rounded-lg border border-slate-150 dark:border-slate-850">
+                              <div className="bg-slate-50 dark:bg-slate-900/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
                                 <Thermometer className="h-3.5 w-3.5 mx-auto text-amber-500 mb-0.5" />
                                 <p className="text-[10px] text-slate-400">Temp</p>
                                 <p className="text-xs font-bold text-slate-800 dark:text-slate-200 font-mono mt-0.5">{triage.vitals.temperature_c}°C</p>
                               </div>
                             )}
                             {triage.vitals.weight_kg && (
-                              <div className="bg-slate-50 dark:bg-slate-900/60 p-2 rounded-lg border border-slate-150 dark:border-slate-850">
+                              <div className="bg-slate-50 dark:bg-slate-900/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
                                 <Scale className="h-3.5 w-3.5 mx-auto text-emerald-500 mb-0.5" />
                                 <p className="text-[10px] text-slate-400">Weight</p>
                                 <p className="text-xs font-bold text-slate-800 dark:text-slate-200 font-mono mt-0.5">{triage.vitals.weight_kg}kg</p>
@@ -350,9 +350,9 @@ export default function SubmissionsClient({
                       )}
 
                       {triage?.notes && (
-                        <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-lg border border-slate-150 dark:border-slate-850 text-xs">
+                        <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-lg border border-slate-100 dark:border-slate-800 text-xs">
                           <span className="text-slate-400 block font-semibold mb-0.5">Triage Staff Note:</span>
-                          <p className="text-slate-700 dark:text-slate-350 italic">{triage.notes}</p>
+                          <p className="text-slate-700 dark:text-slate-400 italic">{triage.notes}</p>
                         </div>
                       )}
                     </div>
@@ -378,7 +378,7 @@ export default function SubmissionsClient({
             <CardContent className="pt-6">
               {documents.length === 0 ? (
                 <div className="text-center py-12 text-slate-400 dark:text-slate-500 flex flex-col items-center justify-center space-y-2">
-                  <FileText className="h-12 w-12 text-slate-350 stroke-1" />
+                  <FileText className="h-12 w-12 text-slate-400 stroke-1" />
                   <p className="text-sm font-semibold">No uploaded documents found</p>
                   <p className="text-xs max-w-sm leading-relaxed">
                     Submit digital slips to request clinical department routing.
@@ -428,7 +428,7 @@ export default function SubmissionsClient({
                             size="sm"
                             onClick={() => handleView(doc.id)}
                             disabled={viewingFileId !== null}
-                            className="border-slate-200 dark:border-slate-850 h-8 text-xs font-semibold px-3 flex items-center gap-1.5"
+                            className="border-slate-200 dark:border-slate-800 h-8 text-xs font-semibold px-3 flex items-center gap-1.5"
                           >
                             {viewingFileId === doc.id ? (
                               <Loader2 className="h-3.5 w-3.5 animate-spin" />

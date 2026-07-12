@@ -193,7 +193,7 @@ export default function SpecialistPatientsClient({
           <div className="grid gap-4 md:grid-cols-12">
             {/* Search Input */}
             <div className="md:col-span-5 relative">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-slate-450 dark:text-slate-500" />
+              <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400 dark:text-slate-500" />
               <input
                 type="text"
                 placeholder="Search patient name or code (e.g. PT-123456)..."
@@ -205,7 +205,7 @@ export default function SpecialistPatientsClient({
 
             {/* Department Filter */}
             <div className="md:col-span-3 relative">
-              <Layers className="absolute left-3 top-3 h-4 w-4 text-slate-450 dark:text-slate-500 pointer-events-none" />
+              <Layers className="absolute left-3 top-3 h-4 w-4 text-slate-400 dark:text-slate-500 pointer-events-none" />
               <select
                 value={deptFilter}
                 onChange={(e) => setDeptFilter(e.target.value)}
@@ -222,7 +222,7 @@ export default function SpecialistPatientsClient({
             {/* Date Filters */}
             <div className="md:col-span-4 flex gap-2">
               <div className="relative flex-1">
-                <Calendar className="absolute left-3 top-3 h-4 w-4 text-slate-450 dark:text-slate-500 pointer-events-none" />
+                <Calendar className="absolute left-3 top-3 h-4 w-4 text-slate-400 dark:text-slate-500 pointer-events-none" />
                 <input
                   type="date"
                   value={startDate}
@@ -232,7 +232,7 @@ export default function SpecialistPatientsClient({
                 />
               </div>
               <div className="relative flex-1">
-                <Calendar className="absolute left-3 top-3 h-4 w-4 text-slate-450 dark:text-slate-500 pointer-events-none" />
+                <Calendar className="absolute left-3 top-3 h-4 w-4 text-slate-400 dark:text-slate-500 pointer-events-none" />
                 <input
                   type="date"
                   value={endDate}
@@ -264,7 +264,7 @@ export default function SpecialistPatientsClient({
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 font-semibold border-y border-slate-100 dark:border-slate-850">
+                <tr className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 font-semibold border-y border-slate-100 dark:border-slate-800">
                   <th className="p-4">Code</th>
                   <th className="p-4">Patient Name</th>
                   <th className="p-4">Demographics</th>
@@ -286,14 +286,14 @@ export default function SpecialistPatientsClient({
                   </tr>
                 ) : currentItems.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-12 text-center text-slate-400 dark:text-slate-550">
+                    <td colSpan={7} className="p-12 text-center text-slate-400 dark:text-slate-500">
                       No patients match search terms or department filters.
                     </td>
                   </tr>
                 ) : (
                   currentItems.map((patient) => (
                     <tr key={patient.id} className="hover:bg-slate-50/30 dark:hover:bg-slate-900/5 transition">
-                      <td className="p-4 font-mono font-bold text-slate-850 dark:text-slate-200">
+                      <td className="p-4 font-mono font-bold text-slate-800 dark:text-slate-200">
                         {patient.patient_code}
                       </td>
                       <td className="p-4 font-semibold text-slate-800 dark:text-slate-100">
@@ -318,7 +318,7 @@ export default function SpecialistPatientsClient({
                           <span className="text-[10px] text-slate-400">No records</span>
                         )}
                       </td>
-                      <td className="p-4 font-mono text-[10px] text-slate-450 dark:text-slate-500">
+                      <td className="p-4 font-mono text-[10px] text-slate-400 dark:text-slate-500">
                         {formatPhDate(patient.last_test_date)}
                       </td>
                       <td className="p-4 pr-6 text-right flex items-center justify-end gap-2">
@@ -354,7 +354,7 @@ export default function SpecialistPatientsClient({
 
           {/* Pagination Controls */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between p-4 border-t border-slate-100 dark:border-slate-850 text-xs">
+            <div className="flex items-center justify-between p-4 border-t border-slate-100 dark:border-slate-800 text-xs">
               <p className="text-slate-500">
                 Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, patients.length)} of {patients.length} patients
               </p>
@@ -362,7 +362,7 @@ export default function SpecialistPatientsClient({
                 <button
                   disabled={currentPage === 1}
                   onClick={() => setCurrentPage(prev => prev - 1)}
-                  className="p-1.5 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-650 hover:bg-slate-50 dark:hover:bg-slate-900 disabled:opacity-50 disabled:pointer-events-none transition"
+                  className="p-1.5 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-900 disabled:opacity-50 disabled:pointer-events-none transition"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
@@ -372,7 +372,7 @@ export default function SpecialistPatientsClient({
                 <button
                   disabled={currentPage === totalPages}
                   onClick={() => setCurrentPage(prev => prev + 1)}
-                  className="p-1.5 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-650 hover:bg-slate-50 dark:hover:bg-slate-900 disabled:opacity-50 disabled:pointer-events-none transition"
+                  className="p-1.5 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-900 disabled:opacity-50 disabled:pointer-events-none transition"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </button>
@@ -383,7 +383,7 @@ export default function SpecialistPatientsClient({
       </Card>
 
       {/* Static Disclaimer */}
-      <div className="p-4 rounded-xl border border-amber-100 dark:border-amber-900/30 bg-amber-50/30 dark:bg-amber-950/10 text-amber-850 dark:text-amber-300 text-xs leading-relaxed flex gap-2">
+      <div className="p-4 rounded-xl border border-amber-100 dark:border-amber-900/30 bg-amber-50/30 dark:bg-amber-950/10 text-amber-800 dark:text-amber-300 text-xs leading-relaxed flex gap-2">
         <Activity className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
         <div>
           <span className="font-bold">No AI Diagnostics Inference:</span> This directory provides clinical descriptive analytics only. No machine learning diagnostics or automated diagnostic suggestions are applied to this patient data (SO-C Compliance).
@@ -426,7 +426,7 @@ export default function SpecialistPatientsClient({
                     id="gender"
                     name="gender"
                     required
-                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-xs bg-white dark:bg-slate-950 text-slate-850 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 h-9"
+                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-xs bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 h-9"
                   >
                     <option value="male">Male</option>
                     <option value="female">Female</option>

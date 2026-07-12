@@ -183,7 +183,7 @@ export default function TemplatesClient({ patientIdentity }: TemplatesClientProp
 
           {/* Editable template fields */}
           <Card className="border border-slate-200/80 dark:border-slate-800 shadow-sm">
-            <CardHeader className="pb-3 border-b border-slate-100 dark:border-slate-850">
+            <CardHeader className="pb-3 border-b border-slate-100 dark:border-slate-800">
               <CardTitle className="text-sm font-semibold">Structured Input Fields</CardTitle>
               <CardDescription className="text-xs">
                 Fill in all details below. Fields marked with an asterisk (*) are required.
@@ -197,7 +197,7 @@ export default function TemplatesClient({ patientIdentity }: TemplatesClientProp
                   <div key={field.key} className="space-y-1.5">
                     <Label 
                       htmlFor={`field-${field.key}`} 
-                      className="text-xs font-semibold text-slate-700 dark:text-slate-350 flex items-center gap-1"
+                      className="text-xs font-semibold text-slate-700 dark:text-slate-400 flex items-center gap-1"
                     >
                       {field.label}
                       {field.required && <span className="text-red-500">*</span>}
@@ -242,7 +242,7 @@ export default function TemplatesClient({ patientIdentity }: TemplatesClientProp
                         value={val}
                         onChange={(e) => handleFieldChange(field.key, e.target.value)}
                         required={field.required}
-                        className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-xs bg-white dark:bg-slate-950 text-slate-850 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 h-10 appearance-none"
+                        className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-xs bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 h-10 appearance-none"
                       >
                         <option value="">-- Select option --</option>
                         {field.options?.map(opt => (

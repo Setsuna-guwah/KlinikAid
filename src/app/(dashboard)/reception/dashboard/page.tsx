@@ -205,7 +205,7 @@ export default async function ReceptionDashboardPage() {
               Key front-desk protocols for validating patient documents
             </CardDescription>
           </CardHeader>
-          <CardContent className="pt-6 space-y-4 text-sm leading-relaxed text-slate-600 dark:text-slate-350">
+          <CardContent className="pt-6 space-y-4 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
             <p>
               Receptionists serve as the critical entry point to KlinikAid. Your workflows directly impact patient safety, data integrity, and department wait times:
             </p>

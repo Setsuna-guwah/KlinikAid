@@ -90,7 +90,7 @@ export default function SpecialistDashboardClient({
             <div className="text-3xl font-extrabold text-slate-900 dark:text-white">
               {stats.totalPatients}
             </div>
-            <p className="text-[11px] text-slate-450 dark:text-slate-500 mt-1">
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
               Registered patient directory records
             </p>
           </CardContent>
@@ -110,7 +110,7 @@ export default function SpecialistDashboardClient({
             <div className="text-3xl font-extrabold text-slate-900 dark:text-white">
               {stats.flaggedThisWeek}
             </div>
-            <p className="text-[11px] text-slate-450 dark:text-slate-500 mt-1">
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
               Out-of-bounds parameters needing review
             </p>
           </CardContent>
@@ -130,7 +130,7 @@ export default function SpecialistDashboardClient({
             <div className="text-3xl font-extrabold text-slate-900 dark:text-white">
               {stats.departmentsCovered}
             </div>
-            <p className="text-[11px] text-slate-450 dark:text-slate-500 mt-1">
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
               Active diagnostic departments in records
             </p>
           </CardContent>
@@ -154,7 +154,7 @@ export default function SpecialistDashboardClient({
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 font-semibold border-y border-slate-100 dark:border-slate-850">
+                  <tr className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 font-semibold border-y border-slate-100 dark:border-slate-800">
                     <th className="p-3 pl-4">Patient</th>
                     <th className="p-3">Test</th>
                     <th className="p-3 text-center">Value</th>
@@ -175,7 +175,7 @@ export default function SpecialistDashboardClient({
                       <tr key={record.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/10 transition">
                         <td className="p-3 pl-4 font-semibold text-slate-800 dark:text-slate-200">
                           {record.patient ? `${record.patient.first_name} ${record.patient.last_name}` : "Unknown"}
-                          <div className="text-[10px] font-normal text-slate-450 dark:text-slate-500 mt-0.5">
+                          <div className="text-[10px] font-normal text-slate-400 dark:text-slate-500 mt-0.5">
                             {record.patient ? getPatientCode(record.patient.id) : ""}
                           </div>
                         </td>
@@ -194,7 +194,7 @@ export default function SpecialistDashboardClient({
                             "No limit"
                           )}
                         </td>
-                        <td className="p-3 text-slate-450 font-mono text-[10px]">
+                        <td className="p-3 text-slate-400 font-mono text-[10px]">
                           {formatPhTime(record.created_at)}
                         </td>
                         <td className="p-3 pr-4 text-right">
@@ -239,13 +239,13 @@ export default function SpecialistDashboardClient({
               recentPatients.map((p) => (
                 <div 
                   key={p.id} 
-                  className="flex items-center justify-between p-3 border border-slate-100 dark:border-slate-850 rounded-lg hover:border-slate-200 dark:hover:border-slate-800 transition bg-slate-50/20 dark:bg-slate-900/5"
+                  className="flex items-center justify-between p-3 border border-slate-100 dark:border-slate-800 rounded-lg hover:border-slate-200 dark:hover:border-slate-800 transition bg-slate-50/20 dark:bg-slate-900/5"
                 >
                   <div className="space-y-1">
                     <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
                       {p.first_name} {p.last_name}
                     </p>
-                    <div className="flex items-center gap-1.5 text-[10px] text-slate-450 dark:text-slate-550">
+                    <div className="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-500">
                       <span className="font-mono">{getPatientCode(p.id)}</span>
                       <span>•</span>
                       <span>Active: {formatPhTime(p.last_activity)}</span>
@@ -274,7 +274,7 @@ export default function SpecialistDashboardClient({
       </div>
 
       {/* Static Disclaimer */}
-      <div className="p-4 rounded-xl border border-amber-100 dark:border-amber-900/30 bg-amber-50/30 dark:bg-amber-950/10 text-amber-850 dark:text-amber-300 text-xs leading-relaxed flex gap-2">
+      <div className="p-4 rounded-xl border border-amber-100 dark:border-amber-900/30 bg-amber-50/30 dark:bg-amber-950/10 text-amber-800 dark:text-amber-300 text-xs leading-relaxed flex gap-2">
         <Activity className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
         <div>
           <span className="font-bold">No AI Diagnostics Inference:</span> This dashboard provides clinical descriptive analytics only. No machine learning diagnostics or automated diagnostic suggestions are applied to this patient data (SO-C Compliance).

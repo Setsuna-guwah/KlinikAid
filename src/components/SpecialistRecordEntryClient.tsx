@@ -157,14 +157,14 @@ export default function SpecialistRecordEntryClient({ patient }: SpecialistRecor
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-            <Activity className="h-5 w-5 text-emerald-650" />
+            <Activity className="h-5 w-5 text-emerald-600" />
             Enter Private Record
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Log clinical data for <span className="font-semibold text-slate-700 dark:text-slate-350">{patient.last_name}, {patient.first_name}</span>.
+            Log clinical data for <span className="font-semibold text-slate-700 dark:text-slate-400">{patient.last_name}, {patient.first_name}</span>.
           </p>
         </div>
-        <div className="flex items-center gap-2 text-xs font-semibold text-emerald-650 dark:text-emerald-450 bg-emerald-50 dark:bg-emerald-950/20 px-3 py-1.5 rounded-lg border border-emerald-100 dark:border-emerald-900/10">
+        <div className="flex items-center gap-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 px-3 py-1.5 rounded-lg border border-emerald-100 dark:border-emerald-900/10">
           <ShieldCheck className="h-4 w-4" />
           End-to-End Isolated
         </div>
@@ -172,7 +172,7 @@ export default function SpecialistRecordEntryClient({ patient }: SpecialistRecor
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <Card className="border border-slate-200/80 dark:border-slate-800 shadow-sm">
-          <CardHeader className="pb-3 border-b border-slate-100 dark:border-slate-850">
+          <CardHeader className="pb-3 border-b border-slate-100 dark:border-slate-800">
             <CardTitle className="text-sm font-semibold">Test Details</CardTitle>
             <CardDescription className="text-xs">
               Select the diagnostic parameter group and record values.
@@ -188,7 +188,7 @@ export default function SpecialistRecordEntryClient({ patient }: SpecialistRecor
                   setSelectedTestType(e.target.value);
                   setParamValues({});
                 }}
-                className="w-full pl-3 pr-8 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-950 text-slate-850 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 h-10 appearance-none"
+                className="w-full pl-3 pr-8 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 h-10 appearance-none"
               >
                 {Object.keys(LAB_TEST_GROUPS).map(g => (
                   <option key={g} value={g}>{g}</option>
@@ -207,7 +207,7 @@ export default function SpecialistRecordEntryClient({ patient }: SpecialistRecor
                   return (
                     <div key={paramName} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center border-b border-slate-50 dark:border-slate-900 pb-3">
                       <div className="md:col-span-4">
-                        <Label htmlFor={`param-${paramName}`} className="text-xs font-semibold text-slate-700 dark:text-slate-350">
+                        <Label htmlFor={`param-${paramName}`} className="text-xs font-semibold text-slate-700 dark:text-slate-400">
                           {paramName}
                         </Label>
                         {rangeText && (
@@ -242,7 +242,7 @@ export default function SpecialistRecordEntryClient({ patient }: SpecialistRecor
                             Normal
                           </span>
                         ) : (
-                          <span className="text-[10px] text-slate-450 flex items-center gap-1">
+                          <span className="text-[10px] text-slate-400 flex items-center gap-1">
                             <Info className="h-3.5 w-3.5 text-slate-400" />
                             Reference matches {patient.gender}
                           </span>

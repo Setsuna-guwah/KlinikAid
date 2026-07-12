@@ -68,12 +68,12 @@ const CustomTooltip = ({
         <p className="font-semibold text-slate-500 dark:text-slate-400">
           {formatPhTimeFull(data.result_date)}
         </p>
-        <p className="text-sm font-bold text-slate-850 dark:text-slate-100">
+        <p className="text-sm font-bold text-slate-800 dark:text-slate-100">
           Value: <span className={data.is_flagged ? "text-rose-600 font-extrabold" : "text-emerald-600"}>
             {data.test_value} {data.unit}
           </span>
         </p>
-        <p className="text-slate-550 dark:text-slate-350">
+        <p className="text-slate-500 dark:text-slate-400">
           Status: {data.is_flagged ? (
             <span className="text-rose-500 font-bold uppercase text-[9px] border border-rose-200 bg-rose-50/50 px-1 rounded">
               Out of Range (Flagged)
@@ -88,7 +88,7 @@ const CustomTooltip = ({
           </p>
         )}
         {data.notes && (
-          <p className="text-slate-450 dark:text-slate-400 italic mt-1 border-t border-slate-100 dark:border-slate-800 pt-1">
+          <p className="text-slate-400 dark:text-slate-400 italic mt-1 border-t border-slate-100 dark:border-slate-800 pt-1">
             Note: &ldquo;{data.notes}&rdquo;
           </p>
         )}
@@ -217,23 +217,23 @@ export default function SpecialistAnalyticsClient({
                 <User className="h-5 w-5" />
               </div>
               <div>
-                <p className="text-[10px] uppercase font-semibold text-slate-450 dark:text-slate-500">Patient Name</p>
+                <p className="text-[10px] uppercase font-semibold text-slate-400 dark:text-slate-500">Patient Name</p>
                 <p className="text-sm font-bold text-slate-800 dark:text-slate-100">{patientName}</p>
               </div>
             </div>
             <div>
-              <p className="text-[10px] uppercase font-semibold text-slate-450 dark:text-slate-500">Patient Code</p>
-              <p className="text-sm font-mono font-bold text-slate-800 dark:text-slate-150">{patientCode}</p>
+              <p className="text-[10px] uppercase font-semibold text-slate-400 dark:text-slate-500">Patient Code</p>
+              <p className="text-sm font-mono font-bold text-slate-800 dark:text-slate-100">{patientCode}</p>
             </div>
             <div>
-              <p className="text-[10px] uppercase font-semibold text-slate-450 dark:text-slate-500">Demographics</p>
-              <p className="text-sm font-semibold text-slate-700 dark:text-slate-350">
+              <p className="text-[10px] uppercase font-semibold text-slate-400 dark:text-slate-500">Demographics</p>
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-400">
                 {getAge(dob)} years old • <span className="capitalize">{gender}</span>
               </p>
             </div>
             <div>
-              <p className="text-[10px] uppercase font-semibold text-slate-450 dark:text-slate-500">Birth Date</p>
-              <p className="text-sm font-semibold text-slate-700 dark:text-slate-350">{formatPhTime(dob)}</p>
+              <p className="text-[10px] uppercase font-semibold text-slate-400 dark:text-slate-500">Birth Date</p>
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-400">{formatPhTime(dob)}</p>
             </div>
           </div>
         </CardContent>
@@ -241,7 +241,7 @@ export default function SpecialistAnalyticsClient({
 
       {/* Chart Section */}
       <Card className="border border-slate-200/80 dark:border-slate-800 shadow-md">
-        <CardHeader className="pb-2 border-b border-slate-100 dark:border-slate-850 flex flex-row justify-between items-center">
+        <CardHeader className="pb-2 border-b border-slate-100 dark:border-slate-800 flex flex-row justify-between items-center">
           <div>
             <CardTitle className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <TrendingUp className="h-4.5 w-4.5 text-indigo-500" />
@@ -259,16 +259,16 @@ export default function SpecialistAnalyticsClient({
         </CardHeader>
         <CardContent className="pt-6">
           {loading ? (
-            <div className="h-[400px] flex items-center justify-center text-slate-450 dark:text-slate-500 text-xs">
+            <div className="h-[400px] flex items-center justify-center text-slate-400 dark:text-slate-500 text-xs">
               <RefreshCw className="h-5 w-5 animate-spin text-indigo-500 mr-2" />
               Refreshing database statistics...
             </div>
           ) : records.length === 0 ? (
-            <div className="h-[400px] flex items-center justify-center text-slate-400 dark:text-slate-500 text-xs border border-dashed border-slate-100 dark:border-slate-850 rounded-xl">
+            <div className="h-[400px] flex items-center justify-center text-slate-400 dark:text-slate-500 text-xs border border-dashed border-slate-100 dark:border-slate-800 rounded-xl">
               No historical data recorded for metric: {selectedMetric}
             </div>
           ) : hasOnlyTextValues ? (
-            <div className="h-[400px] flex flex-col items-center justify-center text-center text-slate-500 dark:text-slate-400 text-xs border border-dashed border-slate-100 dark:border-slate-850 rounded-xl bg-slate-50/40 dark:bg-slate-900/20">
+            <div className="h-[400px] flex flex-col items-center justify-center text-center text-slate-500 dark:text-slate-400 text-xs border border-dashed border-slate-100 dark:border-slate-800 rounded-xl bg-slate-50/40 dark:bg-slate-900/20">
               <FileText className="h-8 w-8 text-slate-300 dark:text-slate-600 mb-2" />
               <span className="font-bold text-slate-700 dark:text-slate-300">Not chartable - text parameter</span>
               <span className="mt-1 max-w-xs leading-relaxed">
@@ -358,10 +358,10 @@ export default function SpecialistAnalyticsClient({
       </Card>
 
       {/* Prominent NO AI Disclaimer */}
-      <div className="p-4 rounded-xl border border-amber-100 dark:border-amber-900/30 bg-amber-50/20 dark:bg-amber-950/10 text-amber-850 dark:text-amber-300 text-xs leading-relaxed flex gap-2.5 shadow-sm">
+      <div className="p-4 rounded-xl border border-amber-100 dark:border-amber-900/30 bg-amber-50/20 dark:bg-amber-950/10 text-amber-800 dark:text-amber-300 text-xs leading-relaxed flex gap-2.5 shadow-sm">
         <AlertCircle className="h-4.5 w-4.5 text-amber-500 shrink-0 mt-0.5" />
         <div>
-          <span className="font-bold uppercase tracking-wider text-[10px] bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 rounded mr-1.5 text-amber-900 dark:text-amber-250">
+          <span className="font-bold uppercase tracking-wider text-[10px] bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 rounded mr-1.5 text-amber-900 dark:text-amber-200">
             SO-C Disclaimer
           </span>
           <span className="font-bold">No AI Diagnostic Inference Applied:</span> This longitudinal chart maps historical medical data points directly from SQL server storage. No automated machine diagnostics, diagnostics suggestions, or predictive algorithms are used (Specific Objective C compliant).
@@ -383,7 +383,7 @@ export default function SpecialistAnalyticsClient({
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 font-semibold border-y border-slate-100 dark:border-slate-850">
+                <tr className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 font-semibold border-y border-slate-100 dark:border-slate-800">
                   <th className="p-3 pl-4">Timestamp (UTC+8)</th>
                   <th className="p-3">Technologist</th>
                   <th className="p-3 text-center">Value</th>
@@ -405,16 +405,16 @@ export default function SpecialistAnalyticsClient({
 
                     return (
                     <tr key={rec.id} className="hover:bg-slate-50/25 dark:hover:bg-slate-900/5 transition">
-                      <td className="p-3 pl-4 font-mono text-[10px] text-slate-450 dark:text-slate-500">
+                      <td className="p-3 pl-4 font-mono text-[10px] text-slate-400 dark:text-slate-500">
                         {formatPhTimeFull(rec.result_date)}
                       </td>
-                      <td className="p-3 text-slate-700 dark:text-slate-350">
+                      <td className="p-3 text-slate-700 dark:text-slate-400">
                         {rec.recorder?.full_name || "Unknown Staff"}
                         <Badge variant="outline" className="ml-1.5 px-1 py-0 text-[8px] tracking-wider uppercase border-slate-200 text-slate-400">
                           {rec.department}
                         </Badge>
                       </td>
-                      <td className="p-3 text-center font-bold text-slate-800 dark:text-slate-150">
+                      <td className="p-3 text-center font-bold text-slate-800 dark:text-slate-100">
                         {rec.test_value} {rec.unit}
                       </td>
                       <td className="p-3 text-slate-500 font-mono text-[10px]">

@@ -251,7 +251,7 @@ export default function DocumentSubmitClient() {
               className={`relative border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center transition-all ${
                 dragActive
                   ? "border-emerald-500 bg-emerald-500/5 dark:bg-emerald-950/10"
-                  : "border-slate-200 hover:border-slate-350 dark:border-slate-800 dark:hover:border-slate-700"
+                  : "border-slate-200 hover:border-slate-400 dark:border-slate-800 dark:hover:border-slate-700"
               }`}
               onDragEnter={handleDrag}
               onDragOver={handleDrag}
@@ -283,7 +283,7 @@ export default function DocumentSubmitClient() {
               </label>
             </div>
           ) : (
-            <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200/85 dark:border-slate-850 flex items-center justify-between shadow-sm">
+            <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200/85 dark:border-slate-800 flex items-center justify-between shadow-sm">
               <div className="flex items-center space-x-3.5 min-w-0">
                 <div className="p-2.5 bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 rounded-lg">
                   <FileText className="h-6 w-6" />
@@ -327,7 +327,7 @@ export default function DocumentSubmitClient() {
           <div className="p-4 bg-slate-50/50 dark:bg-slate-900/20 rounded-lg border border-slate-100 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400 leading-relaxed flex items-start gap-3">
             <Info className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
             <div>
-              <p className="font-semibold text-slate-700 dark:text-slate-350">Submission Rules & File Size Restrictions:</p>
+              <p className="font-semibold text-slate-700 dark:text-slate-400">Submission Rules & File Size Restrictions:</p>
               <ul className="list-disc list-inside mt-1 space-y-1 pl-1">
                 <li>Documents are immutable once uploaded. Correct errors by deleting pending files and re-uploading.</li>
                 <li>Maximum file size is restricted to <strong>5MB</strong> per request.</li>
@@ -343,7 +343,7 @@ export default function DocumentSubmitClient() {
             variant="outline"
             disabled={isSubmitting || !selectedFile}
             onClick={() => void removeFile()}
-            className="border-slate-200 dark:border-slate-850 hover:bg-slate-50 dark:hover:bg-slate-900/60"
+            className="border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900/60"
           >
             {qualityWarningAssessmentId ? "Upload Clearer Image" : "Clear"}
           </Button>
