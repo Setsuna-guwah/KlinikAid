@@ -36,7 +36,7 @@ export async function extractDocumentText(
           mimeType: mimeType
         }
       },
-      "Extract all clinical, medical, administrative, and schedule text verbatim from this document. Do not summarize, alter, or omit any details. Format it as clean markdown."
+      "Extract all clinical, medical, administrative, and schedule text verbatim from this document. Do not summarize, alter, or omit any details. Format it as clean markdown. If no readable text can be extracted because the file is blurry, illegible, blank, unrelated, or otherwise unreadable, respond with exactly OCR_FAILED and nothing else."
     ]);
 
     const usageMetadata = result.response.usageMetadata;

@@ -9,6 +9,23 @@ import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_TYPES = ["application/pdf", "image/jpeg", "image/png"];
 const DOCUMENT_BUCKET = "patient-documents";
+const OCR_FAILURE_TOKEN = "OCR_FAILED";
+const OCR_FAILURE_PHRASES = [
+  "cannot extract",
+  "can't extract",
+  "unable to extract",
+  "cannot read",
+  "can't read",
+  "unable to read",
+  "i am sorry",
+  "i'm sorry",
+  "too blurry",
+  "blurry",
+  "illegible",
+  "not legible",
+  "no readable text",
+  "no text",
+];
 
 interface PendingDocumentOcrRow {
   id: string;
@@ -59,6 +76,20 @@ function validateUploadedFile(file: File | null) {
   }
 
   return null;
+}
+
+function isPoorQualityOcrText(text: string) {
+  const normalizedText = text.trim().toLowerCase();
+
+  if (!normalizedText) {
+    return true;
+  }
+
+  if (normalizedText === OCR_FAILURE_TOKEN.toLowerCase()) {
+    return true;
+  }
+
+  return OCR_FAILURE_PHRASES.some((phrase) => normalizedText.includes(phrase));
 }
 
 export async function assessDocumentQualityAction(formData: FormData) {
@@ -133,6 +164,9 @@ export async function assessDocumentQualityAction(formData: FormData) {
     console.error("[assessDocumentQualityAction] OCR error during quality assessment:", ocrError);
   }
 
+  const isPoorQualityOcr = isPoorQualityOcrText(ocrText);
+  const storedOcrText = isPoorQualityOcr ? "" : ocrText;
+
   const { error: pendingError } = await supabase
     .from("pending_document_ocr")
     .insert({
@@ -142,7 +176,7 @@ export async function assessDocumentQualityAction(formData: FormData) {
       file_name: file.name,
       file_type: file.type,
       file_path: pendingFilePath,
-      ocr_text: ocrText,
+      ocr_text: storedOcrText,
       prompt_token_count: promptTokenCount,
       candidates_token_count: candidatesTokenCount,
       total_token_count: totalTokenCount,
@@ -157,7 +191,7 @@ export async function assessDocumentQualityAction(formData: FormData) {
   return {
     success: true,
     assessmentId,
-    isOcrTextEmpty: ocrText.trim().length === 0,
+    isOcrTextEmpty: isPoorQualityOcr,
   };
 }
 
