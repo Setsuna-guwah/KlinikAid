@@ -14,7 +14,7 @@ export interface SpecialistPatientResult {
   patientId?: string;
 }
 
-const DOB_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const DOB_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
 const genderSchema = z.enum(["male", "female", "other"]);
 const optionalEmailSchema = z.string().email("Invalid email address");
 
