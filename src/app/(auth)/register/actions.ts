@@ -18,6 +18,9 @@ const registerSchema = z.object({
   gender: z.enum(["male", "female", "other"], { message: "Select a valid gender" }),
   contactNumber: z.string().refine((v) => validateContactNumber(v).valid, CONTACT_REQUIREMENT_TEXT),
   address: z.string().min(1, "Address is required"),
+  acceptedTerms: z
+    .string()
+    .refine((value) => value === "true", "You must accept the KlinikAid Terms and Conditions to register."),
 });
 
 export interface RegisterResult {
@@ -40,6 +43,7 @@ export async function registerAction(
   const gender = formData.get("gender") as string;
   const contactNumber = formData.get("contactNumber") as string;
   const address = formData.get("address") as string;
+  const acceptedTerms = formData.get("acceptedTerms") as string;
 
   // 1. Zod Validation
   const validation = registerSchema.safeParse({
@@ -51,6 +55,7 @@ export async function registerAction(
     gender,
     contactNumber,
     address,
+    acceptedTerms,
   });
 
   if (!validation.success) {

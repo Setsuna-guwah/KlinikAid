@@ -12,6 +12,7 @@ import { ShieldAlert, Loader2, User, Mail, Lock, Phone, Calendar, MapPin, MailCh
 import Image from "next/image";
 import Link from "next/link";
 import { PASSWORD_REQUIREMENT_TEXT, validateAge, validatePassword } from "@/lib/validation";
+import TermsAndConditionsModal from "@/components/TermsAndConditionsModal";
 
 function RegisterForm() {
   const router = useRouter();
@@ -19,6 +20,9 @@ function RegisterForm() {
   const [emailPending, setEmailPending] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [passwordTouched, setPasswordTouched] = useState(false);
+  const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
+  const [hasReadTerms, setHasReadTerms] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   const [formData, setFormData] = useState({
     email: "",
@@ -52,6 +56,7 @@ function RegisterForm() {
       Object.entries(formData).forEach(([key, val]) => {
         data.append(key, val);
       });
+      data.append("acceptedTerms", acceptedTerms ? "true" : "false");
 
       try {
         const result = await registerAction(null, data);
@@ -286,13 +291,49 @@ function RegisterForm() {
                   </p>
                 </div>
 
+                <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/40 p-4 space-y-2">
+                  <div className="grid grid-cols-[1rem_1fr] items-start gap-3">
+                    <input
+                      id="acceptedTerms"
+                      type="checkbox"
+                      checked={acceptedTerms}
+                      onChange={(e) => setAcceptedTerms(e.target.checked)}
+                      disabled={!hasReadTerms || isPending}
+                      required
+                      className="mt-1 h-4 w-4 min-h-4 min-w-4 shrink-0 rounded border-slate-400 text-accentBlue-600 focus:ring-accentBlue-500 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                    />
+                    <div
+                      className={`text-xs leading-relaxed select-none ${
+                        hasReadTerms
+                          ? "text-slate-700 dark:text-slate-300"
+                          : "text-slate-500 dark:text-slate-500"
+                      }`}
+                    >
+                      I accept the KlinikAid{" "}
+                      <button
+                        type="button"
+                        onClick={() => setIsTermsModalOpen(true)}
+                        className="font-semibold text-accentBlue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-accentBlue-500/40 rounded-sm"
+                      >
+                        Terms and Conditions
+                      </button>
+                      .
+                    </div>
+                  </div>
+                  {!hasReadTerms && (
+                    <p className="pl-7 text-xs text-slate-500 dark:text-slate-400">
+                      Please open and scroll through the Terms and Conditions before accepting.
+                    </p>
+                  )}
+                </div>
+
               </CardContent>
 
               <CardFooter className="flex flex-col space-y-4">
                 <Button
                   type="submit"
                   className="w-full bg-primary hover:bg-primary/90 text-white font-medium shadow-md shadow-primary/10 transition-all duration-200"
-                  disabled={isPending}
+                  disabled={isPending || !acceptedTerms}
                 >
                   {isPending ? (
                     <>
@@ -315,6 +356,11 @@ function RegisterForm() {
           </Card>
         )}
       </div>
+      <TermsAndConditionsModal
+        open={isTermsModalOpen}
+        onOpenChange={setIsTermsModalOpen}
+        onReadComplete={() => setHasReadTerms(true)}
+      />
     </div>
   );
 }
