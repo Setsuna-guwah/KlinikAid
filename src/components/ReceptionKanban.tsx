@@ -5,6 +5,7 @@ import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { createClient } from "@/lib/supabase/client";
 import { Document } from "@/types";
+import type { DetectedClinicTest } from "@/lib/documents/detectRequestedTests";
 import { 
   FileText, 
   CheckCircle2, 
@@ -301,6 +302,9 @@ export default function ReceptionKanban({ initialDocuments }: ReceptionKanbanPro
                 ) : (
                   list.map((doc) => {
                     const isStaffReview = col.id === "staff_review";
+                    const metadata = doc.extracted_metadata as { selected_tests?: DetectedClinicTest[] } | null;
+                    const selectedTests = Array.isArray(metadata?.selected_tests) ? metadata.selected_tests : [];
+
                     return (
                       <Link
                         key={doc.id}
@@ -331,7 +335,21 @@ export default function ReceptionKanban({ initialDocuments }: ReceptionKanbanPro
                               <FileText className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
                               <span className="truncate max-w-[150px]">{doc.file_name}</span>
                             </div>
-                            
+
+                            {selectedTests.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5">
+                                {selectedTests.map((test) => (
+                                  <Badge
+                                    key={test.id}
+                                    variant="outline"
+                                    className="border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/25 dark:text-emerald-300 text-[10px] px-1.5 py-0"
+                                  >
+                                    {test.label}
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
+                             
                             <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-900 pt-2 text-[10px] text-slate-400 dark:text-slate-500 font-medium">
                               <span className="flex items-center gap-1">
                                 <User className="h-2.5 w-2.5" />
