@@ -17,7 +17,10 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { extractLabResultValuesAction } from "@/app/(dashboard)/department/records/entry/actions";
+import {
+  extractDepartmentTextAction,
+  extractLabResultValuesAction,
+} from "@/app/(dashboard)/department/records/entry/actions";
 
 const STRICT_NUMBER_REGEX = /^-?\d+(\.\d+)?$/;
 
@@ -87,6 +90,8 @@ export default function RecordEntryClient({
   const [labOcrFile, setLabOcrFile] = useState<File | null>(null);
   const [isExtractingLabValues, setIsExtractingLabValues] = useState(false);
   const [ocrSuggestedParams, setOcrSuggestedParams] = useState<string[]>([]);
+  const [departmentTextOcrFile, setDepartmentTextOcrFile] = useState<File | null>(null);
+  const [departmentTextOcrTarget, setDepartmentTextOcrTarget] = useState<"findings" | "impression" | null>(null);
 
   // Lab parameter values & blur validation states
   const [paramValues, setParamValues] = useState<{ [key: string]: string }>({});
@@ -227,6 +232,42 @@ export default function RecordEntryClient({
       toast.error(message);
     } finally {
       setIsExtractingLabValues(false);
+    }
+  };
+
+  const handleExtractDepartmentText = async (targetField: "findings" | "impression") => {
+    if (!departmentTextOcrFile) {
+      toast.error("Upload a result sheet before extracting text.");
+      return;
+    }
+
+    setDepartmentTextOcrTarget(targetField);
+    try {
+      const data = new FormData();
+      data.append("file", departmentTextOcrFile);
+      data.append("department", activeDept);
+      data.append("targetField", targetField);
+
+      const result = await extractDepartmentTextAction(data);
+      if (!result.success || !result.text?.trim()) {
+        toast.warning(result.error || "Could not extract readable text. Existing text was not changed.");
+        return;
+      }
+
+      if (targetField === "findings") {
+        setFindings(result.text);
+      } else {
+        setImpression(result.text);
+      }
+
+      toast.success(
+        `OCR text inserted into ${targetField === "findings" ? "Clinical Findings" : "Diagnostic Impression"}. Please verify before saving.`
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to extract text.";
+      toast.error(message);
+    } finally {
+      setDepartmentTextOcrTarget(null);
     }
   };
 
@@ -615,6 +656,63 @@ export default function RecordEntryClient({
                     onChange={(e) => setCustomTestType(e.target.value)}
                     className="w-full px-4 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500"
                   />
+                </div>
+
+                <div className="rounded-2xl border border-cyan-100 dark:border-cyan-900/50 bg-cyan-50/60 dark:bg-cyan-950/20 p-4 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 rounded-xl bg-cyan-100 dark:bg-cyan-900/50 p-2">
+                      <FileSearch className="h-4 w-4 text-cyan-700 dark:text-cyan-300" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                        Extract Text from Result Sheet
+                      </h3>
+                      <p className="text-xs text-slate-600 dark:text-slate-300">
+                        OCR text is a draft. Verify extracted text, especially handwritten sheets, before saving.
+                      </p>
+                    </div>
+                  </div>
+
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,application/pdf"
+                    disabled={!!departmentTextOcrTarget || isSubmitting}
+                    onChange={(e) => setDepartmentTextOcrFile(e.target.files?.[0] || null)}
+                    className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-xs text-slate-700 dark:text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-cyan-700 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white disabled:opacity-50"
+                  />
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      onClick={() => handleExtractDepartmentText("findings")}
+                      disabled={!departmentTextOcrFile || !!departmentTextOcrTarget || isSubmitting}
+                      className="bg-cyan-700 hover:bg-cyan-800 text-white text-xs font-semibold"
+                    >
+                      {departmentTextOcrTarget === "findings" ? (
+                        <>
+                          <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                          Extracting...
+                        </>
+                      ) : (
+                        "Extract to Findings"
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => handleExtractDepartmentText("impression")}
+                      disabled={!departmentTextOcrFile || !!departmentTextOcrTarget || isSubmitting}
+                      className="bg-cyan-700 hover:bg-cyan-800 text-white text-xs font-semibold"
+                    >
+                      {departmentTextOcrTarget === "impression" ? (
+                        <>
+                          <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                          Extracting...
+                        </>
+                      ) : (
+                        "Extract to Impression"
+                      )}
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">
