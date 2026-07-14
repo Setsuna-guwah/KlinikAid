@@ -10,8 +10,14 @@ export const dynamic = "force-dynamic";
 
 function normalizeEmployeeType(value: unknown) {
   if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed ? trimmed.slice(0, 80) : null;
+  const titles = value
+    .split("|")
+    .map((title) => title.trim().replace(/\|/g, ""))
+    .filter(Boolean)
+    .slice(0, 5)
+    .map((title) => title.slice(0, 80));
+
+  return titles.length ? titles.join("|") : null;
 }
 
 // PUT: update staff details (full name, email, role, department)

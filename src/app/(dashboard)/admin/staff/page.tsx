@@ -25,6 +25,7 @@ import {
   Loader2,
   ShieldAlert,
   Copy,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { sendStaffResetEmailAction } from "./actions";
@@ -36,7 +37,7 @@ const staffFormSchema = z.object({
   password: z.string().min(6, "Password must be at least 6 characters").or(z.string().length(0)), // optional on edit
   role: z.enum(["admin", "receptionist", "department_staff", "medical_specialist"]),
   department: z.enum(["laboratory", "imaging", "ultrasound", "ecg"]).nullable().optional(),
-  employeeType: z.string().max(80, "Employee type must be 80 characters or fewer").optional(),
+  employeeType: z.string().max(404, "Position titles must be 80 characters or fewer, up to 5 titles.").optional(),
 }).superRefine((data, ctx) => {
   if (data.role === "department_staff" && (!data.department || data.department === null)) {
     ctx.addIssue({
@@ -80,6 +81,21 @@ function generateTempPassword(): string {
   return `Klinik-${genChunk(4)}-${genChunk(4)}`;
 }
 
+function parseEmployeeTitles(value: string | null | undefined) {
+  return (value || "")
+    .split("|")
+    .map((title) => title.trim())
+    .filter(Boolean);
+}
+
+function joinEmployeeTitles(titles: string[]) {
+  return titles
+    .map((title) => title.trim().replace(/\|/g, ""))
+    .filter(Boolean)
+    .slice(0, 5)
+    .join("|");
+}
+
 export default function StaffManagementPage() {
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,6 +107,7 @@ export default function StaffManagementPage() {
   const [submitting, setSubmitting] = useState(false);
   const [sendingReset, setSendingReset] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [employeeTitleInput, setEmployeeTitleInput] = useState("");
 
   // Confirmation dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -125,6 +142,7 @@ export default function StaffManagementPage() {
   });
 
   const watchRole = watch("role");
+  const employeeTitles = parseEmployeeTitles(watch("employeeType"));
 
   // Fetch staff list on mount
   const fetchStaff = async () => {
@@ -157,6 +175,7 @@ export default function StaffManagementPage() {
       department: null,
       employeeType: "",
     });
+    setEmployeeTitleInput("");
     setErrorMsg("");
     setSheetOpen(true);
   };
@@ -172,8 +191,42 @@ export default function StaffManagementPage() {
       department: staff.department as StaffFormValues["department"],
       employeeType: staff.employee_type || "",
     });
+    setEmployeeTitleInput("");
     setErrorMsg("");
     setSheetOpen(true);
+  };
+
+  const handleAddEmployeeTitle = () => {
+    const title = employeeTitleInput.trim();
+
+    if (!title) return;
+    if (title.includes("|")) {
+      toast.error("Position titles cannot contain the | character.");
+      return;
+    }
+    if (title.length > 80) {
+      toast.error("Position titles must be 80 characters or fewer.");
+      return;
+    }
+    if (employeeTitles.length >= 5) {
+      toast.error("A staff member can have up to 5 position titles.");
+      return;
+    }
+    if (employeeTitles.some((existing) => existing.toLowerCase() === title.toLowerCase())) {
+      toast.error("This position title is already listed.");
+      return;
+    }
+
+    setValue("employeeType", joinEmployeeTitles([...employeeTitles, title]), { shouldValidate: true });
+    setEmployeeTitleInput("");
+  };
+
+  const handleRemoveEmployeeTitle = (titleToRemove: string) => {
+    setValue(
+      "employeeType",
+      joinEmployeeTitles(employeeTitles.filter((title) => title !== titleToRemove)),
+      { shouldValidate: true }
+    );
   };
 
   // Submit form
@@ -329,6 +382,7 @@ export default function StaffManagementPage() {
                 {filteredStaff.map((staff) => {
                   const roleConfig = USER_ROLES[staff.role];
                   const deptConfig = staff.department ? DEPARTMENTS[staff.department] : null;
+                  const titles = parseEmployeeTitles(staff.employee_type);
 
                   return (
                     <TableRow
@@ -338,9 +392,17 @@ export default function StaffManagementPage() {
                       {/* Name */}
                       <TableCell>
                         <div className="font-medium text-slate-900 dark:text-white">{staff.full_name}</div>
-                        {staff.employee_type && (
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                            {staff.employee_type}
+                        {titles.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {titles.map((title) => (
+                              <Badge
+                                key={title}
+                                variant="outline"
+                                className="text-[10px] font-medium px-1.5 py-0 border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
+                              >
+                                {title}
+                              </Badge>
+                            ))}
                           </div>
                         )}
                       </TableCell>
@@ -532,16 +594,59 @@ export default function StaffManagementPage() {
               </div>
             )}
 
-            {/* Employee Type */}
+            {/* Employee Position Titles */}
             <div className="space-y-2">
-              <Label htmlFor="employeeType" className="text-xs font-semibold">Employee Type / Title</Label>
-              <Input
-                id="employeeType"
-                placeholder="e.g. Radiologic Technologist"
-                maxLength={80}
-                {...register("employeeType")}
-                className="text-xs"
-              />
+              <Label htmlFor="employeeTitleInput" className="text-xs font-semibold">Position(s) / Title(s)</Label>
+              <input type="hidden" {...register("employeeType")} />
+              <div className="flex gap-2">
+                <Input
+                  id="employeeTitleInput"
+                  value={employeeTitleInput}
+                  onChange={(event) => setEmployeeTitleInput(event.target.value.replace(/\|/g, ""))}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      handleAddEmployeeTitle();
+                    }
+                  }}
+                  placeholder="e.g. Billing Clerk"
+                  maxLength={80}
+                  className="text-xs"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleAddEmployeeTitle}
+                  disabled={employeeTitles.length >= 5}
+                  className="text-xs"
+                >
+                  Add
+                </Button>
+              </div>
+              {employeeTitles.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {employeeTitles.map((title) => (
+                    <Badge
+                      key={title}
+                      variant="outline"
+                      className="gap-1 border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
+                    >
+                      {title}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveEmployeeTitle(title)}
+                        className="rounded-full text-slate-400 hover:text-rose-600 dark:hover:text-rose-400"
+                        aria-label={`Remove ${title}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                Optional display labels only. System role still controls access permissions.
+              </p>
               {errors.employeeType && (
                 <p className="text-[10px] text-rose-500">{errors.employeeType.message}</p>
               )}
