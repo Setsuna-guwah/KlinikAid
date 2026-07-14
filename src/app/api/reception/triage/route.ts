@@ -5,6 +5,46 @@ import { logEvent } from "@/lib/logger";
 import { getPhtStartOfToday } from "@/lib/utils";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 
+const STRICT_NUMBER_REGEX = /^-?\d+(\.\d+)?$/;
+const BLOOD_PRESSURE_REGEX = /^\d{2,3}\/\d{2,3}$/;
+
+function normalizeOptionalString(value: unknown) {
+  if (value === undefined || value === null) return "";
+  return String(value).trim();
+}
+
+function parseOptionalWeight(value: unknown): { valid: boolean; value: number | null; error?: string } {
+  const normalized = normalizeOptionalString(value);
+  if (!normalized) return { valid: true, value: null };
+
+  if (!STRICT_NUMBER_REGEX.test(normalized)) {
+    return { valid: false, value: null, error: "Weight must be a valid positive number below 500 kg." };
+  }
+
+  const numericValue = Number(normalized);
+  if (!Number.isFinite(numericValue) || numericValue <= 0 || numericValue >= 500) {
+    return { valid: false, value: null, error: "Weight must be a valid positive number below 500 kg." };
+  }
+
+  return { valid: true, value: numericValue };
+}
+
+function parseOptionalTemperature(value: unknown): { valid: boolean; value: number | null; error?: string } {
+  const normalized = normalizeOptionalString(value);
+  if (!normalized) return { valid: true, value: null };
+
+  if (!STRICT_NUMBER_REGEX.test(normalized)) {
+    return { valid: false, value: null, error: "Temperature must be between 30°C and 45°C." };
+  }
+
+  const numericValue = Number(normalized);
+  if (!Number.isFinite(numericValue) || numericValue < 30 || numericValue > 45) {
+    return { valid: false, value: null, error: "Temperature must be between 30°C and 45°C." };
+  }
+
+  return { valid: true, value: numericValue };
+}
+
 export async function POST(request: Request) {
   const supabase = createClient();
 
@@ -27,6 +67,21 @@ export async function POST(request: Request) {
     }
     if (!department || !["laboratory", "imaging", "ultrasound", "ecg"].includes(department)) {
       return errorResponse("Valid department ('laboratory', 'imaging', 'ultrasound', 'ecg') is required", 400);
+    }
+
+    const bloodPressure = normalizeOptionalString(vitals?.blood_pressure);
+    if (bloodPressure && !BLOOD_PRESSURE_REGEX.test(bloodPressure)) {
+      return errorResponse("Blood pressure format must be e.g. 120/80", 400);
+    }
+
+    const weight = parseOptionalWeight(vitals?.weight_kg);
+    if (!weight.valid) {
+      return errorResponse(weight.error || "Invalid weight.", 400);
+    }
+
+    const temperature = parseOptionalTemperature(vitals?.temperature_c);
+    if (!temperature.valid) {
+      return errorResponse(temperature.error || "Invalid temperature.", 400);
     }
 
     // 3.5. Guard Check: Deduplicate Triage Approvals
@@ -88,9 +143,9 @@ export async function POST(request: Request) {
     const triageNotesJson = JSON.stringify({
       queue_number: queueNumber,
       vitals: {
-        blood_pressure: vitals?.blood_pressure || null,
-        weight_kg: vitals?.weight_kg ? parseFloat(vitals.weight_kg) : null,
-        temperature_c: vitals?.temperature_c ? parseFloat(vitals.temperature_c) : null,
+        blood_pressure: bloodPressure || null,
+        weight_kg: weight.value,
+        temperature_c: temperature.value,
       },
       notes: notes || "",
     });
