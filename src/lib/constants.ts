@@ -175,6 +175,22 @@ export const CLINIC_TEST_CATALOG: ClinicTestCatalogItem[] = [
   },
 ];
 
+// Provisional starter guidance only; operator/clinic team should verify against medical references.
+export const CLINIC_TEST_PREP_INSTRUCTIONS: Record<string, string> = {
+  cbc: "No special preparation needed.",
+  urinalysis: "No special preparation needed. Collect a clean midstream sample if instructed.",
+  fecalysis: "No special preparation needed.",
+  fbs: "Fast for 8 hours before the test. Water is allowed.",
+  lipid_profile: "Fast for 9-12 hours before the test. Water is allowed.",
+  creatinine: "No special preparation needed.",
+  bun: "No special preparation needed.",
+  sgpt_alt: "No special preparation needed.",
+  sgot_ast: "No special preparation needed.",
+  chest_xray: "Remove metal objects and jewelry. Inform staff if you may be pregnant.",
+  ecg: "No special preparation needed.",
+  ultrasound: "Preparation varies by type - please follow the specific instructions from your clinic.",
+};
+
 export const CHART_COLORS = {
   laboratory: '#0D7C66',  // teal — primary brand color
   xray:       '#7C3AED',  // purple

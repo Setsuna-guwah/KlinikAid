@@ -22,6 +22,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
+import { CLINIC_TEST_PREP_INSTRUCTIONS } from "@/lib/constants";
 import {
   assessDocumentQualityAction,
   confirmSubmitDocumentAction,
@@ -370,21 +371,29 @@ export default function DocumentSubmitClient() {
                   <p className="text-xs text-emerald-800/80 dark:text-emerald-200/80">
                     Select the tests you want sent for receptionist review.
                   </p>
+                  <p className="text-xs text-emerald-800/70 dark:text-emerald-200/70 mt-1">
+                    Preparation notes are general guidance only. Confirm final instructions with the clinic.
+                  </p>
                 </div>
               </div>
               <div className="grid gap-2">
                 {detectedTests.map((test) => (
                   <label
                     key={test.id}
-                    className="flex items-center gap-2 rounded-lg border border-emerald-200/70 dark:border-emerald-900/40 bg-white/80 dark:bg-slate-950/40 px-3 py-2 text-sm font-medium text-slate-800 dark:text-slate-200"
+                    className="flex items-start gap-2 rounded-lg border border-emerald-200/70 dark:border-emerald-900/40 bg-white/80 dark:bg-slate-950/40 px-3 py-2 text-sm font-medium text-slate-800 dark:text-slate-200"
                   >
                     <input
                       type="checkbox"
                       checked={selectedTestIds.includes(test.id)}
                       onChange={() => toggleSelectedTest(test.id)}
-                      className="h-4 w-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500"
+                      className="mt-0.5 h-4 w-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500"
                     />
-                    <span>{test.label}</span>
+                    <span className="space-y-0.5">
+                      <span className="block">{test.label}</span>
+                      <span className="block text-xs font-normal leading-snug text-slate-500 dark:text-slate-400">
+                        {CLINIC_TEST_PREP_INSTRUCTIONS[test.id]}
+                      </span>
+                    </span>
                   </label>
                 ))}
               </div>
