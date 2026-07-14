@@ -106,6 +106,16 @@ export const LAB_REFERENCE_RANGES: LabReferenceRange[] = [
   }
 ];
 
+export const LAB_TEST_GROUPS = {
+  "Complete Blood Count (CBC)": ["Hemoglobin", "White Blood Cells (WBC)", "Platelets"],
+  "Fasting Blood Sugar (FBS)": ["Fasting Blood Sugar (FBS)"],
+  "Renal Function": ["Creatinine"],
+  "Lipid Profile": ["Cholesterol"],
+} as const;
+
+export type LabTestPanel = keyof typeof LAB_TEST_GROUPS;
+export type LabTestParameter = (typeof LAB_TEST_GROUPS)[LabTestPanel][number];
+
 export interface ClinicTestCatalogItem {
   id: string;
   label: string;
@@ -229,6 +239,7 @@ export const SYSTEM_EVENT_TYPES = {
   STAFF_ACTION_FAILED:    "STAFF_ACTION_FAILED",
   DOCUMENT_SUBMITTED:     "DOCUMENT_SUBMITTED",
   DOCUMENT_OCR_PROCESSED: "DOCUMENT_OCR_PROCESSED",
+  LAB_RESULT_OCR_PROCESSED: "LAB_RESULT_OCR_PROCESSED",
   PRIVACY_ACCEPTED:       "PRIVACY_ACCEPTED",
   QUEUE_COMPLETED:        "QUEUE_COMPLETED",
   MFA_ENROLLED:           "MFA_ENROLLED",

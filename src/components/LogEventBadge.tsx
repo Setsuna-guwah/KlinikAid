@@ -25,6 +25,7 @@ const EVENT_BADGE_STYLES: Record<string, { bg: string; text: string; border: str
   STAFF_ACTION_FAILED:    { bg: '#fef2f2', text: '#991b1b', border: '#fee2e2', label: 'Staff Action Failed' },
   DOCUMENT_SUBMITTED:     { bg: '#ccfbf1', text: '#134e4a', border: '#5eead4', label: 'Doc Submitted' },
   DOCUMENT_OCR_PROCESSED: { bg: '#e0f2fe', text: '#0369a1', border: '#bae6fd', label: 'Document OCR Processed' },
+  LAB_RESULT_OCR_PROCESSED: { bg: '#ecfeff', text: '#155e75', border: '#67e8f9', label: 'Lab Result OCR Processed' },
   PRIVACY_ACCEPTED:       { bg: '#dcfce7', text: '#166534', border: '#86efac', label: 'Privacy Accepted' },
   QUEUE_COMPLETED:        { bg: '#dcfce7', text: '#166534', border: '#86efac', label: 'Queue Completed' },
   MFA_ENROLLED:           { bg: '#dcfce7', text: '#166534', border: '#86efac', label: 'MFA Enrolled' },

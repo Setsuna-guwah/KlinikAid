@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { 
   ArrowLeft, 
@@ -8,13 +8,16 @@ import {
   Save, 
   AlertTriangle, 
   CheckCircle2, 
-  Clock
+  Clock,
+  FileSearch,
+  Loader2
 } from "lucide-react";
-import { LAB_REFERENCE_RANGES, DEPARTMENTS } from "@/lib/constants";
+import { LAB_REFERENCE_RANGES, DEPARTMENTS, LAB_TEST_GROUPS } from "@/lib/constants";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { extractLabResultValuesAction } from "@/app/(dashboard)/department/records/entry/actions";
 
 const STRICT_NUMBER_REGEX = /^-?\d+(\.\d+)?$/;
 
@@ -66,13 +69,7 @@ interface RecordPayload {
   results: RecordResult[];
 }
 
-// Group lab reference ranges by Test Type
-const LAB_TEST_GROUPS = {
-  "Complete Blood Count (CBC)": ["Hemoglobin", "White Blood Cells (WBC)", "Platelets"],
-  "Fasting Blood Sugar (FBS)": ["Fasting Blood Sugar (FBS)"],
-  "Renal Function": ["Creatinine"],
-  "Lipid Profile": ["Cholesterol"]
-};
+type LabPanelName = keyof typeof LAB_TEST_GROUPS;
 
 export default function RecordEntryClient({
   patient,
@@ -81,11 +78,15 @@ export default function RecordEntryClient({
 }: RecordEntryClientProps) {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const labOcrInputRef = useRef<HTMLInputElement>(null);
 
   // Form states
-  const [selectedLabTest, setSelectedLabTest] = useState<string>("Complete Blood Count (CBC)");
+  const [selectedLabTest, setSelectedLabTest] = useState<LabPanelName>("Complete Blood Count (CBC)");
   const [customTestType, setCustomTestType] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
+  const [labOcrFile, setLabOcrFile] = useState<File | null>(null);
+  const [isExtractingLabValues, setIsExtractingLabValues] = useState(false);
+  const [ocrSuggestedParams, setOcrSuggestedParams] = useState<string[]>([]);
 
   // Lab parameter values & blur validation states
   const [paramValues, setParamValues] = useState<{ [key: string]: string }>({});
@@ -151,6 +152,82 @@ export default function RecordEntryClient({
 
     setParamTouched(prev => ({ ...prev, [paramName]: true }));
     setParamFlags(prev => ({ ...prev, [paramName]: isFlagged }));
+  };
+
+  const isLabPanelName = (value: unknown): value is LabPanelName => {
+    return typeof value === "string" && value in LAB_TEST_GROUPS;
+  };
+
+  const applyExtractedLabValues = (panel: LabPanelName, values: Record<string, string>) => {
+    const allowedParams = LAB_TEST_GROUPS[panel];
+    const nextValues: { [key: string]: string } = {};
+    const nextTouched: { [key: string]: boolean } = {};
+    const nextFlags: { [key: string]: boolean } = {};
+    const appliedParams: string[] = [];
+
+    allowedParams.forEach((paramName) => {
+      const extractedValue = values[paramName];
+      if (!extractedValue || !STRICT_NUMBER_REGEX.test(extractedValue)) return;
+
+      const { isFlagged, isNumeric } = checkRange(paramName, extractedValue);
+      if (!isNumeric) return;
+
+      nextValues[paramName] = extractedValue;
+      nextTouched[paramName] = true;
+      nextFlags[paramName] = isFlagged;
+      appliedParams.push(paramName);
+    });
+
+    setSelectedLabTest(panel);
+    setParamValues(nextValues);
+    setParamTouched(nextTouched);
+    setParamFlags(nextFlags);
+    setOcrSuggestedParams(appliedParams);
+
+    if (appliedParams.length === 0) {
+      toast.warning("No supported lab values were found. Please enter results manually.");
+      return;
+    }
+
+    const expectedCount = allowedParams.length;
+    if (appliedParams.length < expectedCount) {
+      toast.warning("Some values could not be extracted. Please review and complete the fields manually.");
+    } else {
+      toast.success(`OCR suggested ${appliedParams.length} value(s). Please verify before saving.`);
+    }
+  };
+
+  const handleExtractLabValues = async () => {
+    if (!labOcrFile) {
+      toast.error("Upload a result sheet before extracting values.");
+      return;
+    }
+
+    setIsExtractingLabValues(true);
+    try {
+      const data = new FormData();
+      data.append("file", labOcrFile);
+      data.append("department", activeDept);
+
+      const result = await extractLabResultValuesAction(data);
+      if (!result.success) {
+        toast.error(result.error || "Failed to extract lab values.");
+        return;
+      }
+
+      if (!isLabPanelName(result.panel)) {
+        setOcrSuggestedParams([]);
+        toast.warning("No supported lab values were found. Please enter results manually.");
+        return;
+      }
+
+      applyExtractedLabValues(result.panel, result.values || {});
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to extract lab values.";
+      toast.error(message);
+    } finally {
+      setIsExtractingLabValues(false);
+    }
   };
 
   // Submit Handler
@@ -371,10 +448,11 @@ export default function RecordEntryClient({
                   <select
                     value={selectedLabTest}
                     onChange={(e) => {
-                      setSelectedLabTest(e.target.value);
+                      setSelectedLabTest(e.target.value as LabPanelName);
                       setParamValues({});
                       setParamFlags({});
                       setParamTouched({});
+                      setOcrSuggestedParams([]);
                     }}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 font-medium"
                   >
@@ -383,6 +461,59 @@ export default function RecordEntryClient({
                     <option value="Renal Function">Renal Function (Creatinine)</option>
                     <option value="Lipid Profile">Lipid Profile (Cholesterol)</option>
                   </select>
+                </div>
+
+                <div className="rounded-2xl border border-teal-100 dark:border-teal-900/40 bg-teal-50/40 dark:bg-teal-950/10 p-4 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-teal-100 dark:bg-teal-950/50 text-teal-700 dark:text-teal-300">
+                      <FileSearch className="h-4 w-4" />
+                    </div>
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                        OCR Autofill from Result Sheet
+                      </h3>
+                      <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+                        Upload a lab result photo, PNG, JPG, or PDF. Extracted values are suggestions only.
+                        Verify and edit every value before saving.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                    <input
+                      ref={labOcrInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,application/pdf"
+                      disabled={isExtractingLabValues || isSubmitting}
+                      onChange={(e) => {
+                        setLabOcrFile(e.target.files?.[0] || null);
+                        setOcrSuggestedParams([]);
+                      }}
+                      className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-xs text-slate-700 dark:text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-teal-600 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white disabled:opacity-50"
+                    />
+                    <Button
+                      type="button"
+                      onClick={handleExtractLabValues}
+                      disabled={!labOcrFile || isExtractingLabValues || isSubmitting}
+                      className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold"
+                    >
+                      {isExtractingLabValues ? (
+                        <>
+                          <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                          Extracting values...
+                        </>
+                      ) : (
+                        "Extract Values from Result Sheet"
+                      )}
+                    </Button>
+                  </div>
+
+                  {ocrSuggestedParams.length > 0 && (
+                    <p className="text-xs font-medium text-teal-800 dark:text-teal-200">
+                      OCR suggested {ocrSuggestedParams.length} field(s): {ocrSuggestedParams.join(", ")}.
+                      Review all values before clicking Save Results.
+                    </p>
+                  )}
                 </div>
 
                 {/* Parameters List */}
