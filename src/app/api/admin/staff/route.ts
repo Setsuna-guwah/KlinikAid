@@ -3,7 +3,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireRole } from "@/lib/auth/helpers";
 import { errorResponse, successResponse } from "@/lib/api-response";
 import { logEvent } from "@/lib/logger";
-import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
+import { DEPARTMENTS, SYSTEM_EVENT_TYPES, USER_ROLES } from "@/lib/constants";
+import { validateName } from "@/lib/validation";
+import type { Department, UserRole } from "@/types";
+import { z } from "zod";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +37,16 @@ function getStaffCreateErrorMessage(error: unknown): { message: string; status: 
   }
 
   return { message: "Failed to create staff member", status: 500 };
+}
+
+const staffEmailSchema = z.string().trim().email("Invalid email address.");
+
+function isUserRole(value: unknown): value is UserRole {
+  return typeof value === "string" && value in USER_ROLES;
+}
+
+function isDepartment(value: unknown): value is Department {
+  return typeof value === "string" && value in DEPARTMENTS;
 }
 
 // GET: list all staff members (non-patients) with merged email from Auth
@@ -85,25 +98,51 @@ export async function POST(request: Request) {
     const employeeType = normalizeEmployeeType(body.employeeType);
 
     // Validate request body
-    if (!email || !password || !fullName || !role) {
+    if (
+      typeof email !== "string" ||
+      typeof password !== "string" ||
+      typeof fullName !== "string" ||
+      typeof role !== "string" ||
+      !email ||
+      !password ||
+      !fullName ||
+      !role
+    ) {
       return errorResponse("Missing required fields: email, password, fullName, role", 400);
     }
 
-    if (role === "department_staff" && (!department || department === null)) {
+    const emailValidation = staffEmailSchema.safeParse(email);
+    if (!emailValidation.success) {
+      return errorResponse(emailValidation.error.issues[0]?.message || "Invalid email address.", 400);
+    }
+
+    const nameCheck = validateName(fullName, "Full name");
+    if (!nameCheck.valid) {
+      return errorResponse(nameCheck.error ?? "Invalid full name.", 400);
+    }
+
+    if (!isUserRole(role)) {
+      return errorResponse("Select a valid role.", 400);
+    }
+
+    if (role === "department_staff" && !isDepartment(department)) {
       return errorResponse("Clinical department is required for Department Staff.", 400);
     }
 
     const adminClient = createAdminClient();
+    const normalizedEmail = emailValidation.data;
+    const normalizedFullName = fullName.trim();
+    const normalizedDepartment = role === "department_staff" ? department : null;
 
     // 1. Create auth user with metadata (trigger will auto-create profile and registration log)
     const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
-      email,
+      email: normalizedEmail,
       password,
       email_confirm: true,
       user_metadata: {
-        full_name: fullName,
+        full_name: normalizedFullName,
         role,
-        department: role === "department_staff" ? department : null,
+        department: normalizedDepartment,
         employee_type: employeeType,
       },
     });
@@ -154,9 +193,9 @@ export async function POST(request: Request) {
       supabase,
       adminProfile.id,
       SYSTEM_EVENT_TYPES.STAFF_CREATED,
-      `Staff user created: ${fullName} (${email}) as ${role}`,
+      `Staff user created: ${normalizedFullName} (${normalizedEmail}) as ${role}`,
       null,
-      { target_user_id: authData.user.id, role, department, employee_type: employeeType }
+      { target_user_id: authData.user.id, role, department: normalizedDepartment, employee_type: employeeType }
     );
 
     return successResponse(
