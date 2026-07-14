@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { logEvent } from "@/lib/logger";
 import { extractDocumentText } from "@/lib/documents/extractDocumentText";
+import { detectRequestedTests, selectDetectedTests } from "@/lib/documents/detectRequestedTests";
 import { revalidatePath } from "next/cache";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 
@@ -166,6 +167,7 @@ export async function assessDocumentQualityAction(formData: FormData) {
 
   const isPoorQualityOcr = isPoorQualityOcrText(ocrText);
   const storedOcrText = isPoorQualityOcr ? "" : ocrText;
+  const detectedTests = isPoorQualityOcr ? [] : detectRequestedTests(storedOcrText);
 
   const { error: pendingError } = await supabase
     .from("pending_document_ocr")
@@ -192,10 +194,11 @@ export async function assessDocumentQualityAction(formData: FormData) {
     success: true,
     assessmentId,
     isOcrTextEmpty: isPoorQualityOcr,
+    detectedTests,
   };
 }
 
-export async function confirmSubmitDocumentAction(assessmentId: string) {
+export async function confirmSubmitDocumentAction(assessmentId: string, selectedTestIds?: string[]) {
   // Standing Rule 1: supabase.auth.getUser() first line
   const supabase = createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -254,6 +257,16 @@ export async function confirmSubmitDocumentAction(assessmentId: string) {
   }
 
   const trimmedOcrText = pendingRow.ocr_text.trim();
+  const detectedTests = detectRequestedTests(pendingRow.ocr_text);
+  const selectedTests = selectDetectedTests(detectedTests, selectedTestIds);
+  const extractedMetadata = detectedTests.length > 0
+    ? {
+        detected_tests: detectedTests,
+        selected_tests: selectedTests,
+        test_detection_source: "ocr_text_catalog_match",
+        test_detection_version: 1,
+      }
+    : null;
   const documentInsert = {
     patient_id: patient.id,
     uploader_id: user.id,
@@ -262,6 +275,7 @@ export async function confirmSubmitDocumentAction(assessmentId: string) {
     file_type: pendingRow.file_type,
     status: "pending",
     ...(trimmedOcrText ? { ocr_text: pendingRow.ocr_text } : {}),
+    ...(extractedMetadata ? { extracted_metadata: extractedMetadata } : {}),
   };
 
   const { data: docRow, error: insertError } = await supabase

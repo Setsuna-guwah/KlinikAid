@@ -14,7 +14,8 @@ import {
   ArrowRight,
   Info,
   X,
-  TriangleAlert
+  TriangleAlert,
+  ListChecks
 } from "lucide-react";
 import Link from "next/link";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
@@ -26,6 +27,7 @@ import {
   confirmSubmitDocumentAction,
   discardAssessedDocumentAction,
 } from "./actions";
+import type { DetectedClinicTest } from "@/lib/documents/detectRequestedTests";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ACCEPTED_FILE_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/jpg"];
@@ -53,6 +55,9 @@ export default function DocumentSubmitClient() {
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [qualityWarningAssessmentId, setQualityWarningAssessmentId] = useState<string | null>(null);
+  const [testSelectionAssessmentId, setTestSelectionAssessmentId] = useState<string | null>(null);
+  const [detectedTests, setDetectedTests] = useState<DetectedClinicTest[]>([]);
+  const [selectedTestIds, setSelectedTestIds] = useState<string[]>([]);
 
   const { handleSubmit, setValue, formState: { errors }, reset } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -78,6 +83,9 @@ export default function DocumentSubmitClient() {
       setSelectedFile(file);
       setValue("file", file, { shouldValidate: true });
       setQualityWarningAssessmentId(null);
+      setTestSelectionAssessmentId(null);
+      setDetectedTests([]);
+      setSelectedTestIds([]);
       setSubmitError(null);
     }
   };
@@ -88,23 +96,30 @@ export default function DocumentSubmitClient() {
       setSelectedFile(file);
       setValue("file", file, { shouldValidate: true });
       setQualityWarningAssessmentId(null);
+      setTestSelectionAssessmentId(null);
+      setDetectedTests([]);
+      setSelectedTestIds([]);
       setSubmitError(null);
     }
   };
 
   const removeFile = async () => {
-    if (qualityWarningAssessmentId) {
-      await discardAssessedDocumentAction(qualityWarningAssessmentId);
+    const activeAssessmentId = qualityWarningAssessmentId || testSelectionAssessmentId;
+    if (activeAssessmentId) {
+      await discardAssessedDocumentAction(activeAssessmentId);
     }
     setSelectedFile(null);
     setQualityWarningAssessmentId(null);
+    setTestSelectionAssessmentId(null);
+    setDetectedTests([]);
+    setSelectedTestIds([]);
     setValue("file", undefined as unknown as File, { shouldValidate: false });
     reset();
     setSubmitError(null);
   };
 
-  const confirmSubmission = async (assessmentId: string) => {
-    const result = await confirmSubmitDocumentAction(assessmentId);
+  const confirmSubmission = async (assessmentId: string, selectedIds?: string[]) => {
+    const result = await confirmSubmitDocumentAction(assessmentId, selectedIds);
     if (result.success) {
       setSubmitSuccess(true);
       return;
@@ -120,7 +135,12 @@ export default function DocumentSubmitClient() {
 
     try {
       if (qualityWarningAssessmentId) {
-        await confirmSubmission(qualityWarningAssessmentId);
+        await confirmSubmission(qualityWarningAssessmentId, []);
+        return;
+      }
+
+      if (testSelectionAssessmentId) {
+        await confirmSubmission(testSelectionAssessmentId, selectedTestIds);
         return;
       }
 
@@ -144,6 +164,13 @@ export default function DocumentSubmitClient() {
         return;
       }
 
+      if (result.detectedTests && result.detectedTests.length > 0) {
+        setTestSelectionAssessmentId(result.assessmentId);
+        setDetectedTests(result.detectedTests);
+        setSelectedTestIds(result.detectedTests.map((test) => test.id));
+        return;
+      }
+
       await confirmSubmission(result.assessmentId);
     } catch (err) {
       console.error(err);
@@ -160,6 +187,14 @@ export default function DocumentSubmitClient() {
     const sizes = ["Bytes", "KB", "MB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
+  };
+
+  const toggleSelectedTest = (testId: string) => {
+    setSelectedTestIds((current) =>
+      current.includes(testId)
+        ? current.filter((id) => id !== testId)
+        : [...current, testId]
+    );
   };
 
   if (submitSuccess) {
@@ -324,6 +359,38 @@ export default function DocumentSubmitClient() {
             </Alert>
           )}
 
+          {testSelectionAssessmentId && detectedTests.length > 0 && (
+            <div className="rounded-xl border border-emerald-200/80 dark:border-emerald-900/50 bg-emerald-50/60 dark:bg-emerald-950/20 p-4 space-y-3">
+              <div className="flex items-start gap-2.5">
+                <ListChecks className="h-4.5 w-4.5 text-emerald-600 dark:text-emerald-400 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-bold text-emerald-900 dark:text-emerald-200">
+                    Detected tests from your lab request
+                  </p>
+                  <p className="text-xs text-emerald-800/80 dark:text-emerald-200/80">
+                    Select the tests you want sent for receptionist review.
+                  </p>
+                </div>
+              </div>
+              <div className="grid gap-2">
+                {detectedTests.map((test) => (
+                  <label
+                    key={test.id}
+                    className="flex items-center gap-2 rounded-lg border border-emerald-200/70 dark:border-emerald-900/40 bg-white/80 dark:bg-slate-950/40 px-3 py-2 text-sm font-medium text-slate-800 dark:text-slate-200"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedTestIds.includes(test.id)}
+                      onChange={() => toggleSelectedTest(test.id)}
+                      className="h-4 w-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <span>{test.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="p-4 bg-slate-50/50 dark:bg-slate-900/20 rounded-lg border border-slate-100 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400 leading-relaxed flex items-start gap-3">
             <Info className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
             <div>
@@ -355,10 +422,18 @@ export default function DocumentSubmitClient() {
             {isSubmitting ? (
               <>
                 <Loader2 className="mr-2 h-4.5 w-4.5 animate-spin" />
-                {qualityWarningAssessmentId ? "Submitting anyway..." : "Submitting lab request..."}
+                {qualityWarningAssessmentId
+                  ? "Submitting anyway..."
+                  : testSelectionAssessmentId
+                    ? "Submitting selected tests..."
+                    : "Submitting lab request..."}
               </>
             ) : (
-              qualityWarningAssessmentId ? "Submit Anyway" : "Submit Lab Request"
+              qualityWarningAssessmentId
+                ? "Submit Anyway"
+                : testSelectionAssessmentId
+                  ? "Submit Selected Tests"
+                  : "Submit Lab Request"
             )}
           </Button>
         </CardFooter>

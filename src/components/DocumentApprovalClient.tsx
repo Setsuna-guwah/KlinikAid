@@ -27,6 +27,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { getReceptionDocumentSignedUrlAction } from "@/app/(dashboard)/reception/queue/[documentId]/actions";
 import { DEPARTMENTS } from "@/lib/constants";
 import { Department } from "@/types";
+import type { DetectedClinicTest } from "@/lib/documents/detectRequestedTests";
 import {
   Dialog,
   DialogContent,
@@ -91,12 +92,17 @@ export default function DocumentApprovalClient({ document: initialDoc }: Documen
     review_notes?: string;
     destination_department?: Department | null;
     destination_department_label?: string | null;
+    detected_tests?: DetectedClinicTest[];
+    selected_tests?: DetectedClinicTest[];
+    test_detection_source?: string;
+    test_detection_version?: number;
   } | null;
   const ocrConfidence = metadata?.ocr_confidence_score as number | undefined;
   const ocrFlags = (metadata?.ocr_flags || []) as string[];
   const fieldConfidences = metadata?.field_confidences as Record<string, number> | undefined;
   const destinationDepartmentLabel = metadata?.destination_department_label
     || (metadata?.destination_department ? DEPARTMENTS[metadata.destination_department]?.label : null);
+  const selectedTests = metadata?.selected_tests || [];
 
   // Format dates in Manila timezone
   const formatZonedDate = (dateString: string) => {
@@ -341,6 +347,23 @@ export default function DocumentApprovalClient({ document: initialDoc }: Documen
                   {doc.uploader?.full_name || "System"} ({doc.uploader?.role || "Patient"})
                 </span>
               </div>
+
+              {selectedTests.length > 0 && (
+                <div className="flex flex-col gap-2 py-2 border-b border-slate-50 dark:border-slate-900">
+                  <span className="font-semibold text-slate-500">Patient-selected Tests</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedTests.map((test) => (
+                      <Badge
+                        key={test.id}
+                        variant="outline"
+                        className="border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/25 dark:text-emerald-300"
+                      >
+                        {test.label}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="pt-2">
                 <Button

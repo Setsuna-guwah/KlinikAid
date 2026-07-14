@@ -106,6 +106,75 @@ export const LAB_REFERENCE_RANGES: LabReferenceRange[] = [
   }
 ];
 
+export interface ClinicTestCatalogItem {
+  id: string;
+  label: string;
+  aliases: string[];
+}
+
+export const CLINIC_TEST_CATALOG: ClinicTestCatalogItem[] = [
+  {
+    id: "cbc",
+    label: "Complete Blood Count (CBC)",
+    aliases: ["cbc", "complete blood count", "hematology", "hemoglobin", "white blood cells", "wbc", "platelets"],
+  },
+  {
+    id: "urinalysis",
+    label: "Urinalysis",
+    aliases: ["urinalysis", "urine", "urine analysis", "routine urinalysis", "clinical microscopy", "urine test", "ua"],
+  },
+  {
+    id: "fecalysis",
+    label: "Fecalysis",
+    aliases: ["fecalysis", "routine fecalysis", "stool", "stool exam", "stool examination", "fecal exam"],
+  },
+  {
+    id: "fbs",
+    label: "Fasting Blood Sugar (FBS)",
+    aliases: ["fbs", "fasting blood sugar", "blood sugar", "fasting glucose", "glucose"],
+  },
+  {
+    id: "lipid_profile",
+    label: "Lipid Profile",
+    aliases: ["lipid", "lipid profile", "cholesterol", "triglycerides", "hdl", "ldl"],
+  },
+  {
+    id: "creatinine",
+    label: "Creatinine",
+    aliases: ["creatinine", "serum creatinine", "renal function", "kidney function"],
+  },
+  {
+    id: "bun",
+    label: "Blood Urea Nitrogen (BUN)",
+    aliases: ["bun", "blood urea nitrogen", "urea nitrogen"],
+  },
+  {
+    id: "sgpt_alt",
+    label: "SGPT / ALT",
+    aliases: ["sgpt", "alt", "alanine aminotransferase"],
+  },
+  {
+    id: "sgot_ast",
+    label: "SGOT / AST",
+    aliases: ["sgot", "ast", "aspartate aminotransferase"],
+  },
+  {
+    id: "chest_xray",
+    label: "Chest X-ray",
+    aliases: ["chest x-ray", "chest xray", "cxr", "x-ray chest", "xray chest", "chest radiograph"],
+  },
+  {
+    id: "ecg",
+    label: "ECG",
+    aliases: ["ecg", "ekg", "electrocardiogram"],
+  },
+  {
+    id: "ultrasound",
+    label: "Ultrasound",
+    aliases: ["ultrasound", "ultrasonography", "utz"],
+  },
+];
+
 export const CHART_COLORS = {
   laboratory: '#0D7C66',  // teal — primary brand color
   xray:       '#7C3AED',  // purple
