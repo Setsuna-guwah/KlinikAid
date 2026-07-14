@@ -371,9 +371,6 @@ export default function DocumentSubmitClient() {
                   <p className="text-xs text-emerald-800/80 dark:text-emerald-200/80">
                     Select the tests you want sent for receptionist review.
                   </p>
-                  <p className="text-xs text-emerald-800/70 dark:text-emerald-200/70 mt-1">
-                    Preparation notes are general guidance only. Confirm final instructions with the clinic.
-                  </p>
                 </div>
               </div>
               <div className="grid gap-2">
@@ -396,6 +393,12 @@ export default function DocumentSubmitClient() {
                     </span>
                   </label>
                 ))}
+              </div>
+              <div className="flex items-start gap-2 rounded-lg border border-emerald-200/70 dark:border-emerald-900/40 bg-white/70 dark:bg-slate-950/30 px-3 py-2 text-xs text-emerald-900 dark:text-emerald-200">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <p>
+                  Preparation notes are general guidance only. Confirm final instructions with the clinic.
+                </p>
               </div>
             </div>
           )}
