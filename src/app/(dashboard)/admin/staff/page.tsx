@@ -29,26 +29,27 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { sendStaffResetEmailAction } from "./actions";
+import { getRolesAction } from "../roles/actions";
 
 // Form validation schema
 const staffFormSchema = z.object({
   fullName: z.string().min(2, "Full name must be at least 2 characters"),
   email: z.string().email("Invalid email address"),
   password: z.string().min(6, "Password must be at least 6 characters").or(z.string().length(0)), // optional on edit
-  role: z.enum(["admin", "receptionist", "department_staff", "medical_specialist"]),
+  roleId: z.string().uuid("Select a valid role"),
   department: z.enum(["laboratory", "imaging", "ultrasound", "ecg"]).nullable().optional(),
   employeeType: z.string().max(404, "Position titles must be 80 characters or fewer, up to 5 titles.").optional(),
-}).superRefine((data, ctx) => {
-  if (data.role === "department_staff" && (!data.department || data.department === null)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Clinical department is required for Department Staff",
-      path: ["department"],
-    });
-  }
 });
 
-const ROLE_COLORS: Record<UserRole, string> = {
+interface DbRole {
+  id: string;
+  name: string;
+  is_system: boolean;
+  base_role: string | null;
+  description: string | null;
+}
+
+const ROLE_COLORS: Record<string, string> = {
   admin: "bg-red-500 text-white dark:bg-red-600",
   receptionist: "bg-accentBlue-500 text-white dark:bg-accentBlue-600",
   department_staff: "bg-purple-500 text-white dark:bg-purple-600",
@@ -62,7 +63,8 @@ interface StaffMember {
   id: string;
   full_name: string;
   email: string;
-  role: UserRole;
+  role: string;
+  role_id: string | null;
   department: Department | null;
   employee_type: string | null;
   is_active: boolean;
@@ -98,6 +100,7 @@ function joinEmployeeTitles(titles: string[]) {
 
 export default function StaffManagementPage() {
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
+  const [dbRoles, setDbRoles] = useState<DbRole[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -135,13 +138,18 @@ export default function StaffManagementPage() {
       fullName: "",
       email: "",
       password: "",
-      role: "receptionist",
+      roleId: "",
       department: null,
       employeeType: "",
     },
   });
 
-  const watchRole = watch("role");
+  const watchRoleId = watch("roleId");
+  const selectedRoleObj = dbRoles.find(r => r.id === watchRoleId);
+  const isDeptStaff = selectedRoleObj?.is_system 
+    ? selectedRoleObj.name === "department_staff" 
+    : selectedRoleObj?.base_role === "department_staff";
+
   const employeeTitles = parseEmployeeTitles(watch("employeeType"));
 
   // Fetch staff list on mount
@@ -160,18 +168,28 @@ export default function StaffManagementPage() {
     }
   };
 
+  // Fetch db roles list on mount
+  const fetchRoles = async () => {
+    const res = await getRolesAction();
+    if (res.success && res.data) {
+      setDbRoles(res.data);
+    }
+  };
+
   useEffect(() => {
     fetchStaff();
+    fetchRoles();
   }, []);
 
   // Handle open sheet for create
   const handleCreateOpen = () => {
     setEditingStaff(null);
+    const defaultRole = dbRoles.find(r => r.is_system && r.name === "receptionist");
     reset({
       fullName: "",
       email: "",
       password: generateTempPassword(),
-      role: "receptionist",
+      roleId: defaultRole?.id || "",
       department: null,
       employeeType: "",
     });
@@ -187,7 +205,7 @@ export default function StaffManagementPage() {
       fullName: staff.full_name,
       email: staff.email,
       password: "", // password blank by default on edit
-      role: staff.role as StaffFormValues["role"],
+      roleId: staff.role_id || "",
       department: staff.department as StaffFormValues["department"],
       employeeType: staff.employee_type || "",
     });
@@ -238,6 +256,14 @@ export default function StaffManagementPage() {
       const isEdit = !!editingStaff;
       const url = isEdit ? `/api/admin/staff/${editingStaff.id}` : "/api/admin/staff";
       const method = isEdit ? "PUT" : "POST";
+
+      const selectedRole = dbRoles.find(r => r.id === values.roleId);
+      const legacyRoleText = selectedRole?.is_system ? selectedRole.name : selectedRole?.base_role;
+      if (legacyRoleText === "department_staff" && (!values.department || values.department === null)) {
+        setErrorMsg("Clinical department is required for Department Staff.");
+        setSubmitting(false);
+        return;
+      }
 
       // On edit, if password is blank, don't send it
       const { password, ...rest } = values;
@@ -305,6 +331,10 @@ export default function StaffManagementPage() {
     }
   };
 
+
+  const assignableRoles = dbRoles.filter(
+    (r) => r.name !== "patient" && r.base_role !== "patient"
+  );
 
   // Filter staff list based on search
   const filteredStaff = staffList.filter((s) => {
@@ -380,7 +410,6 @@ export default function StaffManagementPage() {
               </TableHeader>
               <TableBody>
                 {filteredStaff.map((staff) => {
-                  const roleConfig = USER_ROLES[staff.role];
                   const deptConfig = staff.department ? DEPARTMENTS[staff.department] : null;
                   const titles = parseEmployeeTitles(staff.employee_type);
 
@@ -415,7 +444,10 @@ export default function StaffManagementPage() {
                       {/* Role Badge */}
                       <TableCell>
                         <Badge className={`text-[10px] font-semibold tracking-wide uppercase px-2 py-0.5 ${ROLE_COLORS[staff.role] || "bg-slate-200 text-slate-800"}`}>
-                          {roleConfig?.label || staff.role}
+                          {(() => {
+                            const dbRoleObj = dbRoles.find(r => r.id === staff.role_id);
+                            return dbRoleObj ? dbRoleObj.name : (USER_ROLES[staff.role as UserRole]?.label || staff.role);
+                          })()}
                         </Badge>
                       </TableCell>
 
@@ -656,28 +688,33 @@ export default function StaffManagementPage() {
             <div className="space-y-2">
               <Label htmlFor="role" className="text-xs font-semibold">System Role</Label>
               <Select
-                value={watchRole}
+                value={watchRoleId || undefined}
                 onValueChange={(val) => {
-                  setValue("role", val as StaffFormValues["role"]);
-                  if (val !== "department_staff") {
-                    setValue("department", null);
+                  setValue("roleId", val as string);
+                  const selected = dbRoles.find(r => r.id === val);
+                  const legacyRoleText = selected?.is_system ? selected.name : selected?.base_role;
+                  if (legacyRoleText !== "department_staff") {
+                    setValue("department", null as "laboratory" | "imaging" | "ultrasound" | "ecg" | null);
                   }
                 }}
               >
                 <SelectTrigger className="text-xs">
-                  <SelectValue placeholder="Select a system role" />
+                  <SelectValue placeholder="Select a role">
+                    {selectedRoleObj ? `${selectedRoleObj.name}${selectedRoleObj.is_system ? "" : " (Custom)"}` : undefined}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-                  <SelectItem value="admin" className="text-xs">Administrator</SelectItem>
-                  <SelectItem value="receptionist" className="text-xs">Receptionist</SelectItem>
-                  <SelectItem value="department_staff" className="text-xs">Department Staff</SelectItem>
-                  <SelectItem value="medical_specialist" className="text-xs">Medical Specialist</SelectItem>
+                  {assignableRoles.map((r) => (
+                    <SelectItem key={r.id} value={r.id} className="text-xs">
+                      {r.name} {!r.is_system && "(Custom)"}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
 
             {/* Department (Shown conditionally if role is department_staff) */}
-            {watchRole === "department_staff" && (
+            {isDeptStaff && (
               <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
                 <Label htmlFor="department" className="text-xs font-semibold">Clinical Department</Label>
                 <Select

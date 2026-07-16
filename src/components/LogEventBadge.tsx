@@ -34,6 +34,8 @@ const EVENT_BADGE_STYLES: Record<string, { bg: string; text: string; border: str
   PROFILE_UPDATED:        { bg: '#e0f2fe', text: '#0369a1', border: '#bae6fd', label: 'Profile Updated' },
   SPECIALIST_PATIENT_CREATED: { bg: '#e0f2fe', text: '#0369a1', border: '#bae6fd', label: 'Spec Patient Created' },
   SPECIALIST_RECORD_ENTERED: { bg: '#fae8ff', text: '#86198f', border: '#f5d0fe', label: 'Spec Record Entered' },
+  CUSTOM_ROLE_CREATED:    { bg: '#ecfeff', text: '#155e75', border: '#67e8f9', label: 'Role Created' },
+  ROLE_ASSIGNED:          { bg: '#f3e8ff', text: '#6b21a8', border: '#e9d5ff', label: 'Role Assigned' },
 };
 
 const DEFAULT_BADGE_STYLE = { bg: '#f3f4f6', text: '#374151', border: '#d1d5db', label: 'Unknown Event' };

@@ -26,11 +26,11 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     const adminProfile = await requireRole(["admin"]);
     const { id } = params;
     const body = await request.json();
-    const { email, fullName, role, department } = body;
+    const { email, fullName, roleId, department } = body;
     const employeeType = normalizeEmployeeType(body.employeeType);
 
-    if (!email || !fullName || !role) {
-      return errorResponse("Missing required fields: email, fullName, role", 400);
+    if (!email || !fullName || !roleId) {
+      return errorResponse("Missing required fields: email, fullName, roleId", 400);
     }
 
     const nameCheck = validateName(fullName, "Full name");
@@ -38,12 +38,29 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       return errorResponse(nameCheck.error ?? "Invalid full name.", 400);
     }
 
-    if (role === "department_staff" && (!department || department === null)) {
-      return errorResponse("Clinical department is required for Department Staff.", 400);
-    }
-
     const adminClient = createAdminClient();
     const supabase = createClient();
+
+    // Look up role details from DB
+    const { data: dbRole, error: dbRoleError } = await supabase
+      .from("roles")
+      .select("*")
+      .eq("id", roleId)
+      .single();
+
+    if (dbRoleError || !dbRole) {
+      return errorResponse("Select a valid role.", 400);
+    }
+
+    if (dbRole.name === "patient" || dbRole.base_role === "patient") {
+      return errorResponse("The patient role cannot be assigned to staff members.", 400);
+    }
+
+    const legacyRoleText = dbRole.is_system ? dbRole.name : dbRole.base_role;
+
+    if (legacyRoleText === "department_staff" && (!department || department === null)) {
+      return errorResponse("Clinical department is required for Department Staff.", 400);
+    }
 
     // 1. Update Auth user (email & metadata only — password changes are client-driven via forgot-password or profile)
     const updateParams: {
@@ -58,8 +75,8 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       email,
       user_metadata: {
         full_name: fullName,
-        role,
-        department: role === "department_staff" ? department : null,
+        role: legacyRoleText,
+        department: legacyRoleText === "department_staff" ? department : null,
         employee_type: employeeType,
       },
     };
@@ -75,8 +92,9 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       .from("profiles")
       .update({
         full_name: fullName,
-        role,
-        department: role === "department_staff" ? department : null,
+        role: legacyRoleText,
+        role_id: roleId,
+        department: legacyRoleText === "department_staff" ? department : null,
         employee_type: employeeType,
       })
       .eq("id", id)
@@ -92,9 +110,19 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       supabase,
       adminProfile.id,
       SYSTEM_EVENT_TYPES.STAFF_UPDATED,
-      `Staff user updated: ${fullName} (${email}) as ${role}`,
+      `Staff user updated: ${fullName} (${email}) as ${legacyRoleText}`,
       null,
-      { target_user_id: id, role, department, employee_type: employeeType }
+      { target_user_id: id, role: legacyRoleText, department, employee_type: employeeType }
+    );
+
+    // 4. Emit the ROLE_ASSIGNED event (Condition 2)
+    await logEvent(
+      supabase,
+      adminProfile.id,
+      SYSTEM_EVENT_TYPES.ROLE_ASSIGNED,
+      `Role '${dbRole.name}' assigned to staff member ${fullName}`,
+      null,
+      { target_user_id: id, role_id: roleId, role_name: dbRole.name, base_role: dbRole.base_role }
     );
 
     return successResponse({ ...profile, email }, "Staff member updated successfully");

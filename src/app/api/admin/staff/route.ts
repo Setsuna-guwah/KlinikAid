@@ -3,9 +3,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireRole } from "@/lib/auth/helpers";
 import { errorResponse, successResponse } from "@/lib/api-response";
 import { logEvent } from "@/lib/logger";
-import { DEPARTMENTS, SYSTEM_EVENT_TYPES, USER_ROLES } from "@/lib/constants";
+import { DEPARTMENTS, SYSTEM_EVENT_TYPES } from "@/lib/constants";
 import { validateName } from "@/lib/validation";
-import type { Department, UserRole } from "@/types";
+import type { Department } from "@/types";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -41,9 +41,6 @@ function getStaffCreateErrorMessage(error: unknown): { message: string; status: 
 
 const staffEmailSchema = z.string().trim().email("Invalid email address.");
 
-function isUserRole(value: unknown): value is UserRole {
-  return typeof value === "string" && value in USER_ROLES;
-}
 
 function isDepartment(value: unknown): value is Department {
   return typeof value === "string" && value in DEPARTMENTS;
@@ -94,7 +91,7 @@ export async function POST(request: Request) {
   try {
     const adminProfile = await requireRole(["admin"]);
     const body = await request.json();
-    const { email, password, fullName, role, department } = body;
+    const { email, password, fullName, roleId, department } = body;
     const employeeType = normalizeEmployeeType(body.employeeType);
 
     // Validate request body
@@ -102,13 +99,13 @@ export async function POST(request: Request) {
       typeof email !== "string" ||
       typeof password !== "string" ||
       typeof fullName !== "string" ||
-      typeof role !== "string" ||
+      typeof roleId !== "string" ||
       !email ||
       !password ||
       !fullName ||
-      !role
+      !roleId
     ) {
-      return errorResponse("Missing required fields: email, password, fullName, role", 400);
+      return errorResponse("Missing required fields: email, password, fullName, roleId", 400);
     }
 
     const emailValidation = staffEmailSchema.safeParse(email);
@@ -121,27 +118,42 @@ export async function POST(request: Request) {
       return errorResponse(nameCheck.error ?? "Invalid full name.", 400);
     }
 
-    if (!isUserRole(role)) {
+    const supabase = createClient();
+
+    // Look up role details from DB
+    const { data: dbRole, error: dbRoleError } = await supabase
+      .from("roles")
+      .select("*")
+      .eq("id", roleId)
+      .single();
+
+    if (dbRoleError || !dbRole) {
       return errorResponse("Select a valid role.", 400);
     }
 
-    if (role === "department_staff" && !isDepartment(department)) {
+    if (dbRole.name === "patient" || dbRole.base_role === "patient") {
+      return errorResponse("The patient role cannot be assigned to staff members.", 400);
+    }
+
+    const legacyRoleText = dbRole.is_system ? dbRole.name : dbRole.base_role;
+
+    if (legacyRoleText === "department_staff" && !isDepartment(department)) {
       return errorResponse("Clinical department is required for Department Staff.", 400);
     }
 
     const adminClient = createAdminClient();
     const normalizedEmail = emailValidation.data;
     const normalizedFullName = fullName.trim();
-    const normalizedDepartment = role === "department_staff" ? department : null;
+    const normalizedDepartment = legacyRoleText === "department_staff" ? department : null;
 
-    // 1. Create auth user with metadata (trigger will auto-create profile and registration log)
+    // 1. Create auth user with metadata (trigger will auto-create profile and registration log using legacy text)
     const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
       email: normalizedEmail,
       password,
       email_confirm: true,
       user_metadata: {
         full_name: normalizedFullName,
-        role,
+        role: legacyRoleText,
         department: normalizedDepartment,
         employee_type: employeeType,
       },
@@ -152,7 +164,6 @@ export async function POST(request: Request) {
     }
 
     // 2. Fetch the newly created profile row. Retries if the database trigger is asynchronous
-    const supabase = createClient();
     let profile = null;
     let retries = 5;
 
@@ -175,15 +186,19 @@ export async function POST(request: Request) {
       throw new Error("Trigger failed to create public.profiles record.");
     }
 
-    const { data: updatedProfile, error: employeeTypeError } = await supabase
+    const { data: updatedProfile, error: profileUpdateError } = await supabase
       .from("profiles")
-      .update({ employee_type: employeeType })
+      .update({ 
+        employee_type: employeeType,
+        role: legacyRoleText,
+        role_id: roleId 
+      })
       .eq("id", authData.user.id)
       .select()
       .single();
 
-    if (employeeTypeError) {
-      throw employeeTypeError;
+    if (profileUpdateError) {
+      throw profileUpdateError;
     }
 
     profile = updatedProfile;
@@ -193,9 +208,19 @@ export async function POST(request: Request) {
       supabase,
       adminProfile.id,
       SYSTEM_EVENT_TYPES.STAFF_CREATED,
-      `Staff user created: ${normalizedFullName} (${normalizedEmail}) as ${role}`,
+      `Staff user created: ${normalizedFullName} (${normalizedEmail}) as ${legacyRoleText}`,
       null,
-      { target_user_id: authData.user.id, role, department: normalizedDepartment, employee_type: employeeType }
+      { target_user_id: authData.user.id, role: legacyRoleText, department: normalizedDepartment, employee_type: employeeType }
+    );
+
+    // 4. Emit the ROLE_ASSIGNED event (Condition 2)
+    await logEvent(
+      supabase,
+      adminProfile.id,
+      SYSTEM_EVENT_TYPES.ROLE_ASSIGNED,
+      `Role '${dbRole.name}' assigned to staff member ${normalizedFullName}`,
+      null,
+      { target_user_id: authData.user.id, role_id: roleId, role_name: dbRole.name, base_role: dbRole.base_role }
     );
 
     return successResponse(
