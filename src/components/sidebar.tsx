@@ -25,6 +25,7 @@ import {
   LogOut,
   Loader2,
   User,
+  ShieldCheck,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -60,6 +61,7 @@ export default function Sidebar({ user, onLinkClick, className }: SidebarProps) 
     admin: [
       { label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
       { label: "Staff Management", href: "/admin/staff", icon: Users },
+      { label: "Role Management", href: "/admin/roles", icon: ShieldCheck },
       { label: "Reception Queue", href: "/reception/queue", icon: ClipboardList },
       { label: "Dept Records", href: "/department/records", icon: FileSpreadsheet },
       { label: "RAG Manager", href: "/admin/rag", icon: Brain },
