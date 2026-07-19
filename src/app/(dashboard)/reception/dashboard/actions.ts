@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createPatient } from "@/lib/patient/createPatient";
+import { hasPermission } from "@/lib/auth/helpers";
 import { validateAge, validateName, CONTACT_REQUIREMENT_TEXT, validateContactNumber } from "@/lib/validation";
 import { z } from "zod";
 
@@ -37,14 +38,7 @@ export async function createPatientByStaffAction(
     return { error: "Unauthorized. Session expired." };
   }
 
-  // Verify receptionist or admin role (Rule 2)
-  const { data: profile } = await client
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile || (profile.role !== "receptionist" && profile.role !== "admin")) {
+  if (!(await hasPermission(user.id, "patients.manage"))) {
     return { error: "Unauthorized. Front desk privileges required." };
   }
 

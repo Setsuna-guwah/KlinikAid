@@ -1,12 +1,12 @@
 import React from "react";
-import { requireRole } from "@/lib/auth/helpers";
+import { requirePermission } from "@/lib/auth/helpers";
 import PatientChatClient from "./PatientChatClient";
 
 export const dynamic = "force-dynamic";
 
 export default async function PatientChatPage() {
   // 1. Enforce patient RBAC role authorization (Rule 2)
-  await requireRole(["admin", "patient"]);
+  await requirePermission("chat.access");
 
   return (
     <div className="space-y-6">

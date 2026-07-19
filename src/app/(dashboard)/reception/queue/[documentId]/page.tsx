@@ -1,7 +1,7 @@
 import React from "react";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth/helpers";
+import { requirePermission } from "@/lib/auth/helpers";
 import DocumentApprovalClient from "@/components/DocumentApprovalClient";
 import { Document } from "@/types";
 
@@ -15,7 +15,7 @@ interface DocumentDetailsPageProps {
 
 export default async function DocumentDetailsPage({ params }: DocumentDetailsPageProps) {
   // 1. Authenticate user and enforce receptionist/admin roles (Rule 1 & Rule 2)
-  await requireRole(["admin", "receptionist"]);
+  await requirePermission("documents.manage");
   const supabase = createClient();
   const { documentId } = params;
 

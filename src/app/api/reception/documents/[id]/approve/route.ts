@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth/helpers";
+import { requirePermission } from "@/lib/auth/helpers";
 import { errorResponse, successResponse } from "@/lib/api-response";
 import { logEvent } from "@/lib/logger";
 import { toZonedTime, format } from "date-fns-tz";
@@ -20,7 +20,7 @@ export async function POST(
 
   try {
     // 2. Role Check (Rule 2)
-    const profile = await requireRole(["admin", "receptionist"]);
+    const profile = await requirePermission("documents.manage");
     const documentId = params.id;
 
     // 3. Parse request body

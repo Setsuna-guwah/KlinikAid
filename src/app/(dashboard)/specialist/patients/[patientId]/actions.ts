@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth/helpers";
+import { requirePermission } from "@/lib/auth/helpers";
 import { logEvent } from "@/lib/logger";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 import { validateLabResult } from "@/lib/records/validateLabResult";
@@ -28,7 +28,7 @@ export async function createSpecialistRecordAction(
   const supabase = createClient();
 
   try {
-    const profile = await requireRole(["medical_specialist"]);
+    const profile = await requirePermission("specialist.records");
 
     if (!patientId || !payload.test_type || !payload.results || payload.results.length === 0) {
       return { success: false, error: "Missing required record data" };

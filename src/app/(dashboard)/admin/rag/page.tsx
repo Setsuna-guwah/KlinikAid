@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth/helpers";
+import { getCurrentUser, hasPermission } from "@/lib/auth/helpers";
 import { createClient } from "@/lib/supabase/server";
 import RagManagerClient from "@/components/RagManagerClient";
 
@@ -25,7 +25,7 @@ export default async function RagPage() {
     redirect("/login");
   }
   
-  if (!profile || profile.role !== "admin") {
+  if (!profile || !(await hasPermission(user.id, "rag_documents.manage"))) {
     redirect("/403");
   }
   

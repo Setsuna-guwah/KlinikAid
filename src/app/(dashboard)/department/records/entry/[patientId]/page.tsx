@@ -1,7 +1,7 @@
 import React from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentUser } from "@/lib/auth/helpers";
+import { getCurrentUser, hasAnyPermission } from "@/lib/auth/helpers";
 import RecordEntryClient from "@/components/RecordEntryClient";
 import { Department } from "@/types";
 
@@ -25,8 +25,12 @@ export default async function RecordEntryPage({ params, searchParams }: PageProp
     redirect("/login");
   }
 
-  // 1. Enforce RBAC
-  if (profile.role !== "admin" && profile.role !== "department_staff") {
+  // 1. Enforce RBAC for department record entry
+  const canAccessRecordEntry = await hasAnyPermission(user.id, [
+    "records.manage",
+    "records.manage.own_dept",
+  ]);
+  if (!canAccessRecordEntry) {
     redirect("/403");
   }
 

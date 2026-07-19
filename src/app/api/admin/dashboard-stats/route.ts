@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth/helpers";
+import { requirePermission } from "@/lib/auth/helpers";
 import { errorResponse, successResponse } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     // 1. Authorize Admin
-    await requireRole(["admin"]);
+    await requirePermission("profiles.manage");
     const supabase = createClient();
 
     // 2. Calculate Philippine start of today (UTC+8)

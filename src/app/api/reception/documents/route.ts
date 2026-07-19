@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth/helpers";
+import { requirePermission } from "@/lib/auth/helpers";
 import { errorResponse, successResponse } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ export async function GET(request: Request) {
 
   try {
     // 2. Role authorization (Rule 2)
-    await requireRole(["admin", "receptionist"]);
+    await requirePermission("documents.manage");
 
     // 3. Query Param Filtering
     const { searchParams } = new URL(request.url);

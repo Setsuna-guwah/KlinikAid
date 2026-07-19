@@ -1,6 +1,6 @@
 "use server";
 
-import { requireRole } from "@/lib/auth/helpers";
+import { requireAnyPermission } from "@/lib/auth/helpers";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 import { extractDocumentText } from "@/lib/documents/extractDocumentText";
 import { logEvent } from "@/lib/logger";
@@ -56,7 +56,7 @@ export async function extractLabResultValuesAction(
   }
 
   try {
-    const profile = await requireRole(["admin", "department_staff"]);
+    const profile = await requireAnyPermission(["records.manage", "records.manage.own_dept"]);
     const effectiveDepartment =
       profile.role === "department_staff"
         ? profile.department
@@ -130,7 +130,7 @@ export async function extractDepartmentTextAction(
   }
 
   try {
-    const profile = await requireRole(["admin", "department_staff"]);
+    const profile = await requireAnyPermission(["records.manage", "records.manage.own_dept"]);
     const effectiveDepartment =
       profile.role === "department_staff"
         ? profile.department

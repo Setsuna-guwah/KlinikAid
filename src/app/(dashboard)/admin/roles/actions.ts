@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth/helpers";
+import { requirePermission } from "@/lib/auth/helpers";
 import { logEvent } from "@/lib/logger";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 import { revalidatePath } from "next/cache";
@@ -13,7 +13,7 @@ export async function createCustomRoleAction(
   permissionIds: string[]
 ) {
   try {
-    const adminProfile = await requireRole(["admin"]);
+    const adminProfile = await requirePermission("roles.manage");
     
     if (!name || name.trim().length < 3) {
       return { success: false, error: "Role name must be at least 3 characters." };
@@ -89,7 +89,7 @@ export async function createCustomRoleAction(
 
 export async function getRolesAction() {
   try {
-    await requireRole(["admin"]);
+    await requirePermission("roles.manage");
     const supabase = createClient();
     const { data, error } = await supabase
       .from("roles")

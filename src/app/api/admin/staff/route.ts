@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireRole } from "@/lib/auth/helpers";
+import { requirePermission } from "@/lib/auth/helpers";
 import { errorResponse, successResponse } from "@/lib/api-response";
 import { logEvent } from "@/lib/logger";
 import { DEPARTMENTS, SYSTEM_EVENT_TYPES } from "@/lib/constants";
@@ -49,7 +49,7 @@ function isDepartment(value: unknown): value is Department {
 // GET: list all staff members (non-patients) with merged email from Auth
 export async function GET() {
   try {
-    await requireRole(["admin"]);
+    await requirePermission("staff.manage");
     const supabase = createClient();
     const adminClient = createAdminClient();
 
@@ -89,7 +89,7 @@ export async function GET() {
 // POST: create a new staff member
 export async function POST(request: Request) {
   try {
-    const adminProfile = await requireRole(["admin"]);
+    const adminProfile = await requirePermission("staff.manage");
     const body = await request.json();
     const { email, password, fullName, roleId, department } = body;
     const employeeType = normalizeEmployeeType(body.employeeType);

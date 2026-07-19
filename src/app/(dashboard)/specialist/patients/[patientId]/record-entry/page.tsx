@@ -1,5 +1,5 @@
 import React from "react";
-import { requireRole } from "@/lib/auth/helpers";
+import { requirePermission } from "@/lib/auth/helpers";
 import { createClient } from "@/lib/supabase/server";
 import { notFound, redirect } from "next/navigation";
 import SpecialistRecordEntryClient from "@/components/SpecialistRecordEntryClient";
@@ -13,7 +13,7 @@ interface PageProps {
 export const dynamic = "force-dynamic";
 
 export default async function SpecialistRecordEntryPage({ params }: PageProps) {
-  const profile = await requireRole(["medical_specialist"]);
+  const profile = await requirePermission("specialist.records");
   const { patientId } = params;
 
   const supabase = createClient();

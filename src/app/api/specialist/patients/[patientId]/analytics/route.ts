@@ -1,7 +1,7 @@
 // IMPORTANT: This route queries Supabase PostgreSQL directly. No LLM is involved. See SO-C.
 
 import { createClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth/helpers";
+import { requirePermission } from "@/lib/auth/helpers";
 import { errorResponse, successResponse } from "@/lib/api-response";
 
 export async function GET(
@@ -18,7 +18,7 @@ export async function GET(
   }
 
   try {
-    await requireRole(["admin", "medical_specialist"]);
+    await requirePermission("specialist.analytics");
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     const isForbidden = message.includes("FORBIDDEN");

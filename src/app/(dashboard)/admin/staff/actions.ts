@@ -1,12 +1,12 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth/helpers";
+import { requirePermission } from "@/lib/auth/helpers";
 import { SITE_ORIGIN } from "@/lib/constants";
 
 export async function sendStaffResetEmailAction(email: string) {
   try {
-    await requireRole(["admin"]);
+    await requirePermission("staff.manage");
 
     if (!email || !email.includes("@")) {
       return { success: false, error: "Invalid email address." };

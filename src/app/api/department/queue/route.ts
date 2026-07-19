@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth/helpers";
+import { requireAnyPermission } from "@/lib/auth/helpers";
 import { errorResponse, successResponse } from "@/lib/api-response";
 import { getPhtStartOfToday } from "@/lib/utils";
 
@@ -8,7 +8,7 @@ export async function GET(request: Request) {
 
   try {
     // 1. Enforce admin or department_staff roles
-    const profile = await requireRole(["admin", "department_staff"]);
+    const profile = await requireAnyPermission(["queue.manage", "queue.manage.own_dept"]);
 
     // 2. Determine target department
     const { searchParams } = new URL(request.url);

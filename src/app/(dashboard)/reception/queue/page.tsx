@@ -1,6 +1,6 @@
 import React from "react";
 import { createClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth/helpers";
+import { requirePermission } from "@/lib/auth/helpers";
 import ReceptionKanban from "@/components/ReceptionKanban";
 import { Document } from "@/types";
 
@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ReceptionQueuePage() {
   // 1. Authenticate user and enforce roles (Rule 1 & Rule 2)
-  await requireRole(["admin", "receptionist"]);
+  await requirePermission("documents.manage");
   const supabase = createClient();
 
   // 2. Fetch initial documents with patient and uploader relationships

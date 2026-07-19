@@ -1,6 +1,6 @@
 import React from "react";
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth/helpers";
+import { getCurrentUser, hasPermission } from "@/lib/auth/helpers";
 import { createClient } from "@/lib/supabase/server";
 import LogsDashboardClient from "./LogsDashboardClient";
 
@@ -19,7 +19,7 @@ export default async function AdminLogsPage() {
     redirect("/login");
   }
 
-  if (!profile || profile.role !== "admin") {
+  if (!profile || !(await hasPermission(user.id, "system_logs.read"))) {
     redirect("/403");
   }
 

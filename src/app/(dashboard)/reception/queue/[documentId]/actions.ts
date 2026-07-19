@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { hasPermission } from "@/lib/auth/helpers";
 
 export async function getReceptionDocumentSignedUrlAction(documentId: string) {
   const supabase = createClient();
@@ -10,13 +11,7 @@ export async function getReceptionDocumentSignedUrlAction(documentId: string) {
     return { success: false, error: "Unauthorized: Please log in." };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  if (profileError || !profile || !["admin", "receptionist"].includes(profile.role)) {
+  if (!(await hasPermission(user.id, "documents.manage"))) {
     return { success: false, error: "Access denied." };
   }
 

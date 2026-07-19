@@ -1,7 +1,7 @@
 import React from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentUser } from "@/lib/auth/helpers";
+import { getCurrentUser, hasAnyPermission } from "@/lib/auth/helpers";
 import { getPhtStartOfToday } from "@/lib/utils";
 import DepartmentRecordsClient from "@/components/DepartmentRecordsClient";
 import { Department } from "@/types";
@@ -49,8 +49,14 @@ export default async function DepartmentRecordsPage({ searchParams }: PageProps)
     redirect("/login");
   }
 
-  // 1. Enforce RBAC (admin or department_staff)
-  if (profile.role !== "admin" && profile.role !== "department_staff") {
+  // 1. Enforce RBAC for department queue/records surface
+  const canAccessDepartmentRecords = await hasAnyPermission(user.id, [
+    "queue.manage",
+    "queue.manage.own_dept",
+    "records.manage",
+    "records.manage.own_dept",
+  ]);
+  if (!canAccessDepartmentRecords) {
     redirect("/403");
   }
 

@@ -56,6 +56,56 @@ export async function requireRole(allowedRoles: UserRole[]): Promise<Profile> {
   return profile;
 }
 
+export async function hasPermission(userId: string, permissionName: string): Promise<boolean> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("user_has_permission", {
+    p_user_id: userId,
+    p_permission_name: permissionName,
+  });
+
+  if (error) {
+    console.error("Permission check failed:", error.message);
+    return false;
+  }
+
+  return data === true;
+}
+
+export async function hasAnyPermission(userId: string, permissionNames: string[]): Promise<boolean> {
+  const checks = await Promise.all(permissionNames.map((permissionName) => hasPermission(userId, permissionName)));
+  return checks.some(Boolean);
+}
+
+export async function requirePermission(permissionName: string): Promise<Profile> {
+  const { user, profile } = await getCurrentUser();
+
+  if (!user || !profile) {
+    throw new Error("UNAUTHORIZED: Session not found");
+  }
+
+  const allowed = await hasPermission(user.id, permissionName);
+  if (!allowed) {
+    throw new Error(`FORBIDDEN: Missing permission '${permissionName}'`);
+  }
+
+  return profile;
+}
+
+export async function requireAnyPermission(permissionNames: string[]): Promise<Profile> {
+  const { user, profile } = await getCurrentUser();
+
+  if (!user || !profile) {
+    throw new Error("UNAUTHORIZED: Session not found");
+  }
+
+  const allowed = await hasAnyPermission(user.id, permissionNames);
+  if (!allowed) {
+    throw new Error(`FORBIDDEN: Missing one of permissions '${permissionNames.join(", ")}'`);
+  }
+
+  return profile;
+}
+
 /**
  * Server guard: Enforces that the active user belongs to a specific department.
  * Returns the profile if successful, otherwise throws an error.

@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireRole } from "@/lib/auth/helpers";
+import { requirePermission } from "@/lib/auth/helpers";
 import { errorResponse, successResponse } from "@/lib/api-response";
 import { logEvent } from "@/lib/logger";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
@@ -23,7 +23,7 @@ function normalizeEmployeeType(value: unknown) {
 // PUT: update staff details (full name, email, role, department)
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
   try {
-    const adminProfile = await requireRole(["admin"]);
+    const adminProfile = await requirePermission("staff.manage");
     const { id } = params;
     const body = await request.json();
     const { email, fullName, roleId, department } = body;
@@ -135,7 +135,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 // PATCH: toggle staff active status (activate / deactivate)
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   try {
-    const adminProfile = await requireRole(["admin"]);
+    const adminProfile = await requirePermission("staff.manage");
     const { id } = params;
     const body = await request.json();
     const { isActive } = body;

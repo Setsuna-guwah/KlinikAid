@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+import { hasPermission } from "@/lib/auth/helpers";
 
 /**
  * Generate a short-lived signed URL for a private document file.
@@ -35,11 +36,11 @@ export async function getSignedUrlAction(documentId: string) {
     .eq("id", user.id)
     .single();
 
-  const isStaffOrAdmin = profile && (profile.role === "admin" || profile.role === "receptionist");
+  const canManageDocuments = profile ? await hasPermission(user.id, "documents.manage") : false;
 
   // Fetch patient record if not staff/admin to verify ownership
   let isOwner = false;
-  if (!isStaffOrAdmin) {
+  if (!canManageDocuments) {
     const { data: patient } = await supabase
       .from("patients")
       .select("id")
@@ -50,7 +51,7 @@ export async function getSignedUrlAction(documentId: string) {
   }
 
   // Prevent unauthorized access
-  if (!isStaffOrAdmin && !isOwner) {
+  if (!canManageDocuments && !isOwner) {
     return { success: false, error: "Access Denied: You do not have permission to view this file." };
   }
 

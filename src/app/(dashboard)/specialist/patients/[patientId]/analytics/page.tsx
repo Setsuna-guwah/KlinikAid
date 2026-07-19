@@ -1,6 +1,6 @@
 import React from "react";
 import { notFound } from "next/navigation";
-import { requireRole } from "@/lib/auth/helpers";
+import { requirePermission } from "@/lib/auth/helpers";
 import { createClient } from "@/lib/supabase/server";
 import SpecialistAnalyticsClient from "@/components/SpecialistAnalyticsClient";
 
@@ -34,7 +34,7 @@ export default async function PatientAnalyticsPage({
   params
 }: PatientAnalyticsPageProps) {
   // Guard access: only admin and medical_specialist roles
-  await requireRole(["admin", "medical_specialist"]);
+  await requirePermission("specialist.analytics");
 
   const supabase = createClient();
   const { patientId } = params;

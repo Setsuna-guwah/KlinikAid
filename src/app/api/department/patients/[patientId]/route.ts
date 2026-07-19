@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth/helpers";
+import { requireAnyPermission } from "@/lib/auth/helpers";
 import { errorResponse, successResponse } from "@/lib/api-response";
 
 export async function GET(
@@ -15,7 +15,7 @@ export async function GET(
 
   try {
     // 1. Enforce roles
-    const profile = await requireRole(["admin", "department_staff"]);
+    const profile = await requireAnyPermission(["records.manage", "records.manage.own_dept"]);
 
     // 2. Determine target department
     const { searchParams } = new URL(request.url);

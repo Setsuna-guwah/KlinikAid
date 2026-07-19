@@ -6,6 +6,7 @@ import { logEvent } from "@/lib/logger";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 import { revalidatePath } from "next/cache";
+import { hasPermission } from "@/lib/auth/helpers";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -39,13 +40,8 @@ async function verifyAdmin() {
     throw new Error("Unauthorized: Please log in.");
   }
   
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-    
-  if (profileError || !profile || profile.role !== "admin") {
+  const allowed = await hasPermission(user.id, "rag_documents.manage");
+  if (!allowed) {
     throw new Error("Forbidden: Access denied.");
   }
   

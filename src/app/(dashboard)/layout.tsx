@@ -6,6 +6,7 @@ import { headers } from "next/headers";
 import { logEvent } from "@/lib/logger";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 import { getTotpFactors } from "@/lib/auth/mfa";
+import { hasAnyPermission } from "@/lib/auth/helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -85,10 +86,38 @@ export default async function DashboardLayout({ children }: DashboardLayoutProps
   const isPatientRoute = xPathname.startsWith("/patient");
 
   let isRoleMismatch = false;
-  if (isAdminRoute && profile.role !== "admin") isRoleMismatch = true;
-  if (isReceptionRoute && profile.role !== "admin" && profile.role !== "receptionist") isRoleMismatch = true;
-  if (isDepartmentRoute && profile.role !== "admin" && profile.role !== "department_staff") isRoleMismatch = true;
-  if (isSpecialistRoute && profile.role !== "admin" && profile.role !== "medical_specialist") isRoleMismatch = true;
+  if (isAdminRoute) {
+    isRoleMismatch = !(await hasAnyPermission(user.id, [
+      "staff.manage",
+      "roles.manage",
+      "profiles.manage",
+      "system_logs.read",
+      "chatbot_logs.read",
+      "rag_documents.manage",
+    ]));
+  }
+  if (isReceptionRoute) {
+    isRoleMismatch = !(await hasAnyPermission(user.id, [
+      "patients.manage",
+      "documents.manage",
+      "queue.manage",
+    ]));
+  }
+  if (isDepartmentRoute) {
+    isRoleMismatch = !(await hasAnyPermission(user.id, [
+      "queue.manage",
+      "queue.manage.own_dept",
+      "records.manage",
+      "records.manage.own_dept",
+    ]));
+  }
+  if (isSpecialistRoute) {
+    isRoleMismatch = !(await hasAnyPermission(user.id, [
+      "specialist.patients",
+      "specialist.analytics",
+      "specialist.records",
+    ]));
+  }
   if (isPatientRoute && profile.role !== "patient") isRoleMismatch = true;
 
   if (isRoleMismatch) {

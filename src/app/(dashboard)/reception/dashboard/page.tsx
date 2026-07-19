@@ -2,7 +2,7 @@ import React from "react";
 import Link from "next/link";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth/helpers";
+import { requirePermission } from "@/lib/auth/helpers";
 import { getPhtStartOfToday } from "@/lib/utils";
 import { 
   ClipboardList, 
@@ -35,7 +35,7 @@ function formatPhTime(utcString: string) {
 
 export default async function ReceptionDashboardPage() {
   // 1. Authenticate user and enforce roles (Rule 1 & Rule 2)
-  await requireRole(["admin", "receptionist"]);
+  await requirePermission("patients.manage");
   const supabase = createClient();
 
   // 2. Calculate start of today in UTC+8 terms, converted back to UTC ISO for database query

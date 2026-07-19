@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth/helpers";
+import { requirePermission } from "@/lib/auth/helpers";
 import { errorResponse, successResponse } from "@/lib/api-response";
 import { logEvent } from "@/lib/logger";
 import { getPhtStartOfToday } from "@/lib/utils";
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
 
   try {
     // 2. Role Check (Rule 2)
-    const profile = await requireRole(["admin", "receptionist"]);
+    const profile = await requirePermission("queue.manage");
 
     // 3. Parse and validate body
     const body = await request.json();

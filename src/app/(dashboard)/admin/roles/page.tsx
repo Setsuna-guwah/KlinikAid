@@ -1,11 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth/helpers";
+import { requirePermission } from "@/lib/auth/helpers";
 import RolesClient from "./RolesClient";
 
 export const dynamic = "force-dynamic";
 
 export default async function RolesPage() {
-  await requireRole(["admin"]);
+  await requirePermission("roles.read");
   const supabase = createClient();
 
   // Load roles, permissions and mappings

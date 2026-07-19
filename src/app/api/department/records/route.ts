@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth/helpers";
+import { requireAnyPermission } from "@/lib/auth/helpers";
 import { errorResponse, successResponse } from "@/lib/api-response";
 import { logEvent } from "@/lib/logger";
 import { getPhtStartOfToday } from "@/lib/utils";
@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   const supabase = createClient();
 
   try {
-    const profile = await requireRole(["admin", "department_staff"]);
+    const profile = await requireAnyPermission(["records.manage", "records.manage.own_dept"]);
 
     // Determine target department
     const { searchParams } = new URL(request.url);
@@ -91,7 +91,7 @@ export async function POST(request: Request) {
 
   try {
     // 2. Role Check (Only admins or department_staff can enter results)
-    const profile = await requireRole(["admin", "department_staff"]);
+    const profile = await requireAnyPermission(["records.manage", "records.manage.own_dept"]);
 
     // 3. Parse request body
     const body = await request.json();

@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth/helpers";
+import { requirePermission } from "@/lib/auth/helpers";
 import { logEvent } from "@/lib/logger";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 import { revalidatePath } from "next/cache";
@@ -74,7 +74,7 @@ export async function createSpecialistPatientAction(
   const supabase = createClient();
 
   try {
-    const profile = await requireRole(["medical_specialist"]);
+    const profile = await requirePermission("specialist.patients");
     
     const firstName = ((formData.get("firstName") as string) || "").trim();
     const lastName = ((formData.get("lastName") as string) || "").trim();
@@ -162,7 +162,7 @@ export async function deleteSpecialistPatientAction(patientId: string): Promise<
   const supabase = createClient();
 
   try {
-    await requireRole(["medical_specialist"]);
+    await requirePermission("specialist.patients");
 
     if (!patientId) {
       return { success: false, error: "Patient ID is required." };

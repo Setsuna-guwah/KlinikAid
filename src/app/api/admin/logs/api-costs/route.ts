@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { errorResponse, successResponse } from "@/lib/api-response";
 import { toZonedTime, format } from "date-fns-tz";
+import { requirePermission } from "@/lib/auth/helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -13,14 +14,9 @@ export async function GET() {
     return errorResponse("Unauthorized: Please sign in.", 401);
   }
 
-  // Fetch role to enforce RBAC
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  if (profileError || !profile || profile.role !== "admin") {
+  try {
+    await requirePermission("system_logs.read");
+  } catch {
     return errorResponse("Forbidden: Access denied.", 403);
   }
 

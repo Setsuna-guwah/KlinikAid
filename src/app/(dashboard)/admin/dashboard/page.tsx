@@ -2,7 +2,7 @@ import React from "react";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth/helpers";
+import { requirePermission } from "@/lib/auth/helpers";
 import { getPhtStartOfToday } from "@/lib/utils";
 import DepartmentChart from "./DepartmentChart";
 import { 
@@ -50,7 +50,7 @@ function getEventBadgeClass(eventType: string) {
 
 export default async function AdminDashboardPage() {
   // Enforce admin privileges
-  await requireRole(["admin"]);
+  await requirePermission("profiles.manage");
   const supabase = createClient();
 
   // Calculate start of today in UTC+8 terms, converted back to UTC ISO for database query

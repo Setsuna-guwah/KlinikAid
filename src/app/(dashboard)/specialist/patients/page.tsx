@@ -1,5 +1,5 @@
 import React from "react";
-import { requireRole } from "@/lib/auth/helpers";
+import { requirePermission } from "@/lib/auth/helpers";
 import { createClient } from "@/lib/supabase/server";
 import SpecialistPatientsClient from "@/components/SpecialistPatientsClient";
 
@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export default async function SpecialistPatientsPage() {
   // Enforce access: only admin and specialist
-  await requireRole(["admin", "medical_specialist"]);
+  await requirePermission("specialist.patients");
 
   const supabase = createClient();
 
