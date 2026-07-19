@@ -10,7 +10,9 @@ import {
   Server,
   Lock,
   Settings,
-  FolderLock
+  FolderLock,
+  Edit2,
+  Trash2
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,7 +20,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { createCustomRoleAction } from "./actions";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { createCustomRoleAction, deleteCustomRoleAction, updateCustomRoleAction } from "./actions";
 import { toast } from "sonner";
 
 interface Role {
@@ -54,6 +57,11 @@ export default function RolesClient({ roles, permissions, mappings }: RolesClien
   const [newRoleDesc, setNewRoleDesc] = useState("");
   const [selectedBaseRole, setSelectedBaseRole] = useState<string>("receptionist");
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
+  const [editingRole, setEditingRole] = useState<Role | null>(null);
+  const [editRoleName, setEditRoleName] = useState("");
+  const [editRoleDesc, setEditRoleDesc] = useState("");
+  const [editSelectedPermissions, setEditSelectedPermissions] = useState<string[]>([]);
+  const [deletingRole, setDeletingRole] = useState<Role | null>(null);
 
   // Group permissions by module
   const modules = Array.from(new Set(permissions.map((p) => p.module)));
@@ -87,6 +95,59 @@ export default function RolesClient({ roles, permissions, mappings }: RolesClien
     setSelectedPermissions((prev) =>
       prev.includes(permId) ? prev.filter((id) => id !== permId) : [...prev, permId]
     );
+  };
+
+  const handleToggleEditPermission = (permId: string) => {
+    setEditSelectedPermissions((prev) =>
+      prev.includes(permId) ? prev.filter((id) => id !== permId) : [...prev, permId]
+    );
+  };
+
+  const handleEditOpen = (role: Role) => {
+    setEditingRole(role);
+    setEditRoleName(role.name);
+    setEditRoleDesc(role.description || "");
+    setEditSelectedPermissions(Array.from(rolePermissionsMap.get(role.id) || []));
+  };
+
+  const handleUpdateRole = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingRole) return;
+
+    if (!editRoleName.trim()) {
+      toast.error("Please enter a role name.");
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await updateCustomRoleAction(editingRole.id, {
+        name: editRoleName,
+        description: editRoleDesc,
+        permissionIds: editSelectedPermissions,
+      });
+
+      if (result.success) {
+        toast.success(`Custom role '${editRoleName}' updated successfully.`);
+        setEditingRole(null);
+      } else {
+        toast.error(result.error || "Failed to update role.");
+      }
+    });
+  };
+
+  const handleDeleteRole = async () => {
+    if (!deletingRole) return;
+
+    startTransition(async () => {
+      const result = await deleteCustomRoleAction(deletingRole.id);
+
+      if (result.success) {
+        toast.success(`Custom role '${deletingRole.name}' deleted successfully.`);
+        setDeletingRole(null);
+      } else {
+        toast.error(result.error || "Failed to delete role.");
+      }
+    });
   };
 
   const handleCreateRole = async (e: React.FormEvent) => {
@@ -264,6 +325,148 @@ export default function RolesClient({ roles, permissions, mappings }: RolesClien
         </Card>
       )}
 
+      <Dialog open={!!editingRole} onOpenChange={(open) => !open && setEditingRole(null)}>
+        <DialogContent className="max-w-3xl bg-white dark:bg-slate-950">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Edit2 className="h-4 w-4 text-indigo-500" />
+              Edit Custom Role
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500 dark:text-slate-400">
+              Update this custom role&apos;s name, description, and granted permissions.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleUpdateRole} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-role-name" className="text-xs font-bold text-slate-700 dark:text-slate-300">Role Name</Label>
+                  <Input
+                    id="edit-role-name"
+                    value={editRoleName}
+                    onChange={(e) => setEditRoleName(e.target.value)}
+                    className="text-xs h-10 border-slate-200 dark:border-slate-800 focus-visible:ring-indigo-500/20"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-role-desc" className="text-xs font-bold text-slate-700 dark:text-slate-300">Description</Label>
+                  <Textarea
+                    id="edit-role-desc"
+                    value={editRoleDesc}
+                    onChange={(e) => setEditRoleDesc(e.target.value)}
+                    rows={4}
+                    className="text-xs border-slate-200 dark:border-slate-800 focus-visible:ring-indigo-500/20"
+                  />
+                </div>
+
+                {editingRole?.base_role && (
+                  <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-3 text-[10px] text-slate-600 dark:border-indigo-950 dark:bg-indigo-950/20 dark:text-slate-300">
+                    <div className="flex items-center gap-1.5 font-semibold">
+                      <Info className="h-3.5 w-3.5 text-indigo-500" />
+                      Resolves to template: <span className="font-bold">{editingRole.base_role}</span>
+                    </div>
+                    <p className="mt-1 leading-relaxed">
+                      Permission changes take effect on each affected user&apos;s next request or login.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-4">
+                <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">Toggle Permissions Catalog</Label>
+                <div className="border border-slate-150 dark:border-slate-850 rounded-lg p-4 max-h-[360px] overflow-y-auto bg-slate-50/50 dark:bg-slate-950/20 space-y-5">
+                  {modules.map((mod) => {
+                    const modPerms = permissions.filter((p) => p.module === mod);
+                    return (
+                      <div key={mod} className="space-y-2">
+                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 border-b border-slate-100 dark:border-slate-900 pb-1">{mod}</h4>
+                        <div className="space-y-2 pl-1">
+                          {modPerms.map((perm) => {
+                            const checked = editSelectedPermissions.includes(perm.id);
+                            return (
+                              <label
+                                key={perm.id}
+                                className="flex items-start gap-2.5 cursor-pointer text-xs group"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => handleToggleEditPermission(perm.id)}
+                                  className="mt-0.5 rounded border-slate-300 dark:border-slate-800 text-indigo-600 focus:ring-indigo-500/20 h-3.5 w-3.5"
+                                />
+                                <div className="space-y-0.5">
+                                  <span className="font-semibold text-slate-850 dark:text-slate-200 group-hover:text-indigo-500 transition-colors">{perm.name}</span>
+                                  <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-snug">{perm.description}</p>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setEditingRole(null)}
+                className="text-xs h-9"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isPending}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs h-9"
+              >
+                {isPending ? "Saving..." : "Save Changes"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deletingRole} onOpenChange={(open) => !open && setDeletingRole(null)}>
+        <DialogContent className="bg-white dark:bg-slate-950">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Trash2 className="h-4 w-4 text-rose-500" />
+              Delete Custom Role
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500 dark:text-slate-400">
+              This action removes the custom role only if no staff accounts are currently assigned to it.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border border-rose-100 bg-rose-50/70 p-3 text-xs text-rose-800 dark:border-rose-950 dark:bg-rose-950/20 dark:text-rose-200">
+            Delete <span className="font-bold">{deletingRole?.name}</span>? If any users are assigned, deletion will be blocked and those users must be reassigned first.
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeletingRole(null)}
+              className="text-xs h-9"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={isPending}
+              onClick={handleDeleteRole}
+              className="bg-rose-600 hover:bg-rose-700 text-white font-medium text-xs h-9"
+            >
+              {isPending ? "Deleting..." : "Delete Role"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Dynamic Roles List Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {roles.map((role) => {
@@ -325,6 +528,28 @@ export default function RolesClient({ roles, permissions, mappings }: RolesClien
                     </p>
                   )}
                 </div>
+                {!role.is_system && (
+                  <div className="flex items-center gap-2 pt-3 mt-3 border-t border-slate-100 dark:border-slate-850/50">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => handleEditOpen(role)}
+                      className="h-8 flex-1 text-xs gap-1.5"
+                    >
+                      <Edit2 className="h-3.5 w-3.5" />
+                      Edit
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setDeletingRole(role)}
+                      className="h-8 flex-1 text-xs gap-1.5 border-rose-200 text-rose-700 hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/30"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Delete
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           );

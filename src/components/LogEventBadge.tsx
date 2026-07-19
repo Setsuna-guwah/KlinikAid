@@ -10,6 +10,7 @@ const EVENT_BADGE_STYLES: Record<string, { bg: string; text: string; border: str
   LOGIN_FAILED:           { bg: '#fee2e2', text: '#991b1b', border: '#fca5a5', label: 'Login Failed' },
   LOGOUT:                 { bg: '#f3f4f6', text: '#374151', border: '#d1d5db', label: 'Logout' },
   USER_REGISTERED:        { bg: '#e0f2fe', text: '#0369a1', border: '#bae6fd', label: 'User Registered' },
+  PROFILE_PROVISIONING_FAILED: { bg: '#fef2f2', text: '#991b1b', border: '#fecaca', label: 'Profile Provisioning Failed' },
   STAFF_CREATED:          { bg: '#f3e8ff', text: '#6b21a8', border: '#e9d5ff', label: 'Staff Created' },
   STAFF_UPDATED:          { bg: '#e0e7ff', text: '#3730a3', border: '#c7d2fe', label: 'Staff Updated' },
   STAFF_ACTIVATED:        { bg: '#dcfce7', text: '#166534', border: '#86efac', label: 'Staff Activated' },
@@ -35,6 +36,8 @@ const EVENT_BADGE_STYLES: Record<string, { bg: string; text: string; border: str
   SPECIALIST_PATIENT_CREATED: { bg: '#e0f2fe', text: '#0369a1', border: '#bae6fd', label: 'Spec Patient Created' },
   SPECIALIST_RECORD_ENTERED: { bg: '#fae8ff', text: '#86198f', border: '#f5d0fe', label: 'Spec Record Entered' },
   CUSTOM_ROLE_CREATED:    { bg: '#ecfeff', text: '#155e75', border: '#67e8f9', label: 'Role Created' },
+  ROLE_UPDATED:           { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe', label: 'Role Updated' },
+  ROLE_DELETED:           { bg: '#fef2f2', text: '#991b1b', border: '#fecaca', label: 'Role Deleted' },
   ROLE_ASSIGNED:          { bg: '#f3e8ff', text: '#6b21a8', border: '#e9d5ff', label: 'Role Assigned' },
 };
 
