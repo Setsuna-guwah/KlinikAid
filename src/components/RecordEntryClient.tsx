@@ -92,6 +92,7 @@ export default function RecordEntryClient({
   const [ocrSuggestedParams, setOcrSuggestedParams] = useState<string[]>([]);
   const [departmentTextOcrFile, setDepartmentTextOcrFile] = useState<File | null>(null);
   const [departmentTextOcrTarget, setDepartmentTextOcrTarget] = useState<"findings" | "impression" | null>(null);
+  const [isOcrNoticeOpen, setIsOcrNoticeOpen] = useState(false);
 
   // Lab parameter values & blur validation states
   const [paramValues, setParamValues] = useState<{ [key: string]: string }>({});
@@ -194,6 +195,8 @@ export default function RecordEntryClient({
       return;
     }
 
+    setIsOcrNoticeOpen(true);
+
     const expectedCount = allowedParams.length;
     if (appliedParams.length < expectedCount) {
       toast.warning("Some values could not be extracted. Please review and complete the fields manually.");
@@ -259,6 +262,8 @@ export default function RecordEntryClient({
       } else {
         setImpression(result.text);
       }
+
+      setIsOcrNoticeOpen(true);
 
       toast.success(
         `OCR text inserted into ${targetField === "findings" ? "Clinical Findings" : "Diagnostic Impression"}. Please verify before saving.`
@@ -780,6 +785,26 @@ export default function RecordEntryClient({
           </form>
         </div>
       </div>
+
+      <Dialog open={isOcrNoticeOpen} onOpenChange={setIsOcrNoticeOpen}>
+        <DialogContent className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>OCR Values Auto-Filled</DialogTitle>
+            <DialogDescription className="text-xs leading-relaxed">
+              The values were extracted automatically via OCR and may contain errors. Please review and verify each field carefully before saving.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              onClick={() => setIsOcrNoticeOpen(false)}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold"
+            >
+              Got it
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={outOfRangeConfirm.length > 0} onOpenChange={(open) => !open && setOutOfRangeConfirm([])}>
         <DialogContent className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 sm:max-w-md">
