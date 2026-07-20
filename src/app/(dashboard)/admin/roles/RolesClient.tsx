@@ -6,7 +6,6 @@ import {
   ShieldAlert,
   Plus, 
   Check, 
-  Info,
   Server,
   Lock,
   Settings,
@@ -50,12 +49,77 @@ interface RolesClientProps {
   mappings: Mapping[];
 }
 
+interface PermissionCatalogPickerProps {
+  modules: string[];
+  permissions: Permission[];
+  selectedPermissionIds: string[];
+  onTogglePermission: (permissionId: string) => void;
+  onSelectAll: () => void;
+  onDeselectAll: () => void;
+}
+
+function PermissionCatalogPicker({
+  modules,
+  permissions,
+  selectedPermissionIds,
+  onTogglePermission,
+  onSelectAll,
+  onDeselectAll,
+}: PermissionCatalogPickerProps) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-slate-150 bg-slate-50/50 dark:border-slate-850 dark:bg-slate-950/20">
+      <div className="flex flex-col gap-2 border-b border-slate-100 bg-white/70 px-4 py-3 dark:border-slate-900 dark:bg-slate-950/40 sm:flex-row sm:items-center sm:justify-between">
+        <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">Toggle Permissions Catalog</Label>
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="outline" onClick={onSelectAll} className="h-8 text-[10px] font-semibold">
+            Select All
+          </Button>
+          <Button type="button" variant="outline" onClick={onDeselectAll} className="h-8 text-[10px] font-semibold">
+            Deselect All
+          </Button>
+        </div>
+      </div>
+      <div className="max-h-[360px] space-y-5 overflow-y-auto p-4">
+        {modules.map((mod) => {
+          const modPerms = permissions.filter((p) => p.module === mod);
+          return (
+            <div key={mod} className="space-y-2">
+              <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 border-b border-slate-100 dark:border-slate-900 pb-1">{mod}</h4>
+              <div className="space-y-2 pl-1">
+                {modPerms.map((perm) => {
+                  const checked = selectedPermissionIds.includes(perm.id);
+                  return (
+                    <label
+                      key={perm.id}
+                      className="flex items-start gap-2.5 cursor-pointer text-xs group"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => onTogglePermission(perm.id)}
+                        className="mt-0.5 rounded border-slate-300 dark:border-slate-800 text-indigo-600 focus:ring-indigo-500/20 h-3.5 w-3.5"
+                      />
+                      <div className="space-y-0.5">
+                        <span className="font-semibold text-slate-850 dark:text-slate-200 group-hover:text-indigo-500 transition-colors">{perm.name}</span>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-snug">{perm.description}</p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function RolesClient({ roles, permissions, mappings }: RolesClientProps) {
   const [isPending, startTransition] = useTransition();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newRoleName, setNewRoleName] = useState("");
   const [newRoleDesc, setNewRoleDesc] = useState("");
-  const [selectedBaseRole, setSelectedBaseRole] = useState<string>("receptionist");
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
   const [editingRole, setEditingRole] = useState<Role | null>(null);
   const [editRoleName, setEditRoleName] = useState("");
@@ -77,18 +141,6 @@ export default function RolesClient({ roles, permissions, mappings }: RolesClien
     });
     return map;
   }, [mappings]);
-
-  // Handle template selection change: load permissions of selected base role
-  const handleBaseRoleChange = (baseRoleName: string) => {
-    setSelectedBaseRole(baseRoleName);
-    const baseRoleObj = roles.find((r) => r.is_system && r.name === baseRoleName);
-    if (baseRoleObj) {
-      const basePerms = Array.from(rolePermissionsMap.get(baseRoleObj.id) || []);
-      setSelectedPermissions(basePerms);
-    } else {
-      setSelectedPermissions([]);
-    }
-  };
 
   // Toggle permission checkbox
   const handleTogglePermission = (permId: string) => {
@@ -161,7 +213,6 @@ export default function RolesClient({ roles, permissions, mappings }: RolesClien
       const result = await createCustomRoleAction(
         newRoleName,
         newRoleDesc,
-        selectedBaseRole as "admin" | "receptionist" | "department_staff" | "medical_specialist" | "patient",
         selectedPermissions
       );
 
@@ -194,7 +245,7 @@ export default function RolesClient({ roles, permissions, mappings }: RolesClien
             <Button 
               onClick={() => {
                 setShowCreateForm(true);
-                handleBaseRoleChange("receptionist");
+                setSelectedPermissions([]);
               }}
               className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs h-9 flex items-center gap-1.5 shadow-sm transition-all"
             >
@@ -214,7 +265,7 @@ export default function RolesClient({ roles, permissions, mappings }: RolesClien
               Build Custom Role
             </CardTitle>
             <CardDescription className="text-xs">
-              Create a shadow-state role by cloning an existing system template and modifying its permissions.
+              Create a custom role from scratch by selecting its access category and permissions.
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-6">
@@ -245,62 +296,17 @@ export default function RolesClient({ roles, permissions, mappings }: RolesClien
                     />
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="base-role" className="text-xs font-bold text-slate-700 dark:text-slate-300">Clone From Template</Label>
-                    <select
-                      id="base-role"
-                      value={selectedBaseRole}
-                      onChange={(e) => handleBaseRoleChange(e.target.value)}
-                      className="w-full pl-3 pr-8 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-xs bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 h-10 appearance-none"
-                    >
-                      <option value="receptionist">Receptionist</option>
-                      <option value="department_staff">Department Staff</option>
-                      <option value="medical_specialist">Medical Specialist</option>
-                      <option value="admin">Administrator</option>
-                    </select>
-                    <p className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-1 font-medium leading-relaxed">
-                      <Info className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
-                      Assigned users will temporarily resolve legacy routing rules matching this cloned base template.
-                    </p>
-                  </div>
                 </div>
 
                 {/* Right fields: Permissions selection grouped by module */}
-                <div className="space-y-4">
-                  <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">Toggle Permissions Catalog</Label>
-                  <div className="border border-slate-150 dark:border-slate-850 rounded-lg p-4 max-h-[320px] overflow-y-auto bg-slate-50/50 dark:bg-slate-950/20 space-y-5">
-                    {modules.map((mod) => {
-                      const modPerms = permissions.filter((p) => p.module === mod);
-                      return (
-                        <div key={mod} className="space-y-2">
-                          <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 border-b border-slate-100 dark:border-slate-900 pb-1">{mod}</h4>
-                          <div className="space-y-2 pl-1">
-                            {modPerms.map((perm) => {
-                              const checked = selectedPermissions.includes(perm.id);
-                              return (
-                                <label 
-                                  key={perm.id} 
-                                  className="flex items-start gap-2.5 cursor-pointer text-xs group"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={() => handleTogglePermission(perm.id)}
-                                    className="mt-0.5 rounded border-slate-300 dark:border-slate-800 text-indigo-600 focus:ring-indigo-500/20 h-3.5 w-3.5"
-                                  />
-                                  <div className="space-y-0.5">
-                                    <span className="font-semibold text-slate-850 dark:text-slate-200 group-hover:text-indigo-500 transition-colors">{perm.name}</span>
-                                    <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-snug">{perm.description}</p>
-                                  </div>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                <PermissionCatalogPicker
+                  modules={modules}
+                  permissions={permissions}
+                  selectedPermissionIds={selectedPermissions}
+                  onTogglePermission={handleTogglePermission}
+                  onSelectAll={() => setSelectedPermissions(permissions.map((permission) => permission.id))}
+                  onDeselectAll={() => setSelectedPermissions([])}
+                />
               </div>
 
               <div className="flex items-center justify-end gap-2 border-t border-slate-100 dark:border-slate-850/50 pt-4">
@@ -361,54 +367,19 @@ export default function RolesClient({ roles, permissions, mappings }: RolesClien
                   />
                 </div>
 
-                {editingRole?.base_role && (
-                  <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-3 text-[10px] text-slate-600 dark:border-indigo-950 dark:bg-indigo-950/20 dark:text-slate-300">
-                    <div className="flex items-center gap-1.5 font-semibold">
-                      <Info className="h-3.5 w-3.5 text-indigo-500" />
-                      Resolves to template: <span className="font-bold">{editingRole.base_role}</span>
-                    </div>
-                    <p className="mt-1 leading-relaxed">
-                      Permission changes take effect on each affected user&apos;s next request or login.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-4">
-                <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">Toggle Permissions Catalog</Label>
-                <div className="border border-slate-150 dark:border-slate-850 rounded-lg p-4 max-h-[360px] overflow-y-auto bg-slate-50/50 dark:bg-slate-950/20 space-y-5">
-                  {modules.map((mod) => {
-                    const modPerms = permissions.filter((p) => p.module === mod);
-                    return (
-                      <div key={mod} className="space-y-2">
-                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 border-b border-slate-100 dark:border-slate-900 pb-1">{mod}</h4>
-                        <div className="space-y-2 pl-1">
-                          {modPerms.map((perm) => {
-                            const checked = editSelectedPermissions.includes(perm.id);
-                            return (
-                              <label
-                                key={perm.id}
-                                className="flex items-start gap-2.5 cursor-pointer text-xs group"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={() => handleToggleEditPermission(perm.id)}
-                                  className="mt-0.5 rounded border-slate-300 dark:border-slate-800 text-indigo-600 focus:ring-indigo-500/20 h-3.5 w-3.5"
-                                />
-                                <div className="space-y-0.5">
-                                  <span className="font-semibold text-slate-850 dark:text-slate-200 group-hover:text-indigo-500 transition-colors">{perm.name}</span>
-                                  <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-snug">{perm.description}</p>
-                                </div>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-3 text-[10px] text-slate-600 dark:border-indigo-950 dark:bg-indigo-950/20 dark:text-slate-300">
+                  Permission changes take effect on each affected user&apos;s next request or login.
                 </div>
               </div>
+
+              <PermissionCatalogPicker
+                modules={modules}
+                permissions={permissions}
+                selectedPermissionIds={editSelectedPermissions}
+                onTogglePermission={handleToggleEditPermission}
+                onSelectAll={() => setEditSelectedPermissions(permissions.map((permission) => permission.id))}
+                onDeselectAll={() => setEditSelectedPermissions([])}
+              />
             </div>
 
             <DialogFooter>
@@ -497,12 +468,6 @@ export default function RolesClient({ roles, permissions, mappings }: RolesClien
                     </Badge>
                   )}
                 </div>
-                {!role.is_system && role.base_role && (
-                  <div className="text-[10px] text-slate-400 mt-2 font-medium flex items-center gap-1">
-                    <Info className="h-3 w-3 text-indigo-400" />
-                    <span>Resolves to template: <strong>{role.base_role}</strong></span>
-                  </div>
-                )}
               </CardHeader>
               
               <CardContent className="pt-3 border-t border-slate-100 dark:border-slate-850/50 flex-grow flex flex-col justify-between">

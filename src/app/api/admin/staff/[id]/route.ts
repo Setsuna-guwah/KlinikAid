@@ -52,7 +52,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       return errorResponse("Select a valid role.", 400);
     }
 
-    if (dbRole.name === "patient" || dbRole.base_role === "patient") {
+    if (dbRole.is_system && dbRole.name === "patient") {
       return errorResponse("The patient role cannot be assigned to staff members.", 400);
     }
 

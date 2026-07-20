@@ -333,7 +333,7 @@ export default function StaffManagementPage() {
 
 
   const assignableRoles = dbRoles.filter(
-    (r) => r.name !== "patient" && r.base_role !== "patient"
+    (r) => !(r.is_system && r.name === "patient")
   );
 
   // Filter staff list based on search

@@ -18,6 +18,10 @@ type ProfileWithRoleId = {
   role_id?: string | null;
 };
 
+type BaseRole = "admin" | "receptionist" | "department_staff" | "medical_specialist" | "patient";
+
+const DEFAULT_CUSTOM_ROLE_BASE_ROLE: BaseRole = "receptionist";
+
 function normalizePermissionIds(permissionIds: unknown): string[] {
   if (!Array.isArray(permissionIds)) return [];
   return Array.from(
@@ -32,7 +36,6 @@ function getCallerRoleId(profile: ProfileWithRoleId): string | null {
 export async function createCustomRoleAction(
   name: string,
   description: string,
-  baseRole: "admin" | "receptionist" | "department_staff" | "medical_specialist" | "patient",
   permissionIds: string[]
 ) {
   try {
@@ -64,7 +67,7 @@ export async function createCustomRoleAction(
         name: cleanName,
         description: description || null,
         is_system: false,
-        base_role: baseRole
+        base_role: DEFAULT_CUSTOM_ROLE_BASE_ROLE
       })
       .select()
       .single();
@@ -94,9 +97,14 @@ export async function createCustomRoleAction(
       supabase,
       adminProfile.id,
       SYSTEM_EVENT_TYPES.CUSTOM_ROLE_CREATED,
-      `Custom role '${cleanName}' created (cloned from ${baseRole})`,
+      `Custom role '${cleanName}' created`,
       null,
-      { role_id: newRole.id, role_name: cleanName, base_role: baseRole, permission_count: permissionIds.length }
+      {
+        role_id: newRole.id,
+        role_name: cleanName,
+        base_role: DEFAULT_CUSTOM_ROLE_BASE_ROLE,
+        permission_count: permissionIds.length,
+      }
     );
 
     revalidatePath("/admin/roles");
@@ -136,6 +144,7 @@ export async function updateCustomRoleAction(
     const cleanName = values.name.trim();
     const cleanDescription = values.description?.trim() || null;
     const permissionIds = normalizePermissionIds(values.permissionIds);
+
     const supabase = createClient();
 
     const { data: role, error: roleError } = await supabase
@@ -210,6 +219,7 @@ export async function updateCustomRoleAction(
         role_id: roleId,
         previous_role_name: role.name,
         role_name: cleanName,
+        previous_base_role: role.base_role,
         base_role: role.base_role,
         permission_count: permissionIds.length,
       }
