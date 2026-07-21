@@ -5,6 +5,7 @@ import { logEvent } from "@/lib/logger";
 import { headers } from "next/headers";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 import { getTotpFactors } from "@/lib/auth/mfa";
+import { getDefaultLandingPath } from "@/lib/auth/helpers";
 
 export interface LoginResult {
   error?: string;
@@ -169,11 +170,7 @@ export async function loginAction(
     );
 
     // 6. Return success and route destination
-    let redirectUrl = "/patient/dashboard";
-    if (profile.role === "admin") redirectUrl = "/admin/dashboard";
-    else if (profile.role === "receptionist") redirectUrl = "/reception/dashboard";
-    else if (profile.role === "department_staff") redirectUrl = "/department/dashboard";
-    else if (profile.role === "medical_specialist") redirectUrl = "/specialist/dashboard";
+    const redirectUrl = await getDefaultLandingPath(user.id, profile);
 
     return { success: true, redirectUrl };
   } catch (err) {

@@ -59,11 +59,12 @@ export default async function DepartmentRecordsPage({ searchParams }: PageProps)
   if (!canAccessDepartmentRecords) {
     redirect("/403");
   }
+  const canSelectDepartmentContext = await hasAnyPermission(user.id, ["queue.manage", "records.manage"]);
 
   // 2. Resolve department context
   let dept = profile.department;
-  if (profile.role === "admin") {
-    dept = (searchParams.department as Department) || "laboratory";
+  if (canSelectDepartmentContext) {
+    dept = (searchParams.department as Department) || profile.department || "laboratory";
   }
 
   if (!dept || !["laboratory", "imaging", "ultrasound", "ecg"].includes(dept)) {

@@ -6,7 +6,9 @@ import { headers } from "next/headers";
 import { logEvent } from "@/lib/logger";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 import { getTotpFactors } from "@/lib/auth/mfa";
-import { hasAnyPermission } from "@/lib/auth/helpers";
+import { hasAnyPermission, hasPermission } from "@/lib/auth/helpers";
+import { NavItem } from "@/components/sidebar";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +35,7 @@ export default async function DashboardLayout({ children }: DashboardLayoutProps
   // 2. Fetch profile and status
   const { data: profile, error } = await supabase
     .from("profiles")
-    .select("id, role, department, full_name, is_active, accepted_privacy_at")
+    .select("id, role, role_id, department, full_name, is_active, accepted_privacy_at")
     .eq("id", user.id)
     .single();
 
@@ -133,16 +135,95 @@ export default async function DashboardLayout({ children }: DashboardLayoutProps
     redirect("/403");
   }
 
+  let roleName: string | null = null;
+  if (profile.role_id) {
+    const adminSupabase = createAdminClient();
+    const { data: assignedRole } = await adminSupabase
+      .from("roles")
+      .select("name")
+      .eq("id", profile.role_id)
+      .maybeSingle();
+    roleName = assignedRole?.name || null;
+  }
+
   const sidebarUser = {
     id: profile.id,
     email: user.email || "",
     fullName: profile.full_name,
     role: profile.role,
+    roleName,
     department: profile.department,
   };
+  const [
+    canManageProfiles,
+    canManageStaff,
+    canReadRoles,
+    canManageDocuments,
+    canManageQueue,
+    canManagePatients,
+    canAccessDepartmentRecords,
+    canManageRag,
+    canReadSystemLogs,
+    canAccessSpecialistPatients,
+    canAccessChat,
+  ] = await Promise.all([
+    hasPermission(user.id, "profiles.manage"),
+    hasPermission(user.id, "staff.manage"),
+    hasPermission(user.id, "roles.read"),
+    hasPermission(user.id, "documents.manage"),
+    hasPermission(user.id, "queue.manage"),
+    hasPermission(user.id, "patients.manage"),
+    hasAnyPermission(user.id, ["queue.manage", "queue.manage.own_dept", "records.manage", "records.manage.own_dept"]),
+    hasPermission(user.id, "rag_documents.manage"),
+    hasPermission(user.id, "system_logs.read"),
+    hasPermission(user.id, "specialist.patients"),
+    hasPermission(user.id, "chat.access"),
+  ]);
+
+  const navItems: NavItem[] = [];
+
+  if (profile.role === "admin" && canManageProfiles) {
+    navItems.push({ label: "Dashboard", href: "/admin/dashboard", icon: "LayoutDashboard" });
+  }
+  if (canManageStaff) {
+    navItems.push({ label: "Staff Management", href: "/admin/staff", icon: "Users" });
+  }
+  if (canReadRoles) {
+    navItems.push({ label: "Role Management", href: "/admin/roles", icon: "ShieldCheck" });
+  }
+  if (canManageDocuments && canManageQueue) {
+    navItems.push({ label: "Reception Queue", href: "/reception/queue", icon: "ClipboardList" });
+  }
+  if (canManagePatients) {
+    navItems.push({ label: "Reception Dashboard", href: "/reception/dashboard", icon: "LayoutDashboard" });
+  }
+  if (canAccessDepartmentRecords) {
+    navItems.push({ label: "Dept Records", href: "/department/records", icon: "FileSpreadsheet" });
+  }
+  if (canManageRag) {
+    navItems.push({ label: "RAG Manager", href: "/admin/rag", icon: "Brain" });
+  }
+  if (canReadSystemLogs) {
+    navItems.push({ label: "System Logs", href: "/admin/logs", icon: "History" });
+  }
+  if (canAccessSpecialistPatients) {
+    navItems.push({ label: "Specialist Dashboard", href: "/specialist/dashboard", icon: "LayoutDashboard" });
+    navItems.push({ label: "My Patients", href: "/specialist/patients", icon: "UserCheck" });
+  }
+  if (profile.role === "patient") {
+    navItems.push({ label: "Dashboard", href: "/patient/dashboard", icon: "LayoutDashboard" });
+    if (canAccessChat) {
+      navItems.push({ label: "AI Assistant", href: "/patient/chat", icon: "Bot" });
+    }
+    navItems.push({ label: "Submit Document", href: "/patient/submit", icon: "Upload" });
+    navItems.push({ label: "Document Templates", href: "/patient/templates", icon: "ClipboardList" });
+    navItems.push({ label: "Track Submission", href: "/patient/submissions", icon: "Search" });
+    navItems.push({ label: "My Results", href: "/patient/results", icon: "FileText" });
+  }
+  navItems.push({ label: "My Profile", href: "/profile", icon: "User" });
 
   return (
-    <DashboardLayoutClient user={sidebarUser}>
+    <DashboardLayoutClient user={sidebarUser} navItems={navItems}>
       {children}
     </DashboardLayoutClient>
   );

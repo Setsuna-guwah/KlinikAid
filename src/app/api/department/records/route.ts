@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { requireAnyPermission } from "@/lib/auth/helpers";
+import { hasPermission, requireAnyPermission } from "@/lib/auth/helpers";
 import { errorResponse, successResponse } from "@/lib/api-response";
 import { logEvent } from "@/lib/logger";
 import { getPhtStartOfToday } from "@/lib/utils";
@@ -109,10 +109,10 @@ export async function POST(request: Request) {
     }
 
     // Determine department
+    const canSelectDepartmentContext = await hasPermission(profile.id, "records.manage");
     let dept = profile.department;
-    if (profile.role === "admin") {
-      // If admin, we expect department to be passed in body, or default to laboratory
-      dept = body.department || "laboratory";
+    if (canSelectDepartmentContext) {
+      dept = body.department || profile.department || "laboratory";
     }
 
     if (!dept || !["laboratory", "imaging", "ultrasound", "ecg"].includes(dept)) {

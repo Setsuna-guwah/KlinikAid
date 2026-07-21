@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import MfaEnrollClient from "./MfaEnrollClient";
 import { getTotpFactors } from "@/lib/auth/mfa";
+import { getDefaultLandingPath } from "@/lib/auth/helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -44,12 +45,7 @@ export default async function MfaEnrollPage() {
     const hasVerifiedTotp = getTotpFactors(factorsData).some((f) => f.status === "verified");
     if (hasVerifiedTotp) {
       // User is already enrolled, bypass page
-      let redirectUrl = "/patient/dashboard";
-      if (profile.role === "admin") redirectUrl = "/admin/dashboard";
-      else if (profile.role === "receptionist") redirectUrl = "/reception/dashboard";
-      else if (profile.role === "department_staff") redirectUrl = "/department/dashboard";
-      else if (profile.role === "medical_specialist") redirectUrl = "/specialist/dashboard";
-      redirect(redirectUrl);
+      redirect(await getDefaultLandingPath(user.id, profile));
     }
   }
 

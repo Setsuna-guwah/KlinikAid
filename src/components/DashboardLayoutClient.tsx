@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import Sidebar from "@/components/sidebar";
+import Sidebar, { NavItem } from "@/components/sidebar";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Menu } from "lucide-react";
@@ -15,25 +15,28 @@ interface DashboardLayoutClientProps {
     email: string;
     fullName: string;
     role: UserRole;
+    roleName?: string | null;
     department: Department | null;
   };
+  navItems: NavItem[];
 }
 
 export default function DashboardLayoutClient({
   children,
   user,
+  navItems,
 }: DashboardLayoutClientProps) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-background overflow-hidden">
       {/* Static Sidebar for Desktop */}
-      <Sidebar user={user} className="hidden md:flex" />
+      <Sidebar user={user} navItems={navItems} className="hidden md:flex" />
 
       {/* Slide-out Drawer for Mobile */}
       <Sheet open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
         <SheetContent side="left" className="p-0 w-64 max-w-xs border-r border-slate-200 dark:border-slate-800" showCloseButton={false}>
-          <Sidebar user={user} onLinkClick={() => setIsDrawerOpen(false)} className="w-full h-full border-r-0" />
+          <Sidebar user={user} navItems={navItems} onLinkClick={() => setIsDrawerOpen(false)} className="w-full h-full border-r-0" />
         </SheetContent>
       </Sheet>
 

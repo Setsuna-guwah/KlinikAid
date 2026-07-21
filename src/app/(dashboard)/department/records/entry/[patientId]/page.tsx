@@ -33,11 +33,12 @@ export default async function RecordEntryPage({ params, searchParams }: PageProp
   if (!canAccessRecordEntry) {
     redirect("/403");
   }
+  const canSelectDepartmentContext = await hasAnyPermission(user.id, ["records.manage"]);
 
   // 2. Resolve department
   let dept = profile.department;
-  if (profile.role === "admin") {
-    dept = (searchParams.department as Department) || "laboratory";
+  if (canSelectDepartmentContext) {
+    dept = (searchParams.department as Department) || profile.department || "laboratory";
   }
 
   if (!dept || !["laboratory", "imaging", "ultrasound", "ecg"].includes(dept)) {

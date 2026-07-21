@@ -28,25 +28,58 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
+export type SidebarIcon =
+  | "LayoutDashboard"
+  | "Users"
+  | "ClipboardList"
+  | "FileText"
+  | "Brain"
+  | "History"
+  | "FileSpreadsheet"
+  | "UserCheck"
+  | "Bot"
+  | "Upload"
+  | "Search"
+  | "User"
+  | "ShieldCheck";
+
 interface SidebarProps {
   user: {
     id: string;
     email: string;
     fullName: string;
     role: UserRole;
+    roleName?: string | null;
     department: Department | null;
   };
+  navItems: NavItem[];
   onLinkClick?: () => void;
   className?: string;
 }
 
-interface NavItem {
+export interface NavItem {
   label: string;
   href: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: SidebarIcon;
 }
 
-export default function Sidebar({ user, onLinkClick, className }: SidebarProps) {
+const iconMap: Record<SidebarIcon, React.ComponentType<{ className?: string }>> = {
+  LayoutDashboard,
+  Users,
+  ClipboardList,
+  FileText,
+  Brain,
+  History,
+  FileSpreadsheet,
+  UserCheck,
+  Bot,
+  Upload,
+  Search,
+  User,
+  ShieldCheck,
+};
+
+export default function Sidebar({ user, navItems, onLinkClick, className }: SidebarProps) {
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
 
@@ -56,43 +89,6 @@ export default function Sidebar({ user, onLinkClick, className }: SidebarProps) 
     });
   };
 
-  // Define nav items for each role
-  const navItemsMap: Record<UserRole, NavItem[]> = {
-    admin: [
-      { label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
-      { label: "Staff Management", href: "/admin/staff", icon: Users },
-      { label: "Role Management", href: "/admin/roles", icon: ShieldCheck },
-      { label: "Reception Queue", href: "/reception/queue", icon: ClipboardList },
-      { label: "Dept Records", href: "/department/records", icon: FileSpreadsheet },
-      { label: "RAG Manager", href: "/admin/rag", icon: Brain },
-      { label: "System Logs", href: "/admin/logs", icon: History },
-    ],
-    receptionist: [
-      { label: "Dashboard", href: "/reception/dashboard", icon: LayoutDashboard },
-      { label: "Reception Queue", href: "/reception/queue", icon: ClipboardList },
-    ],
-    department_staff: [
-      { label: "Daily Queue", href: "/department/records?tab=queue", icon: ClipboardList },
-      { label: "Records History", href: "/department/records?tab=history", icon: History },
-    ],
-    medical_specialist: [
-      { label: "Dashboard", href: "/specialist/dashboard", icon: LayoutDashboard },
-      { label: "My Patients", href: "/specialist/patients", icon: UserCheck },
-    ],
-    patient: [
-      { label: "Dashboard", href: "/patient/dashboard", icon: LayoutDashboard },
-      { label: "AI Assistant", href: "/patient/chat", icon: Bot },
-      { label: "Submit Document", href: "/patient/submit", icon: Upload },
-      { label: "Document Templates", href: "/patient/templates", icon: ClipboardList },
-      { label: "Track Submission", href: "/patient/submissions", icon: Search },
-      { label: "My Results", href: "/patient/results", icon: FileText },
-    ],
-  };
-
-  const navItems = [
-    ...(navItemsMap[user.role] || []),
-    { label: "My Profile", href: "/profile", icon: User }
-  ];
   const roleInfo = USER_ROLES[user.role];
   const deptInfo = user.department ? DEPARTMENTS[user.department] : null;
 
@@ -115,7 +111,7 @@ export default function Sidebar({ user, onLinkClick, className }: SidebarProps) 
       <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto">
         {navItems.map((item) => {
           const isActive = pathname === item.href;
-          const Icon = item.icon;
+          const Icon = iconMap[item.icon];
           return (
             <Link
               key={item.href}
@@ -155,7 +151,7 @@ export default function Sidebar({ user, onLinkClick, className }: SidebarProps) 
             </span>
             <div className="flex flex-wrap gap-1 mt-1.5">
               <Badge className={cn("text-[9px] px-1.5 py-0 font-semibold tracking-wide uppercase shadow-none", roleInfo?.color)}>
-                {roleInfo?.label || user.role}
+                {user.roleName || roleInfo?.label || user.role}
               </Badge>
               {deptInfo && (
                 <Badge className={cn("text-[9px] px-1.5 py-0 font-semibold tracking-wide uppercase shadow-none", deptInfo.color)}>

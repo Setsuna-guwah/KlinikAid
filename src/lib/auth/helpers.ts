@@ -76,6 +76,74 @@ export async function hasAnyPermission(userId: string, permissionNames: string[]
   return checks.some(Boolean);
 }
 
+export async function getDefaultLandingPath(userId: string, profile: Pick<Profile, "role">): Promise<string> {
+  const [
+    canManageProfiles,
+    canReadRoles,
+    canManageStaff,
+    canReadSystemLogs,
+    canManageRag,
+    canManageDocuments,
+    canManageQueue,
+    canManagePatients,
+    canAccessDepartmentRecords,
+    canAccessSpecialistPatients,
+  ] = await Promise.all([
+    hasPermission(userId, "profiles.manage"),
+    hasPermission(userId, "roles.read"),
+    hasPermission(userId, "staff.manage"),
+    hasPermission(userId, "system_logs.read"),
+    hasPermission(userId, "rag_documents.manage"),
+    hasPermission(userId, "documents.manage"),
+    hasPermission(userId, "queue.manage"),
+    hasPermission(userId, "patients.manage"),
+    hasAnyPermission(userId, ["queue.manage", "queue.manage.own_dept", "records.manage", "records.manage.own_dept"]),
+    hasPermission(userId, "specialist.patients"),
+  ]);
+
+  if (profile.role === "admin" && canManageProfiles) {
+    return "/admin/dashboard";
+  }
+
+  if (canManageDocuments && canManageQueue) {
+    return "/reception/queue";
+  }
+
+  if (canManagePatients) {
+    return "/reception/dashboard";
+  }
+
+  if (canAccessDepartmentRecords) {
+    return "/department/records";
+  }
+
+  if (canAccessSpecialistPatients) {
+    return "/specialist/dashboard";
+  }
+
+  if (canReadRoles) {
+    return "/admin/roles";
+  }
+
+  if (canReadSystemLogs) {
+    return "/admin/logs";
+  }
+
+  if (canManageRag) {
+    return "/admin/rag";
+  }
+
+  if (canManageStaff) {
+    return "/admin/staff";
+  }
+
+  if (profile.role === "patient") {
+    return "/patient/dashboard";
+  }
+
+  return "/profile";
+}
+
 export async function requirePermission(permissionName: string): Promise<Profile> {
   const { user, profile } = await getCurrentUser();
 
