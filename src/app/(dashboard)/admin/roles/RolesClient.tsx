@@ -67,10 +67,10 @@ function PermissionCatalogPicker({
   onDeselectAll,
 }: PermissionCatalogPickerProps) {
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-150 bg-slate-50/50 dark:border-slate-850 dark:bg-slate-950/20">
-      <div className="flex flex-col gap-2 border-b border-slate-100 bg-white/70 px-4 py-3 dark:border-slate-900 dark:bg-slate-950/40 sm:flex-row sm:items-center sm:justify-between">
+    <div className="min-w-0 overflow-hidden rounded-lg border border-slate-150 bg-slate-50/50 dark:border-slate-850 dark:bg-slate-950/20">
+      <div className="flex flex-col gap-3 border-b border-slate-100 bg-white/70 px-4 py-3 dark:border-slate-900 dark:bg-slate-950/40 lg:flex-row lg:items-center lg:justify-between">
         <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">Toggle Permissions Catalog</Label>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button type="button" variant="outline" onClick={onSelectAll} className="h-8 text-[10px] font-semibold">
             Select All
           </Button>
@@ -99,8 +99,8 @@ function PermissionCatalogPicker({
                         onChange={() => onTogglePermission(perm.id)}
                         className="mt-0.5 rounded border-slate-300 dark:border-slate-800 text-indigo-600 focus:ring-indigo-500/20 h-3.5 w-3.5"
                       />
-                      <div className="space-y-0.5">
-                        <span className="font-semibold text-slate-850 dark:text-slate-200 group-hover:text-indigo-500 transition-colors">{perm.name}</span>
+                      <div className="min-w-0 space-y-0.5">
+                        <span className="break-words font-semibold text-slate-850 dark:text-slate-200 group-hover:text-indigo-500 transition-colors">{perm.name}</span>
                         <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-snug">{perm.description}</p>
                       </div>
                     </label>
@@ -270,9 +270,9 @@ export default function RolesClient({ roles, permissions, mappings }: RolesClien
           </CardHeader>
           <CardContent className="pt-6">
             <form onSubmit={handleCreateRole} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="flex flex-col gap-6 lg:flex-row">
                 {/* Left fields */}
-                <div className="space-y-4">
+                <div className="w-full shrink-0 space-y-4 lg:w-72 xl:w-80">
                   <div className="space-y-2">
                     <Label htmlFor="role-name" className="text-xs font-bold text-slate-700 dark:text-slate-300">Role Name</Label>
                     <Input
@@ -299,14 +299,16 @@ export default function RolesClient({ roles, permissions, mappings }: RolesClien
                 </div>
 
                 {/* Right fields: Permissions selection grouped by module */}
-                <PermissionCatalogPicker
-                  modules={modules}
-                  permissions={permissions}
-                  selectedPermissionIds={selectedPermissions}
-                  onTogglePermission={handleTogglePermission}
-                  onSelectAll={() => setSelectedPermissions(permissions.map((permission) => permission.id))}
-                  onDeselectAll={() => setSelectedPermissions([])}
-                />
+                <div className="w-full min-w-0 lg:flex-1">
+                  <PermissionCatalogPicker
+                    modules={modules}
+                    permissions={permissions}
+                    selectedPermissionIds={selectedPermissions}
+                    onTogglePermission={handleTogglePermission}
+                    onSelectAll={() => setSelectedPermissions(permissions.map((permission) => permission.id))}
+                    onDeselectAll={() => setSelectedPermissions([])}
+                  />
+                </div>
               </div>
 
               <div className="flex items-center justify-end gap-2 border-t border-slate-100 dark:border-slate-850/50 pt-4">
@@ -332,7 +334,7 @@ export default function RolesClient({ roles, permissions, mappings }: RolesClien
       )}
 
       <Dialog open={!!editingRole} onOpenChange={(open) => !open && setEditingRole(null)}>
-        <DialogContent className="max-w-3xl bg-white dark:bg-slate-950">
+        <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] !max-w-5xl overflow-y-auto bg-white dark:bg-slate-950 sm:!max-w-5xl">
           <DialogHeader>
             <DialogTitle className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <Edit2 className="h-4 w-4 text-indigo-500" />
@@ -344,8 +346,8 @@ export default function RolesClient({ roles, permissions, mappings }: RolesClien
           </DialogHeader>
 
           <form onSubmit={handleUpdateRole} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-4">
+            <div className="flex flex-col gap-6 lg:flex-row">
+              <div className="w-full shrink-0 space-y-4 lg:w-72 xl:w-80">
                 <div className="space-y-2">
                   <Label htmlFor="edit-role-name" className="text-xs font-bold text-slate-700 dark:text-slate-300">Role Name</Label>
                   <Input
@@ -372,14 +374,16 @@ export default function RolesClient({ roles, permissions, mappings }: RolesClien
                 </div>
               </div>
 
-              <PermissionCatalogPicker
-                modules={modules}
-                permissions={permissions}
-                selectedPermissionIds={editSelectedPermissions}
-                onTogglePermission={handleToggleEditPermission}
-                onSelectAll={() => setEditSelectedPermissions(permissions.map((permission) => permission.id))}
-                onDeselectAll={() => setEditSelectedPermissions([])}
-              />
+              <div className="w-full min-w-0 lg:flex-1">
+                <PermissionCatalogPicker
+                  modules={modules}
+                  permissions={permissions}
+                  selectedPermissionIds={editSelectedPermissions}
+                  onTogglePermission={handleToggleEditPermission}
+                  onSelectAll={() => setEditSelectedPermissions(permissions.map((permission) => permission.id))}
+                  onDeselectAll={() => setEditSelectedPermissions([])}
+                />
+              </div>
             </div>
 
             <DialogFooter>
