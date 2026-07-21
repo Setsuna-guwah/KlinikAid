@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth/helpers";
+import { logoutAction } from "@/app/(auth)/logout/actions";
 import { ShieldAlert, ArrowLeft, LogOut } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 
@@ -63,7 +64,7 @@ export default async function ForbiddenPage() {
           )}
 
           {user && (
-            <form action="/api/auth/signout" method="POST" className="w-full">
+            <form action={logoutAction} className="w-full">
               <button
                 type="submit"
                 className={buttonVariants({ variant: "outline", className: "w-full text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20" })}
