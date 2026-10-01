@@ -2,7 +2,6 @@ import React from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser, hasAnyPermission } from "@/lib/auth/helpers";
-import { getPhtStartOfToday } from "@/lib/utils";
 import DepartmentRecordsClient from "@/components/DepartmentRecordsClient";
 import { Department } from "@/types";
 
@@ -77,11 +76,18 @@ export default async function DepartmentRecordsPage({ searchParams }: PageProps)
     );
   }
 
-  // 3. Get start of today in Asia/Manila (UTC+8) to filter daily queue
-  const startOfTodayIso = getPhtStartOfToday();
-
-
-  // 4. Fetch daily patient queue (waiting or in_progress)
+  // 3. Fetch the open patient queue (waiting or in_progress), regardless of age.
+  //
+  // This list used to be scoped to `created_at >= start-of-PHT-today`. That made
+  // it disagree with two other queries over the same table: reception's re-triage
+  // guard (api/reception/triage/route.ts) has no date predicate, and the
+  // completion update (api/department/records/route.ts) had the same daily filter.
+  // An entry created before PHT midnight was therefore hidden here, still
+  // blocking re-triage for reception, and impossible to close -- permanently
+  // stuck, and still shown to the patient as "waiting" on their own dashboard.
+  //
+  // Invariant now: an entry blocks reception if and only if it is listed here and
+  // closeable from here. Keep all three queries unfiltered by date together.
   const { data: queueData } = await supabase
     .from("patient_queue")
     .select(`
@@ -101,7 +107,6 @@ export default async function DepartmentRecordsPage({ searchParams }: PageProps)
       )
     `)
     .eq("department", dept)
-    .gte("created_at", startOfTodayIso)
     .in("status", ["waiting", "in_progress"])
     .order("created_at", { ascending: true });
 

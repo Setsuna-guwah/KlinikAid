@@ -1,7 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireAnyPermission } from "@/lib/auth/helpers";
 import { errorResponse, successResponse } from "@/lib/api-response";
-import { getPhtStartOfToday } from "@/lib/utils";
 
 export async function GET(request: Request) {
   const supabase = createClient();
@@ -28,11 +27,12 @@ export async function GET(request: Request) {
       return errorResponse("Invalid department requested", 400);
     }
 
-    // 3. Get start of today in Asia/Manila (UTC+8)
-    const startOfTodayIso = getPhtStartOfToday();
-
-
-    // 4. Fetch today's waiting or in_progress queue entries for the department
+    // 4. Fetch the department's open queue entries, regardless of age.
+    // Must stay consistent with the queue list in
+    // src/app/(dashboard)/department/records/page.tsx and the completion update
+    // in src/app/api/department/records/route.ts: all three are unfiltered by
+    // date, so an entry that blocks reception is always one the department can
+    // see and close. See that page for the full account of the deadlock.
     const { data: queue, error: queueError } = await supabase
       .from("patient_queue")
       .select(`
@@ -52,7 +52,6 @@ export async function GET(request: Request) {
         )
       `)
       .eq("department", dept)
-      .gte("created_at", startOfTodayIso)
       .in("status", ["waiting", "in_progress"])
       .order("created_at", { ascending: true });
 
@@ -60,7 +59,7 @@ export async function GET(request: Request) {
       throw queueError;
     }
 
-    return successResponse(queue || [], "Daily queue retrieved successfully");
+    return successResponse(queue || [], "Queue retrieved successfully");
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return errorResponse("Failed to fetch department queue", 500, message);
