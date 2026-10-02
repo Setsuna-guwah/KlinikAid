@@ -2,7 +2,6 @@ import { createClient } from "@/lib/supabase/server";
 import { hasPermission, requireAnyPermission } from "@/lib/auth/helpers";
 import { errorResponse, successResponse } from "@/lib/api-response";
 import { logEvent } from "@/lib/logger";
-import { getPhtStartOfToday } from "@/lib/utils";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 import { validateLabResult } from "@/lib/records/validateLabResult";
 
@@ -186,19 +185,23 @@ export async function POST(request: Request) {
       throw insertError;
     }
 
-    // 6. Update today's queue entry status from 'waiting' or 'in_progress' to 'completed'
-    const startOfTodayIso = getPhtStartOfToday();
-
+    // 6. Update the patient's open queue entry for this department to 'completed'.
+    //
+    // Deliberately NOT filtered by date. This query used to require
+    // `created_at >= start-of-PHT-today` while the department's queue list had
+    // the same filter and reception's re-triage guard had none. An entry opened
+    // before PHT midnight was invisible to the department, un-re-triable, and
+    // could never be closed by this path. All three must stay unfiltered so that
+    // "blocks reception" and "is actionable by the department" stay equivalent.
     const { data: updatedQueue, error: queueError } = await supabase
       .from("patient_queue")
-      .update({ 
+      .update({
         status: "completed",
         updated_at: new Date().toISOString()
       })
       .eq("patient_id", patient_id)
       .eq("department", dept)
       .in("status", ["waiting", "in_progress"])
-      .gte("created_at", startOfTodayIso)
       .select("id");
 
     if (queueError) {

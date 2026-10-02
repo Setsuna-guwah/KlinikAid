@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { DEPARTMENTS } from "@/lib/constants";
+import { formatPhTimeFull } from "@/lib/utils";
 
 interface QueuePatient {
   id: string;
@@ -102,6 +103,27 @@ export default function DepartmentRecordsClient({
     const diff = Date.now() - dob.getTime();
     const ageDate = new Date(diff);
     return Math.abs(ageDate.getUTCFullYear() - 1970);
+  };
+
+  // How long a queue entry has been waiting. Entries are no longer hidden at PHT
+  // midnight, so an older order needs to be visibly older than a fresh one —
+  // otherwise a three-day-old test looks identical to one triaged five minutes
+  // ago and gets deprioritised. Uses elapsed time rather than a calendar-day
+  // comparison, so it has no midnight cliff of its own.
+  //
+  // Returns null under an hour: a fresh entry needs no badge, and showing one
+  // would put noise on the common case. Anything an hour or older is labelled,
+  // so no genuinely aged order is ever silent.
+  const getQueueAge = (iso?: string) => {
+    if (!iso) return null;
+    const elapsedMs = Date.now() - new Date(iso).getTime();
+    if (Number.isNaN(elapsedMs) || elapsedMs < 0) return null;
+    const minutes = Math.floor(elapsedMs / 60000);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    if (minutes < 60) return null;
+    if (hours < 24) return { label: `${hours}h ago`, carriedOver: false };
+    return { label: `${days}d ago`, carriedOver: true };
   };
 
   // Change department (Admin only)
@@ -234,7 +256,7 @@ export default function DepartmentRecordsClient({
             }`}
           >
             <Users className="h-4 w-4" />
-            Daily Queue ({initialQueue.length})
+            Open Queue ({initialQueue.length})
           </button>
           <button
             onClick={() => handleTabChange("history")}
@@ -267,7 +289,7 @@ export default function DepartmentRecordsClient({
 
       {/* Main Content Area */}
       {activeTab === "queue" ? (
-        // --- Daily Queue Dashboard ---
+        // --- Open Queue Dashboard ---
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Waiting List (2 spans) */}
           <div className="lg:col-span-2 space-y-4">
@@ -296,6 +318,7 @@ export default function DepartmentRecordsClient({
                   const p = item.patient;
                   const queueNum = item.triage_notes?.queue_number || "GEN-000";
                   const vitals = item.triage_notes?.vitals;
+                  const queueAge = getQueueAge(item.created_at);
                   const notes = item.triage_notes?.notes;
 
                   return (
@@ -311,6 +334,18 @@ export default function DepartmentRecordsClient({
                           {queueNum}
                         </span>
                         <div className="flex items-center gap-2">
+                          {queueAge && (
+                            <span
+                              title={`Triaged ${formatPhTimeFull(item.created_at)}`}
+                              className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded-md ${
+                                queueAge.carriedOver
+                                  ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                                  : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                              }`}
+                            >
+                              {queueAge.label}
+                            </span>
+                          )}
                           {item.status === "in_progress" && (
                             <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-md bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300">
                               Entering
