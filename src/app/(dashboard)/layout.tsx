@@ -71,6 +71,28 @@ export default async function DashboardLayout({ children }: DashboardLayoutProps
       // Staff has no verified TOTP factor, force routing to enroll page
       redirect("/mfa-enroll");
     }
+
+    // Factor existence alone is not assurance. A verified factor proves the
+    // account CAN use a second factor; only the session's assurance level
+    // proves this session DID. Login returns `mfa_required` without signing
+    // out, so an AAL1 session survives the prompt and reaches this layout —
+    // checking `hasVerifiedFactor` alone would let a stolen password through.
+    const { data: aalData, error: aalError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (aalError || !aalData) {
+      console.error("MFA Gate error retrieving assurance level:", aalError?.message);
+      // Fail closed: without a readable assurance level we cannot tell an
+      // AAL2 session from an AAL1 one, so staff are signed out rather than
+      // admitted. Sign out first so the retry starts from a clean session.
+      await supabase.auth.signOut();
+      redirect("/login?error=mfa_check_failed");
+    }
+
+    if (aalData.currentLevel !== "aal2") {
+      // Kick the still-unverified session out entirely rather than bouncing it
+      // to the challenge, so the only way back in is a full sign-in.
+      await supabase.auth.signOut();
+      redirect("/login?error=mfa_required");
+    }
   }
 
   // 4. Handle access denial logging and redirection (Revision B)

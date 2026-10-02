@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { logEvent } from "@/lib/logger";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
+import { getTotpFactors } from "@/lib/auth/mfa";
 import { headers } from "next/headers";
 
 export async function verifyMfaFactorAction(factorId: string, code: string) {
@@ -17,18 +18,43 @@ export async function verifyMfaFactorAction(factorId: string, code: string) {
   }
 
   try {
-    // 2. Challenge the factor
+    // 2. Bind the factor to this account.
+    // listFactors only ever returns the caller's own factors, so an id that is
+    // not in that list does not belong to this user — previously the id came
+    // straight from the request body and was challenged without that check.
+    const { data: factorsData, error: factorsError } = await supabase.auth.mfa.listFactors();
+    if (factorsError) {
+      return { error: `Failed to retrieve MFA factors: ${factorsError.message}` };
+    }
+
+    const ownedFactor = getTotpFactors(factorsData).find(
+      (factor) => factor.id === factorId && factor.status === "verified",
+    );
+
+    if (!ownedFactor) {
+      await logEvent(
+        supabase,
+        user.id,
+        SYSTEM_EVENT_TYPES.LOGIN_FAILED,
+        `MFA enrolment attempted against a factor not owned by this account`,
+        ipAddress,
+        { factor_id: factorId },
+      );
+      return { error: "Verification failed: that authenticator is not registered to your account." };
+    }
+
+    // 3. Challenge the factor
     const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({
-      factorId,
+      factorId: ownedFactor.id,
     });
 
     if (challengeError || !challenge) {
       return { error: `MFA challenge failed: ${challengeError?.message || "Failed to create challenge"}` };
     }
 
-    // 3. Verify the challenge with the entered code
+    // 4. Verify the challenge with the entered code
     const { error: verifyError } = await supabase.auth.mfa.verify({
-      factorId,
+      factorId: ownedFactor.id,
       challengeId: challenge.id,
       code,
     });
