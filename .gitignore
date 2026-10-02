@@ -45,6 +45,11 @@ WHOLE_PROJECT_CONTEXT.md
 
 # Phase documentation (untracked dev context)
 docs/
+# ...except the security-fix review record, which is a deliverable that has to be
+# reviewable in a pull request. Everything else under docs/ stays ignored.
+!docs/
+docs/*
+!docs/SECURITY-FIX-REVIEW.md
 
 scripts/
 scratch/
