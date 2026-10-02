@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useState, useTransition, useEffect } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { 
@@ -88,6 +88,21 @@ export default function DepartmentRecordsClient({
 
   const activeTab = searchParams.get("tab") === "history" ? "history" : "queue";
   const [searchTerm, setSearchTerm] = useState("");
+
+  // Anything derived from Date.now() must not be rendered on the server.
+  // The server renders at time T and the browser hydrates at T + n, so a value
+  // read during render can differ between the two trees -- and when it does,
+  // React discards the server HTML and re-renders, which is the hydration
+  // mismatch this guard prevents. The queue-age badge is the case that bites:
+  // it crosses a label boundary every hour, so any render/hydrate gap that
+  // spans one produces different text on each side.
+  //
+  // The badge is an enhancement rather than content, so withholding it for the
+  // first paint costs nothing: it appears immediately after mount. Age-from-DOB
+  // uses the same guard for the same reason -- it silently changes on a
+  // birthday and would mismatch if the boundary fell inside the gap.
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
 
   const handleTabChange = (tab: "queue" | "history") => {
     const params = new URLSearchParams(searchParams);
@@ -318,7 +333,7 @@ export default function DepartmentRecordsClient({
                   const p = item.patient;
                   const queueNum = item.triage_notes?.queue_number || "GEN-000";
                   const vitals = item.triage_notes?.vitals;
-                  const queueAge = getQueueAge(item.created_at);
+                  const queueAge = hydrated ? getQueueAge(item.created_at) : null;
                   const notes = item.triage_notes?.notes;
 
                   return (
@@ -360,7 +375,7 @@ export default function DepartmentRecordsClient({
                           {p?.first_name} {p?.last_name}
                         </h3>
                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                          {p?.gender ? p.gender.charAt(0).toUpperCase() + p.gender.slice(1) : "N/A"} • {getAge(p?.date_of_birth)} yrs old
+                          {p?.gender ? p.gender.charAt(0).toUpperCase() + p.gender.slice(1) : "N/A"} • {hydrated ? getAge(p?.date_of_birth) : ""} yrs old
                         </p>
                       </div>
 
