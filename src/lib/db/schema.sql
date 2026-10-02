@@ -1,6 +1,24 @@
 -- KlinikAid Database Schema (Supabase PostgreSQL)
 -- Target DB: Supabase Postgres
 -- Supports pgvector for RAG chatbot
+--
+-- ===========================================================================
+-- WARNING: DESTRUCTIVE RESET SCRIPT. Line 20 drops public.profiles CASCADE.
+-- Never run this against a database holding real data.
+--
+-- NOT RUNNABLE STANDALONE. This file is a dev bootstrap that absorbs app-feature
+-- migrations, but it has absorbed only some of the RBAC era. It references
+-- public.user_has_permission() (18 policy calls) and public.profiles.role_id,
+-- and neither is defined below. To rebuild a database from scratch, run this
+-- file and then apply every migration in src/lib/db/ in order:
+--     migration_07.sql ... migration_22.sql
+-- The migration files are the source of truth for what the live database
+-- actually contains; this file is documentation and a partial starting point.
+-- Known still-absent here: match_documents() (m07), the patient-documents
+-- storage bucket and its policies (m09), pending_document_ocr (m13), and the
+-- whole RBAC catalog -- permissions/roles/role_permissions tables, the
+-- role_id column, user_has_permission(), and the seed data (m15, m16).
+-- ===========================================================================
 
 -- Enable the pgvector extension
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -159,7 +177,8 @@ $$ LANGUAGE sql SECURITY DEFINER SET search_path = public;
 -- 1. Profiles Table Policies
 CREATE POLICY "Admins have full access to profiles" 
   ON public.profiles FOR ALL 
-  USING (public.get_auth_user_role() = 'admin');
+  USING (public.user_has_permission(auth.uid(), 'profiles.manage'))
+  WITH CHECK (public.user_has_permission(auth.uid(), 'profiles.manage'));
 
 CREATE POLICY "Users can read own profile" 
   ON public.profiles FOR SELECT 
@@ -167,25 +186,44 @@ CREATE POLICY "Users can read own profile"
 
 CREATE POLICY "Users can update own profile details" 
   ON public.profiles FOR UPDATE 
+  TO authenticated
   USING (auth.uid() = id)
-  WITH CHECK (auth.uid() = id AND role = (SELECT role FROM public.profiles WHERE id = auth.uid())); -- block role hijacking
+  WITH CHECK (
+    auth.uid() = id
+    -- IS NOT DISTINCT FROM, not =, so a NULL held by a NULL-holder stays legal
+    -- while a change from NULL to a real value is still blocked.
+    AND role        IS NOT DISTINCT FROM (SELECT p.role        FROM public.profiles p WHERE p.id = auth.uid())
+    AND role_id     IS NOT DISTINCT FROM (SELECT p.role_id     FROM public.profiles p WHERE p.id = auth.uid())
+    AND department  IS NOT DISTINCT FROM (SELECT p.department  FROM public.profiles p WHERE p.id = auth.uid())
+    AND is_active   IS NOT DISTINCT FROM (SELECT p.is_active   FROM public.profiles p WHERE p.id = auth.uid())
+  ); -- block role, role_id, department and is_active hijacking
+
+-- Privileged columns stay writable by staff who actually hold profiles.manage,
+-- which is what the admin routes rely on.
+CREATE POLICY "Users with profiles.manage can update any profile" 
+  ON public.profiles FOR UPDATE 
+  TO authenticated
+  USING (public.user_has_permission(auth.uid(), 'profiles.manage'))
+  WITH CHECK (public.user_has_permission(auth.uid(), 'profiles.manage'));
 
 CREATE POLICY "Clinic staff can view all profiles" 
   ON public.profiles FOR SELECT 
-  USING (public.get_auth_user_role() IN ('receptionist', 'department_staff', 'medical_specialist'));
+  USING (public.user_has_permission(auth.uid(), 'profiles.read_staff'));
 
 -- 2. Patients Table Policies
 CREATE POLICY "Admins have full access to patients" 
   ON public.patients FOR ALL 
-  USING (public.get_auth_user_role() = 'admin');
+  USING (public.user_has_permission(auth.uid(), 'patients.manage'))
+  WITH CHECK (public.user_has_permission(auth.uid(), 'patients.manage'));
 
 CREATE POLICY "Receptionists can manage patients" 
   ON public.patients FOR ALL 
-  USING (public.get_auth_user_role() = 'receptionist');
+  USING (public.user_has_permission(auth.uid(), 'patients.manage'))
+  WITH CHECK (public.user_has_permission(auth.uid(), 'patients.manage'));
 
 CREATE POLICY "Staff can view all patients" 
   ON public.patients FOR SELECT 
-  USING (public.get_auth_user_role() = 'department_staff');
+  USING (public.user_has_permission(auth.uid(), 'patients.read'));
 
 CREATE POLICY "Patients can view own patient record" 
   ON public.patients FOR SELECT 
@@ -199,22 +237,28 @@ CREATE POLICY "Patients can update own details"
 -- 3. Patient Queue Policies
 CREATE POLICY "Admins have full access to queue" 
   ON public.patient_queue FOR ALL 
-  USING (public.get_auth_user_role() = 'admin');
+  USING (public.user_has_permission(auth.uid(), 'queue.manage'))
+  WITH CHECK (public.user_has_permission(auth.uid(), 'queue.manage'));
 
 CREATE POLICY "Receptionists can manage queue" 
   ON public.patient_queue FOR ALL 
-  USING (public.get_auth_user_role() = 'receptionist');
+  USING (public.user_has_permission(auth.uid(), 'queue.manage'))
+  WITH CHECK (public.user_has_permission(auth.uid(), 'queue.manage'));
 
 CREATE POLICY "Department staff can view and update queue for their department" 
   ON public.patient_queue FOR ALL 
   USING (
-    public.get_auth_user_role() = 'department_staff' AND 
+    public.user_has_permission(auth.uid(), 'queue.manage.own_dept') AND 
+    department = public.get_auth_user_dept()
+  )
+  WITH CHECK (
+    public.user_has_permission(auth.uid(), 'queue.manage.own_dept') AND 
     department = public.get_auth_user_dept()
   );
 
 CREATE POLICY "Medical specialists can view queue" 
   ON public.patient_queue FOR SELECT 
-  USING (public.get_auth_user_role() = 'medical_specialist');
+  USING (public.user_has_permission(auth.uid(), 'queue.read'));
 
 CREATE POLICY "Patients can view own queue entries" 
   ON public.patient_queue FOR SELECT 
@@ -223,11 +267,13 @@ CREATE POLICY "Patients can view own queue entries"
 -- 4. Documents Table Policies
 CREATE POLICY "Admins have full access to documents" 
   ON public.documents FOR ALL 
-  USING (public.get_auth_user_role() = 'admin');
+  USING (public.user_has_permission(auth.uid(), 'documents.manage'))
+  WITH CHECK (public.user_has_permission(auth.uid(), 'documents.manage'));
 
 CREATE POLICY "Receptionists can view and update documents" 
   ON public.documents FOR ALL 
-  USING (public.get_auth_user_role() = 'receptionist');
+  USING (public.user_has_permission(auth.uid(), 'documents.manage'))
+  WITH CHECK (public.user_has_permission(auth.uid(), 'documents.manage'));
 
 CREATE POLICY "Patients can view own documents" 
   ON public.documents FOR SELECT 
@@ -249,16 +295,17 @@ CREATE POLICY "Patients can delete own pending documents"
 -- 5. Department Records Policies (Enforces Isolation SO-D)
 CREATE POLICY "Admins have full access to department records" 
   ON public.department_records FOR ALL 
-  USING (public.get_auth_user_role() = 'admin');
+  USING (public.user_has_permission(auth.uid(), 'records.manage'))
+  WITH CHECK (public.user_has_permission(auth.uid(), 'records.manage'));
 
 CREATE POLICY "Department staff can only view/insert/update within their own department" 
   ON public.department_records FOR ALL 
   USING (
-    public.get_auth_user_role() = 'department_staff' AND 
+    public.user_has_permission(auth.uid(), 'records.manage.own_dept') AND 
     department = public.get_auth_user_dept()
   )
   WITH CHECK (
-    public.get_auth_user_role() = 'department_staff' AND 
+    public.user_has_permission(auth.uid(), 'records.manage.own_dept') AND 
     department = public.get_auth_user_dept()
   );
 
@@ -270,7 +317,7 @@ CREATE POLICY "Patients can view only their own department records"
 -- 6. System Logs Policies
 CREATE POLICY "Admins can view system logs" 
   ON public.system_logs FOR SELECT 
-  USING (public.get_auth_user_role() = 'admin');
+  USING (public.user_has_permission(auth.uid(), 'system_logs.read'));
 
 CREATE POLICY "Authenticated users can insert system logs" 
   ON public.system_logs FOR INSERT 
@@ -279,7 +326,7 @@ CREATE POLICY "Authenticated users can insert system logs"
 -- 7. Chatbot Logs Policies
 CREATE POLICY "Admins can view chatbot logs" 
   ON public.chatbot_logs FOR SELECT 
-  USING (public.get_auth_user_role() = 'admin');
+  USING (public.user_has_permission(auth.uid(), 'chatbot_logs.read'));
 
 CREATE POLICY "Users can view and insert own chatbot logs" 
   ON public.chatbot_logs FOR ALL 
@@ -293,59 +340,80 @@ CREATE POLICY "Anyone can read RAG documents"
 
 CREATE POLICY "Admins can manage RAG documents" 
   ON public.rag_documents FOR ALL 
-  USING (public.get_auth_user_role() = 'admin');
+  USING (public.user_has_permission(auth.uid(), 'rag_documents.manage'))
+  WITH CHECK (public.user_has_permission(auth.uid(), 'rag_documents.manage'));
 
 -- =========================================================================
 -- PROFILE AUTOMATION TRIGGER
 -- =========================================================================
 
--- Trigger to automatically create a public.profile upon auth.users signup
+-- Trigger to automatically create a public.profile upon auth.users signup.
+-- Self-service signup is always provisioned as 'patient': raw_user_meta_data is
+-- caller-writable, so a claimed role is logged and ignored rather than honoured.
+-- Staff roles are assigned by the server after account creation.
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger AS $$
 DECLARE
   default_name text;
-  default_role text;
-  default_dept text;
+  claimed_role text;
+  patient_role_id uuid;
 BEGIN
-  -- Extract metadata safely
   default_name := COALESCE(new.raw_user_meta_data->>'full_name', 'New User');
-  default_role := COALESCE(new.raw_user_meta_data->>'role', 'patient');
-  default_dept := new.raw_user_meta_data->>'department';
+  claimed_role := COALESCE(
+    new.raw_user_meta_data->>'role',
+    new.raw_app_meta_data->>'role'
+  );
 
-  -- Enforce valid roles
-  IF default_role NOT IN ('admin', 'receptionist', 'department_staff', 'medical_specialist', 'patient') THEN
-    default_role := 'patient';
+  SELECT id INTO patient_role_id
+  FROM public.roles
+  WHERE name = 'patient';
+
+  IF patient_role_id IS NULL THEN
+    BEGIN
+      INSERT INTO public.system_logs (user_id, event_type, description, metadata)
+      VALUES (new.id, 'PROFILE_PROVISIONING_FAILED',
+        'Profile provisioning failed: patient role_id could not be resolved',
+        jsonb_build_object('reason', 'missing_patient_role_id'));
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+
+    RAISE EXCEPTION 'Profile provisioning failed: patient role_id could not be resolved';
   END IF;
 
-  -- Enforce valid department constraints
-  IF default_role <> 'department_staff' THEN
-    default_dept := NULL;
-  ELSIF default_dept NOT IN ('laboratory', 'imaging', 'ultrasound', 'ecg') THEN
-    default_dept := NULL;
-  END IF;
+  -- Self-service signup is always a patient. Staff role is assigned by the
+  -- server after creation, never from anything the caller supplied.
+  INSERT INTO public.profiles (id, full_name, role, department, role_id)
+  VALUES (new.id, default_name, 'patient', NULL, patient_role_id);
 
-  INSERT INTO public.profiles (id, full_name, role, department)
-  VALUES (
-    new.id,
-    default_name,
-    default_role,
-    default_dept
-  );
-  
-  -- Insert default log event
-  INSERT INTO public.system_logs (user_id, event_type, description, metadata)
-  VALUES (
-    new.id,
-    'USER_REGISTERED',
-    'User account created automatically: ' || default_name || ' (' || default_role || ')',
-    jsonb_build_object('role', default_role, 'department', default_dept)
-  );
+  BEGIN
+    -- A signup that tried to claim a role is now expected traffic from any
+    -- scanner, but it is worth a durable record rather than a silent drop.
+    IF claimed_role IS NOT NULL AND claimed_role <> 'patient' THEN
+      INSERT INTO public.system_logs (user_id, event_type, description, metadata)
+      VALUES (new.id, 'SIGNUP_ROLE_CLAIM_IGNORED',
+        'Signup supplied a privileged role that was not honoured; provisioned as patient',
+        jsonb_build_object('claimed_role', claimed_role, 'granted_role', 'patient'));
+    END IF;
+
+    INSERT INTO public.system_logs (user_id, event_type, description, metadata)
+    VALUES (new.id, 'USER_REGISTERED',
+      'User account created automatically: ' || default_name || ' (patient)',
+      jsonb_build_object('role', 'patient', 'department', NULL, 'role_id', patient_role_id));
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
 
   RETURN new;
 EXCEPTION
   WHEN OTHERS THEN
-    -- Prevent trigger failure from completely blocking authentication
-    RETURN new;
+    BEGIN
+      INSERT INTO public.system_logs (user_id, event_type, description, metadata)
+      VALUES (new.id, 'PROFILE_PROVISIONING_FAILED',
+        'Profile provisioning failed during signup trigger',
+        jsonb_build_object('error', sqlerrm));
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+
+    RAISE;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
