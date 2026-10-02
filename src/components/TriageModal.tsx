@@ -112,26 +112,22 @@ export default function TriageModal({
   const onSubmit = (values: TriageFormValues) => {
     startTransition(async () => {
       try {
-        // 1. If a documentId is provided, approve the document first
-        if (documentId) {
-          const approveResponse = await fetch(`/api/reception/documents/${documentId}/approve`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              notes: values.notes || "",
-              destination_department: values.department,
-            }),
-          });
+        // 1. Route the patient FIRST, then approve the document.
+        //
+        // The order matters and was the bug. Approving first consumed the
+        // document (status -> approved, which removes it from reception's
+        // pending board) before the queue entry was known to exist. When
+        // /api/reception/triage then answered 409 because the patient already
+        // had an open entry, the document had already left the only queue that
+        // would ever have routed it: gone from reception, absent from every
+        // department, and recoverable through no UI action.
+        //
+        // Routing first inverts which failure is survivable. A 409 now leaves
+        // the document untouched and still pending in reception, so reception
+        // sees the document, sees the error, and can resolve the duplicate
+        // queue entry. Nothing is consumed by a failed attempt.
+        let queueNumber: string | null = null;
 
-          const approveResult = await approveResponse.json();
-          if (!approveResponse.ok || !approveResult.success) {
-            throw new Error(approveResult.message || "Failed to approve the document before triage");
-          }
-        }
-
-        // 2. Call triage route to assign patient to queue
         const response = await fetch("/api/reception/triage", {
           method: "POST",
           headers: {
@@ -153,8 +149,43 @@ export default function TriageModal({
         if (!response.ok || !result.success) {
           throw new Error(result.message || "Failed to complete triage");
         }
+        queueNumber = result.data?.queue_number ?? null;
 
-        toast.success(`Document approved and patient routed to ${values.department} — Queue #${result.data.queue_number}`);
+        // 2. Approve the document now that the patient is safely queued.
+        // A failure here is recoverable and visible -- the patient is in the
+        // department queue and the document is still pending in reception -- so
+        // it is reported as its own outcome rather than collapsing into a
+        // generic "triage failed" that hides the fact that routing succeeded.
+        let approvalFailure: string | null = null;
+        if (documentId) {
+          const approveResponse = await fetch(`/api/reception/documents/${documentId}/approve`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              notes: values.notes || "",
+              destination_department: values.department,
+            }),
+          });
+
+          const approveResult = await approveResponse.json();
+          if (!approveResponse.ok || !approveResult.success) {
+            approvalFailure = approveResult.message || "the document could not be approved";
+          }
+        }
+
+        const routedTo = `${values.department}${queueNumber ? ` — Queue #${queueNumber}` : ""}`;
+
+        if (approvalFailure) {
+          toast.warning(
+            `Patient routed to ${routedTo}, but ${approvalFailure}. The document is still pending in the reception queue and needs approving.`,
+            { duration: 12000 }
+          );
+        } else {
+          toast.success(`Document approved and patient routed to ${routedTo}`);
+        }
+
         reset();
         onClose();
         router.push("/reception/queue");

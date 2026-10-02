@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser, hasAnyPermission } from "@/lib/auth/helpers";
 import DepartmentRecordsClient from "@/components/DepartmentRecordsClient";
+import DataLoadError from "@/components/DataLoadError";
 import { Department } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -88,7 +89,7 @@ export default async function DepartmentRecordsPage({ searchParams }: PageProps)
   //
   // Invariant now: an entry blocks reception if and only if it is listed here and
   // closeable from here. Keep all three queries unfiltered by date together.
-  const { data: queueData } = await supabase
+  const { data: queueData, error: queueError } = await supabase
     .from("patient_queue")
     .select(`
       id,
@@ -111,7 +112,7 @@ export default async function DepartmentRecordsPage({ searchParams }: PageProps)
     .order("created_at", { ascending: true });
 
   // 5. Fetch historical records
-  const { data: historyData } = await supabase
+  const { data: historyData, error: historyError } = await supabase
     .from("department_records")
     .select(`
       id,
@@ -206,12 +207,32 @@ export default async function DepartmentRecordsPage({ searchParams }: PageProps)
     };
   });
 
+  // Neither query's error was previously read. An empty waiting list tells the
+  // department nobody is queued; an empty history tells them no results have
+  // been recorded. Both are wrong on a failed fetch and both lead to idleness.
+  const loadError = queueError ?? historyError;
+
+  if (loadError) {
+    console.error("[DepartmentRecordsPage] Failed to load department data:", loadError);
+  }
+
   return (
-    <DepartmentRecordsClient 
-      initialQueue={queue} 
-      initialHistory={history} 
-      activeDept={dept}
-      userRole={profile.role}
-    />
+    <>
+      {loadError ? (
+        <div className="mb-6">
+          <DataLoadError
+            what={`the ${dept} queue and results`}
+            error={loadError}
+            retryHref={`/department/records`}
+          />
+        </div>
+      ) : null}
+      <DepartmentRecordsClient
+        initialQueue={queue}
+        initialHistory={history}
+        activeDept={dept}
+        userRole={profile.role}
+      />
+    </>
   );
 }
