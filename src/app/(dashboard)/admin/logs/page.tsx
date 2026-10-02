@@ -41,6 +41,13 @@ export default async function AdminLogsPage() {
 
   const profiles = profilesData || [];
 
+  // The profiles fetch only populates the user filter dropdown, and its error
+  // was logged but never surfaced. On failure the dropdown silently renders
+  // empty, so an admin auditing activity by actor sees no filter options and may
+  // conclude the log has no actors. Passed down rather than blocking the page,
+  // since the log itself loads independently.
+  const profilesLoadError = profilesError ? { message: profilesError.message } : null;
+
   return (
     <div className="flex-1 p-8 overflow-y-auto">
       <div className="max-w-6xl mx-auto space-y-8">
@@ -53,9 +60,10 @@ export default async function AdminLogsPage() {
           </p>
         </div>
 
-        <LogsDashboardClient 
-          profiles={profiles} 
-          freeTierTokenLimit={freeTierTokenLimit} 
+        <LogsDashboardClient
+          profiles={profiles}
+          profilesError={profilesLoadError}
+          freeTierTokenLimit={freeTierTokenLimit}
         />
       </div>
     </div>

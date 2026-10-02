@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/auth/helpers";
 import { getPhtStartOfToday } from "@/lib/utils";
+import DataLoadError from "@/components/DataLoadError";
 import DepartmentChart from "./DepartmentChart";
 import { 
   Users, 
@@ -111,6 +112,23 @@ export default async function AdminDashboardPage() {
       .gte("created_at", startOfToday)
   ]);
 
+  // Six parallel fetches, none of whose errors was ever read. On failure each
+  // count degraded to 0 and the recent-activity feed to an empty list, so the
+  // dashboard reported a quiet, healthy-looking clinic -- and, worst of all, an
+  // empty audit trail. An admin checking recent activity during an incident and
+  // seeing nothing would reasonably conclude nothing had happened.
+  const metricsError =
+    todayPatientsResult.error ??
+    pendingDocsResult.error ??
+    activeStaffResult.error ??
+    todayChatbotQueriesResult.error ??
+    recentLogsResult.error ??
+    departmentBreakdownResult.error;
+
+  if (metricsError) {
+    console.error("[AdminDashboard] Failed to load dashboard metrics:", metricsError);
+  }
+
   const todayPatients = todayPatientsResult.count || 0;
   const pendingDocs = pendingDocsResult.count || 0;
   const activeStaff = activeStaffResult.count || 0;
@@ -148,6 +166,27 @@ export default async function AdminDashboardPage() {
     department: dept,
     count
   }));
+
+  // Returned before rendering anything derived from the failed queries, rather
+  // than gating the body: this page is a wall of counts and an audit feed, and
+  // there is no part of it that stays honest once the numbers are unknown.
+  if (metricsError) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">Admin Dashboard</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Clinic administrative control and oversight panel
+          </p>
+        </div>
+        <DataLoadError
+          what="the admin dashboard"
+          error={metricsError}
+          retryHref="/admin/dashboard"
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

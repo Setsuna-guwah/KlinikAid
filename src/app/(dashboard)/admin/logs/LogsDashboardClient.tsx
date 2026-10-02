@@ -50,6 +50,8 @@ interface ProfileItem {
 
 interface LogsDashboardClientProps {
   profiles: ProfileItem[];
+  /** Set when the actor list failed to load, so an empty dropdown is not "no actors". */
+  profilesError?: { message: string } | null;
   freeTierTokenLimit: number;
 }
 
@@ -124,7 +126,7 @@ const CustomChartTooltip = ({ active, payload, label }: CustomChartTooltipProps)
   return null;
 };
 
-export default function LogsDashboardClient({ profiles, freeTierTokenLimit }: LogsDashboardClientProps) {
+export default function LogsDashboardClient({ profiles, profilesError = null, freeTierTokenLimit }: LogsDashboardClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   
@@ -570,6 +572,14 @@ export default function LogsDashboardClient({ profiles, freeTierTokenLimit }: Lo
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Users</SelectItem>
+                      {profilesError ? (
+                        // An empty dropdown here reads as "no users have acted",
+                        // which is a claim about the audit log rather than a
+                        // filter state. Say the list is unknown instead.
+                        <SelectItem value="__unavailable" disabled>
+                          Could not load user list
+                        </SelectItem>
+                      ) : null}
                       {profiles.map((p) => (
                         <SelectItem key={p.id} value={p.id}>
                           {p.full_name} ({p.role})

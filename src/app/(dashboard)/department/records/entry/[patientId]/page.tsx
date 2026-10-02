@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser, hasAnyPermission } from "@/lib/auth/helpers";
 import RecordEntryClient from "@/components/RecordEntryClient";
+import DataLoadError from "@/components/DataLoadError";
 import { Department } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -73,7 +74,7 @@ export default async function RecordEntryPage({ params, searchParams }: PageProp
   }
 
   // 4. Fetch history for context/comparison
-  const { data: historyData } = await supabase
+  const { data: historyData, error: historyError } = await supabase
     .from("department_records")
     .select(`
       id,
@@ -93,6 +94,24 @@ export default async function RecordEntryPage({ params, searchParams }: PageProp
     .eq("patient_id", patientId)
     .eq("department", dept)
     .order("created_at", { ascending: false });
+
+  // This history is the context a technologist compares a new result against. Its
+  // error was never read, so a failed fetch rendered as an empty prior-results
+  // list -- which asserts the patient has no previous results for this test,
+  // right at the moment someone is deciding what to enter. Withheld, because an
+  // empty comparison history is a clinical input, not a cosmetic gap.
+  if (historyError) {
+    console.error("[RecordEntryPage] Failed to load prior results:", historyError);
+    return (
+      <div className="p-6 space-y-4">
+        <DataLoadError
+          what="this patient's prior results"
+          error={historyError}
+          retryHref={`/department/records/entry/${patientId}`}
+        />
+      </div>
+    );
+  }
 
   const history = (historyData || []).map((h) => {
     let recorderObj = null;
