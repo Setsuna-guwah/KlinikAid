@@ -162,20 +162,47 @@ export async function deleteSpecialistPatientAction(patientId: string): Promise<
   const supabase = createClient();
 
   try {
-    await requirePermission("specialist.patients");
+    const profile = await requirePermission("specialist.patients");
 
     if (!patientId) {
       return { success: false, error: "Patient ID is required." };
     }
 
-    const { error: deleteError } = await supabase
-      .from("specialist_patients")
-      .delete()
-      .eq("id", patientId);
+    // Archive, do not destroy.
+    // specialist_records.specialist_patient_id is ON DELETE CASCADE, so a hard
+    // delete here permanently erased the patient's entire diagnostic history with
+    // no trace. RLS (migration_22) also refuses a specialist DELETE outright.
+    //
+    // This goes through the archive_specialist_patient RPC rather than a direct
+    // update because a plain UPDATE cannot set deleted_at: PostgreSQL re-applies
+    // the SELECT policy's USING to the new row, whose `deleted_at IS NULL` clause
+    // the archive itself violates. The function is SECURITY DEFINER and
+    // re-checks both permission and ownership internally, since it bypasses the
+    // RLS policies that would otherwise enforce them. It also archives the
+    // patient's records in the same operation.
+    const { data: archived, error: archiveError } = await supabase.rpc(
+      "archive_specialist_patient",
+      { p_patient_id: patientId }
+    );
 
-    if (deleteError) {
-      throw deleteError;
+    if (archiveError) {
+      throw archiveError;
     }
+
+    if (!archived) {
+      return { success: false, error: "Patient not found, or already archived." };
+    }
+
+    // Audit the action. The create path above logs; this one previously did not,
+    // which is what made the destruction untraceable.
+    await logEvent(
+      supabase,
+      profile.id,
+      SYSTEM_EVENT_TYPES.SPECIALIST_PATIENT_DELETED,
+      "Specialist archived a private patient record",
+      null,
+      { patient_id: patientId }
+    );
 
     revalidatePath("/specialist/patients");
     return { success: true };
