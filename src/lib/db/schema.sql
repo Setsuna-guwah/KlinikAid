@@ -461,7 +461,8 @@ CREATE TABLE public.specialist_patients (
   email text,
   address text,
   created_at timestamptz DEFAULT timezone('utc', now()) NOT NULL,
-  updated_at timestamptz DEFAULT timezone('utc', now()) NOT NULL
+  updated_at timestamptz DEFAULT timezone('utc', now()) NOT NULL,
+  deleted_at timestamptz
 );
 
 -- Specialist private records
@@ -478,20 +479,55 @@ CREATE TABLE public.specialist_records (
   is_flagged boolean NOT NULL DEFAULT false,
   notes text,
   created_at timestamptz DEFAULT timezone('utc', now()) NOT NULL,
-  updated_at timestamptz DEFAULT timezone('utc', now()) NOT NULL
+  updated_at timestamptz DEFAULT timezone('utc', now()) NOT NULL,
+  deleted_at timestamptz
 );
 
 -- Enable Row Level Security
 ALTER TABLE public.specialist_patients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.specialist_records ENABLE ROW LEVEL SECURITY;
 
--- Owner-only RLS policies
-CREATE POLICY "Specialist manages own patients"
-  ON public.specialist_patients FOR ALL
-  USING (specialist_id = auth.uid())
-  WITH CHECK (specialist_id = auth.uid());
+-- Policies are split per command rather than kept as FOR ALL, mirroring
+-- migration_22. FOR ALL includes DELETE, which is exactly the defect migration_22
+-- closed: specialist_records.specialist_patient_id is ON DELETE CASCADE, so a
+-- permitted DELETE destroyed a patient's entire diagnostic history with no audit
+-- trail. No FOR DELETE policy is created here either, so a specialist delete is
+-- refused by RLS and only the service role can remove a row.
+--
+-- SELECT hides archived rows; UPDATE is deliberately unconstrained on deleted_at
+-- so archiving is permitted. The archive itself runs through
+-- archive_specialist_patient(), SECURITY DEFINER, because PostgreSQL re-applies
+-- a SELECT policy's USING to the new row of an UPDATE, so a plain UPDATE setting
+-- deleted_at would violate the very `deleted_at IS NULL` clause that hides
+-- archived rows. That function is defined by migration_22's addendum.
+CREATE POLICY "Specialist reads own active patients"
+  ON public.specialist_patients FOR SELECT
+  TO authenticated
+  USING (public.user_has_permission(auth.uid(), 'specialist.patients') AND specialist_id = auth.uid() AND deleted_at IS NULL);
 
-CREATE POLICY "Specialist manages own records"
-  ON public.specialist_records FOR ALL
-  USING (specialist_id = auth.uid())
-  WITH CHECK (specialist_id = auth.uid());
+CREATE POLICY "Specialist creates own patients"
+  ON public.specialist_patients FOR INSERT
+  TO authenticated
+  WITH CHECK (public.user_has_permission(auth.uid(), 'specialist.patients') AND specialist_id = auth.uid() AND deleted_at IS NULL);
+
+CREATE POLICY "Specialist updates own patients"
+  ON public.specialist_patients FOR UPDATE
+  TO authenticated
+  USING (public.user_has_permission(auth.uid(), 'specialist.patients') AND specialist_id = auth.uid())
+  WITH CHECK (public.user_has_permission(auth.uid(), 'specialist.patients') AND specialist_id = auth.uid());
+
+CREATE POLICY "Specialist reads own active records"
+  ON public.specialist_records FOR SELECT
+  TO authenticated
+  USING (public.user_has_permission(auth.uid(), 'specialist.records') AND specialist_id = auth.uid() AND deleted_at IS NULL);
+
+CREATE POLICY "Specialist creates own records"
+  ON public.specialist_records FOR INSERT
+  TO authenticated
+  WITH CHECK (public.user_has_permission(auth.uid(), 'specialist.records') AND specialist_id = auth.uid() AND deleted_at IS NULL);
+
+CREATE POLICY "Specialist updates own records"
+  ON public.specialist_records FOR UPDATE
+  TO authenticated
+  USING (public.user_has_permission(auth.uid(), 'specialist.records') AND specialist_id = auth.uid())
+  WITH CHECK (public.user_has_permission(auth.uid(), 'specialist.records') AND specialist_id = auth.uid());
