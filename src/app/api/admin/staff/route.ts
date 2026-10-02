@@ -146,16 +146,21 @@ export async function POST(request: Request) {
     const normalizedFullName = fullName.trim();
     const normalizedDepartment = legacyRoleText === "department_staff" ? department : null;
 
-    // 1. Create auth user with metadata (trigger will auto-create profile and registration log using legacy text)
+    // 1. Create auth user (trigger will auto-create profile and registration log).
+    // Role and department go in app_metadata, never user_metadata: the signup trigger
+    // derives privilege from app_metadata only, because user_metadata is writable by
+    // the caller at sign-up via the browser-public anon key. See migration_20.sql.
     const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
       email: normalizedEmail,
       password,
       email_confirm: true,
       user_metadata: {
         full_name: normalizedFullName,
+        employee_type: employeeType,
+      },
+      app_metadata: {
         role: legacyRoleText,
         department: normalizedDepartment,
-        employee_type: employeeType,
       },
     });
 
@@ -191,7 +196,11 @@ export async function POST(request: Request) {
       .update({ 
         employee_type: employeeType,
         role: legacyRoleText,
-        role_id: roleId 
+        role_id: roleId,
+        // The signup trigger provisions every account as patient with a null
+        // department (migration_21), so this is where a staff member's
+        // department actually gets set.
+        department: normalizedDepartment,
       })
       .eq("id", authData.user.id)
       .select()
