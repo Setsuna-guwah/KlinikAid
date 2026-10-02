@@ -59,9 +59,13 @@ export default async function DashboardLayout({ children }: DashboardLayoutProps
   // 3.7 Enforce MFA Enrollment gate for Staff roles
   const isStaff = ["admin", "receptionist", "department_staff", "medical_specialist"].includes(profile.role);
   if (isStaff) {
-    const { data: factorsData, error: factorsError } = await supabase.auth.mfa.listFactors();
-    if (factorsError) {
-      console.error("MFA Gate error retrieving factors:", factorsError.message);
+    let factorsData: Awaited<ReturnType<typeof supabase.auth.mfa.listFactors>>["data"];
+    try {
+      ({ data: factorsData } = await supabase.auth.mfa.listFactors());
+    } catch (factorError) {
+      // Same reasoning as the assurance check below: a session that cannot
+      // describe its own factors cannot be trusted to grant access.
+      console.error("MFA Gate threw listing factors:", factorError);
       await supabase.auth.signOut();
       redirect("/login?error=mfa_check_failed");
     }
@@ -77,12 +81,23 @@ export default async function DashboardLayout({ children }: DashboardLayoutProps
     // proves this session DID. Login returns `mfa_required` without signing
     // out, so an AAL1 session survives the prompt and reaches this layout —
     // checking `hasVerifiedFactor` alone would let a stolen password through.
-    const { data: aalData, error: aalError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (aalError || !aalData) {
-      console.error("MFA Gate error retrieving assurance level:", aalError?.message);
-      // Fail closed: without a readable assurance level we cannot tell an
-      // AAL2 session from an AAL1 one, so staff are signed out rather than
-      // admitted. Sign out first so the retry starts from a clean session.
+    //
+    // Wrapped because getAuthenticatorAssuranceLevel() reads session.user.factors
+    // internally and throws outright when the stored session has no `user`
+    // (GoTrueClient.js). A session this shape cannot yield a trustworthy
+    // assurance level, so it must fail closed -- but as a redirect to login,
+    // not as a 500 that leaves the caller on a blank page.
+    let aalData: Awaited<ReturnType<typeof supabase.auth.mfa.getAuthenticatorAssuranceLevel>>["data"];
+    try {
+      ({ data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel());
+    } catch (gateError) {
+      console.error("MFA Gate threw retrieving assurance level:", gateError);
+      await supabase.auth.signOut();
+      redirect("/login?error=mfa_check_failed");
+    }
+
+    if (!aalData) {
+      console.error("MFA Gate: assurance level unavailable; failing closed.");
       await supabase.auth.signOut();
       redirect("/login?error=mfa_check_failed");
     }

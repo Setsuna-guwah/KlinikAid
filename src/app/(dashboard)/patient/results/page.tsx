@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
 import PatientResultsClient from "./PatientResultsClient";
+import DataLoadError from "@/components/DataLoadError";
 import { DepartmentRecord } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +51,21 @@ export default async function PatientResultsPage() {
 
   if (recordsError) {
     console.error("[PatientResultsPage] Error fetching department records:", recordsError);
+  }
+
+  // A failed fetch must not render as "you have no results". That tells a
+  // patient their records are absent when they may exist and were simply
+  // unreachable -- the worst possible place to assert an unverified absence.
+  if (recordsError) {
+    return (
+      <div className="space-y-6 max-w-5xl mx-auto">
+        <DataLoadError
+          what="your results"
+          error={recordsError}
+          retryHref="/patient/results"
+        />
+      </div>
+    );
   }
 
   return (

@@ -2,6 +2,7 @@ import React from "react";
 import { requirePermission } from "@/lib/auth/helpers";
 import { createClient } from "@/lib/supabase/server";
 import SpecialistDashboardClient from "@/components/SpecialistDashboardClient";
+import DataLoadError from "@/components/DataLoadError";
 
 export const dynamic = "force-dynamic";
 
@@ -113,7 +114,24 @@ export default async function SpecialistDashboardPage() {
   }
   const recentPatients = Array.from(recentPatientsMap.values());
 
+  // Every widget on this dashboard is a count or a list built from a query that
+  // can fail independently. On failure each one degrades to a confident zero or
+  // an empty list, and the specialist reads "0 patients", "0 flagged this week"
+  // and an empty critical-results list as fact. The single most dangerous of
+  // these is recentFlagged: a failed query presents as "no out-of-range results
+  // this week", which is exactly the claim a specialist must never be misled
+  // about. The failures are therefore surfaced as a banner rather than being
+  // summed into the widgets, so no number below is silently fabricated.
+  const loadErrors = [
+    totalPatientsError,
+    flaggedError,
+    flaggedListError,
+    activityError,
+  ].filter(Boolean);
+
   const stats = {
+    // A failed count renders as its zero equivalent; the banner above states
+    // that these are unknown rather than measured.
     totalPatients: totalPatients || 0,
     flaggedThisWeek: flaggedThisWeek || 0,
     departmentsCovered
@@ -142,10 +160,21 @@ export default async function SpecialistDashboardPage() {
   });
 
   return (
-    <SpecialistDashboardClient
-      stats={stats}
-      recentFlagged={formattedRecentFlagged}
-      recentPatients={recentPatients}
-    />
+    <>
+      {loadErrors.length > 0 ? (
+        <div className="mb-6">
+          <DataLoadError
+            what="your specialist dashboard"
+            error={loadErrors[0]}
+            retryHref="/specialist/dashboard"
+          />
+        </div>
+      ) : null}
+      <SpecialistDashboardClient
+        stats={stats}
+        recentFlagged={formattedRecentFlagged}
+        recentPatients={recentPatients}
+      />
+    </>
   );
 }

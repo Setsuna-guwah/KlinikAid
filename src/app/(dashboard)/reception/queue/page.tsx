@@ -2,6 +2,7 @@ import React from "react";
 import { createClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/auth/helpers";
 import ReceptionKanban from "@/components/ReceptionKanban";
+import DataLoadError from "@/components/DataLoadError";
 import { Document } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,9 @@ export default async function ReceptionQueuePage() {
     `)
     .order("created_at", { ascending: false });
 
+  // A failed fetch must never reach the kanban as an empty board. Reception
+  // reading five empty columns would conclude there are no pending referrals
+  // and triage nothing while every uploaded document sits unseen.
   if (error) {
     console.error("Error fetching initial queue documents:", error);
   }
@@ -52,8 +56,18 @@ export default async function ReceptionQueuePage() {
         </p>
       </div>
 
-      {/* Kanban Board Container */}
-      <ReceptionKanban initialDocuments={documents} />
+      {error ? (
+        <DataLoadError
+          what="the reception queue"
+          error={error}
+          retryHref="/reception/queue"
+        />
+      ) : (
+        <>
+          {/* Kanban Board Container */}
+          <ReceptionKanban initialDocuments={documents} />
+        </>
+      )}
     </div>
   );
 }

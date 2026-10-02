@@ -282,8 +282,12 @@ export default function DepartmentRecordsClient({
               <div className="p-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900">
                 <Users className="h-10 w-10 text-slate-300 dark:text-slate-700 mx-auto mb-3" />
                 <h3 className="text-sm font-semibold text-slate-950 dark:text-slate-100">No patients queued</h3>
+                {/* Say only what is actually known. The previous wording asserted
+                    the queue "is empty", which this view cannot distinguish from a
+                    queue that failed to load. */}
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  Today&apos;s queue is empty or matches no filters.
+                  Nothing is showing for the current filters. If you expected a
+                  patient here, reload before concluding they are not waiting.
                 </p>
               </div>
             ) : (

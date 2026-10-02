@@ -90,7 +90,7 @@ export default async function RagPage() {
           </p>
         </div>
         
-        <RagManagerClient initialDocuments={documents} />
+        <RagManagerClient initialDocuments={documents} error={error ? { message: error.message } : null} />
       </div>
     </div>
   );

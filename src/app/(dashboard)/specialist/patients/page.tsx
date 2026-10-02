@@ -2,6 +2,7 @@ import React from "react";
 import { requirePermission } from "@/lib/auth/helpers";
 import { createClient } from "@/lib/supabase/server";
 import SpecialistPatientsClient from "@/components/SpecialistPatientsClient";
+import DataLoadError from "@/components/DataLoadError";
 
 export const dynamic = "force-dynamic";
 
@@ -24,19 +25,29 @@ export default async function SpecialistPatientsPage() {
 
   // 2. Fetch records for these patients in a separate query to prevent massive nested scans (capped at 50000)
   let records: { specialist_patient_id: string; is_flagged: boolean; created_at: string }[] = [];
+  let recordsError: { message: string } | null = null;
   if (patients && patients.length > 0) {
-    const { data: recordsData, error: recordsError } = await supabase
+    const { data: recordsData, error: err } = await supabase
       .from("specialist_records")
       .select("specialist_patient_id, is_flagged, created_at")
       .in("specialist_patient_id", patients.map((p) => p.id))
       .limit(50000);
-    
-    if (recordsError) {
-      console.error("Error fetching records for patients:", recordsError);
+
+    if (err) {
+      console.error("Error fetching records for patients:", err);
+      recordsError = err;
     } else {
       records = recordsData || [];
     }
   }
+
+  // Every row in this roster is built from `records`: total_records, flagged_count
+  // and last_test_date. If that query failed, each patient would render as "0
+  // records, 0 flagged" -- an empty diagnostic history and no out-of-range
+  // results, asserted as fact. A roster of confident wrong counts is more
+  // dangerous than no roster, so the whole view is withheld rather than shown
+  // with fabricated zeroes.
+  const loadError = patientsError ?? recordsError;
 
   const formattedPatients = (patients || []).map((patient) => {
     const patientRecords = records.filter((r) => r.specialist_patient_id === patient.id);
@@ -68,6 +79,17 @@ export default async function SpecialistPatientsPage() {
   });
 
   return (
-    <SpecialistPatientsClient initialPatients={formattedPatients} />
+    <>
+      {loadError ? (
+        <DataLoadError
+          what="your patient roster"
+          error={loadError}
+          retryHref="/specialist/patients"
+        />
+      ) : null}
+      {loadError ? null : (
+        <SpecialistPatientsClient initialPatients={formattedPatients} />
+      )}
+    </>
   );
 }

@@ -28,6 +28,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import DataLoadError from "@/components/DataLoadError";
 import { sendStaffResetEmailAction } from "./actions";
 import { getRolesAction } from "../roles/actions";
 
@@ -110,6 +111,7 @@ export default function StaffManagementPage() {
   const [submitting, setSubmitting] = useState(false);
   const [sendingReset, setSendingReset] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [employeeTitleInput, setEmployeeTitleInput] = useState("");
 
   // Confirmation dialog state
@@ -154,15 +156,26 @@ export default function StaffManagementPage() {
 
   // Fetch staff list on mount
   const fetchStaff = async () => {
+    setLoading(true);
+    // Without this, a failed fetch leaves staffList empty and the table below
+    // renders "No staff members found / Try adjusting your search query" --
+    // telling an operator the registry is empty when it could not be read.
+    setFetchError(null);
     try {
-      setLoading(true);
       const res = await fetch("/api/admin/staff");
       const json = await res.json();
       if (json.success) {
         setStaffList(json.data);
+      } else {
+        setFetchError(json.error || "The personnel registry could not be loaded.");
       }
     } catch (err) {
       console.error("Failed to fetch staff:", err);
+      setFetchError(
+        err instanceof Error
+          ? err.message
+          : "The personnel registry could not be loaded."
+      );
     } finally {
       setLoading(false);
     }
@@ -390,6 +403,14 @@ export default function StaffManagementPage() {
             <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-500">
               <Loader2 className="h-8 w-8 animate-spin text-accentBlue-600" />
               <span className="text-xs font-medium">Loading personnel registry...</span>
+            </div>
+          ) : fetchError ? (
+            <div className="py-16 px-6">
+              <DataLoadError
+                what="the personnel registry"
+                error={fetchError}
+                retryHref="/admin/staff"
+              />
             </div>
           ) : filteredStaff.length === 0 ? (
             <div className="text-center py-16 text-slate-500 space-y-1">

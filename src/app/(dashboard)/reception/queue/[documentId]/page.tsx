@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/auth/helpers";
 import DocumentApprovalClient from "@/components/DocumentApprovalClient";
+import DataLoadError from "@/components/DataLoadError";
 import { Document } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -43,9 +44,25 @@ export default async function DocumentDetailsPage({ params }: DocumentDetailsPag
     .eq("id", documentId)
     .single();
 
-  if (error || !rawDoc) {
+  // Distinguish "this document does not exist" from "we could not load it".
+  // Collapsing both into notFound() tells reception the document is absent
+  // when it may exist and simply be unreachable -- and a referral they stop
+  // looking for is a referral that never gets triaged.
+  if (error) {
     console.error(`Error fetching document details for ID ${documentId}:`, error);
-    return notFound();
+    return (
+      <div className="space-y-6">
+        <DataLoadError
+          what="this document"
+          error={error}
+          retryHref={`/reception/queue/${documentId}`}
+        />
+      </div>
+    );
+  }
+
+  if (!rawDoc) {
+    notFound();
   }
 
   const document = rawDoc as Document;

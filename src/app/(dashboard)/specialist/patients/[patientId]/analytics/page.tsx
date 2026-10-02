@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requirePermission } from "@/lib/auth/helpers";
 import { createClient } from "@/lib/supabase/server";
 import SpecialistAnalyticsClient from "@/components/SpecialistAnalyticsClient";
+import DataLoadError from "@/components/DataLoadError";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +67,7 @@ export default async function PatientAnalyticsPage({
 
   // 3. Fetch initial chronological records for the first metric (if available)
   let initialRecords: RecordData[] = [];
+  let recordsErrorForView: { message: string } | null = null;
   if (distinctMetrics.length > 0) {
     const { data: records, error: recordsError } = await supabase
       .from("specialist_records")
@@ -91,6 +93,7 @@ export default async function PatientAnalyticsPage({
 
     if (recordsError) {
       console.error("Error fetching initial records for first metric:", recordsError);
+      recordsErrorForView = recordsError;
     } else {
       initialRecords = (records || []).map((r) => {
         const rec = r as unknown as RecordData;
@@ -115,6 +118,35 @@ export default async function PatientAnalyticsPage({
         };
       });
     }
+  }
+
+  // A failed metrics query yields an empty metric list, which the client renders
+  // as "No records found for this metric" -- asserting that this patient has no
+  // results when the results were simply unreachable. Withhold the view.
+  if (metricsError) {
+    return (
+      <div className="space-y-6">
+        <DataLoadError
+          what={`analytics for ${patient.first_name} ${patient.last_name}`}
+          error={metricsError}
+          retryHref={`/specialist/patients/${patientId}/analytics`}
+        />
+      </div>
+    );
+  }
+
+  // A failed records query yields an empty chart, which reads as "no results
+  // recorded" rather than "could not load". Same reasoning: withhold the view.
+  if (recordsErrorForView) {
+    return (
+      <div className="space-y-6">
+        <DataLoadError
+          what={`results for ${patient.first_name} ${patient.last_name}`}
+          error={recordsErrorForView}
+          retryHref={`/specialist/patients/${patientId}/analytics`}
+        />
+      </div>
+    );
   }
 
   return (

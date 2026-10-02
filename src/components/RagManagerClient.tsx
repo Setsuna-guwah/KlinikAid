@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import DataLoadError from "@/components/DataLoadError";
 import { toast } from "sonner";
 import { formatPhTimeFull } from "@/lib/utils";
 import {
@@ -54,9 +55,11 @@ interface GroupedDocument {
 
 interface RagManagerClientProps {
   initialDocuments: GroupedDocument[];
+  /** Set when the initial fetch failed. An empty list is then not "no documents". */
+  error?: { message: string } | null;
 }
 
-export default function RagManagerClient({ initialDocuments }: RagManagerClientProps) {
+export default function RagManagerClient({ initialDocuments, error = null }: RagManagerClientProps) {
   const [documents, setDocuments] = useState<GroupedDocument[]>(initialDocuments);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -84,6 +87,22 @@ export default function RagManagerClient({ initialDocuments }: RagManagerClientP
   const filteredDocuments = documents.filter((doc) =>
     doc.title.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // When the initial load failed, `documents` is empty for a reason that has
+  // nothing to do with whether documents exist. Rendering the normal empty
+  // state here would tell an operator the knowledge base is empty when it may
+  // hold every clinical guideline the chatbot grounds its answers on.
+  if (error && filteredDocuments.length === 0) {
+    return (
+      <div className="space-y-6">
+        <DataLoadError
+          what="the knowledge base"
+          error={error}
+          retryHref="/admin/rag"
+        />
+      </div>
+    );
+  }
 
   const handleUploadText = () => {
     if (!textTitle.trim() || !textContent.trim()) {

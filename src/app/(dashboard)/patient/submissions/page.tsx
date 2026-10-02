@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
 import SubmissionsClient from "./SubmissionsClient";
+import DataLoadError from "@/components/DataLoadError";
 import { Document, PatientQueue } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -58,13 +59,31 @@ export default async function PatientSubmissionsPage() {
   const documents = (docsResult.data || []) as Document[];
   const queue = (queueResult.data || []) as PatientQueue[];
 
+  // These two fetches are parallel and their errors are otherwise never read.
+  // A failure here renders as "you have not submitted anything", which tells a
+  // patient their uploads vanished rather than that they could not be loaded.
+  const loadError = docsResult.error ?? queueResult.error;
+
+  if (loadError) {
+    console.error("[PatientSubmissionsPage] Failed to load submissions:", loadError);
+  }
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      <SubmissionsClient 
-        initialDocuments={documents} 
-        initialQueue={queue} 
-        patientId={patient.id} 
-      />
+      {loadError ? (
+        <DataLoadError
+          what="your submissions"
+          error={loadError}
+          retryHref="/patient/submissions"
+        />
+      ) : null}
+      {loadError ? null : (
+        <SubmissionsClient
+          initialDocuments={documents}
+          initialQueue={queue}
+          patientId={patient.id}
+        />
+      )}
     </div>
   );
 }
