@@ -55,9 +55,14 @@ export async function createPatient(
         email,
         password: passwordUsed,
         email_confirm: true,
+        // Role belongs in app_metadata, not user_metadata: the signup trigger grants
+        // privilege from app_metadata only, since user_metadata is caller-writable.
+        // See migration_20.sql.
         user_metadata: {
-          role: "patient",
           full_name: fullName,
+        },
+        app_metadata: {
+          role: "patient",
         },
       });
 

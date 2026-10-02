@@ -63,21 +63,27 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     }
 
     // 1. Update Auth user (email & metadata only — password changes are client-driven via forgot-password or profile)
+    // Role and department are mirrored into app_metadata, matching where the signup
+    // trigger reads privilege from. The profiles row is updated directly in step 2.
     const updateParams: {
       email: string;
       user_metadata: {
         full_name: string;
+        employee_type: string | null;
+      };
+      app_metadata: {
         role: string;
         department: string | null;
-        employee_type: string | null;
       };
     } = {
       email,
       user_metadata: {
         full_name: fullName,
+        employee_type: employeeType,
+      },
+      app_metadata: {
         role: legacyRoleText,
         department: legacyRoleText === "department_staff" ? department : null,
-        employee_type: employeeType,
       },
     };
 
