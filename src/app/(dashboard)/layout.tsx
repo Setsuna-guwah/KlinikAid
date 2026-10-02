@@ -175,11 +175,18 @@ export default async function DashboardLayout({ children }: DashboardLayoutProps
   let roleName: string | null = null;
   if (profile.role_id) {
     const adminSupabase = createAdminClient();
-    const { data: assignedRole } = await adminSupabase
+    // Only used for the sidebar's role label. Its error is deliberately not fatal:
+    // failing the whole dashboard because a cosmetic label could not resolve
+    // would trade a visible defect for an invisible one. Logged so the gap is
+    // diagnosable rather than silent.
+    const { data: assignedRole, error: roleError } = await adminSupabase
       .from("roles")
       .select("name")
       .eq("id", profile.role_id)
       .maybeSingle();
+    if (roleError) {
+      console.error("Dashboard layout: could not resolve role name for sidebar:", roleError.message);
+    }
     roleName = assignedRole?.name || null;
   }
 

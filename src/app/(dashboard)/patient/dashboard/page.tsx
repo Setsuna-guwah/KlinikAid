@@ -13,6 +13,7 @@ import {
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import DataLoadError from "@/components/DataLoadError";
 
 export const dynamic = "force-dynamic";
 
@@ -77,7 +78,18 @@ export default async function PatientDashboardPage() {
   ]);
 
   const activeQueue = activeQueueResult.data?.[0] || null;
-  
+
+  // These three run in parallel and none of their errors was ever read. A failed
+  // fetch therefore rendered as real data: no queue entry, zero submissions and
+  // zero results, which tells a patient their documents and results do not exist
+  // when they may exist and simply be unreachable. Surfaced rather than defaulted.
+  const metricsError =
+    activeQueueResult.error ?? documentsCountResult.error ?? resultsCountResult.error;
+
+  if (metricsError) {
+    console.error("[PatientDashboard] Failed to load dashboard metrics:", metricsError);
+  }
+
   // Filter documents in memory for patient scoping
   const patientDocs = (documentsCountResult.data || []) as { id: string; status: string }[];
   const totalSubmissions = patientDocs.length;
@@ -119,6 +131,16 @@ export default async function PatientDashboardPage() {
         </p>
       </div>
 
+      {/* Withheld entirely: every number below is derived from the query that
+          failed, so showing any of them would assert a count of zero. */}
+      {metricsError ? (
+        <DataLoadError
+          what="your dashboard"
+          error={metricsError}
+          retryHref="/patient/dashboard"
+        />
+      ) : null}
+
       {/* Main Welcome Card */}
       <Card className="border border-slate-200/80 dark:border-slate-800 shadow-md">
         <CardHeader className="flex flex-row items-center gap-4 bg-slate-50/55 dark:bg-slate-900/30 pb-4">
@@ -131,6 +153,7 @@ export default async function PatientDashboardPage() {
           </div>
         </CardHeader>
         <CardContent className="pt-6">
+          {metricsError ? null : (
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
             <div className="p-4 border border-slate-200/60 dark:border-slate-800 rounded-lg space-y-2 text-center flex flex-col items-center justify-center">
               <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Queue Status</span>
@@ -166,6 +189,7 @@ export default async function PatientDashboardPage() {
               <p className="text-[9px] text-slate-400">Released parameters</p>
             </div>
           </div>
+          )}
         </CardContent>
       </Card>
 

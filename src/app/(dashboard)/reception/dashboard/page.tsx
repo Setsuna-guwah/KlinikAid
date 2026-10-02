@@ -4,6 +4,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { createClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/auth/helpers";
 import { getPhtStartOfToday } from "@/lib/utils";
+import DataLoadError from "@/components/DataLoadError";
 import { 
   ClipboardList, 
   UserCheck, 
@@ -85,6 +86,20 @@ export default async function ReceptionDashboardPage() {
       .limit(5)
   ]);
 
+  // Parallel fetches whose errors were never read. On failure every count became
+  // 0 and the recent-activity feed became empty, so reception saw a clinic with
+  // no queue, no pending documents and nobody routed -- and would reasonably
+  // keep their desk clear.
+  const metricsError =
+    activeQueueResult.error ??
+    pendingDocsResult.error ??
+    todayRoutedResult.error ??
+    recentQueueResult.error;
+
+  if (metricsError) {
+    console.error("[ReceptionDashboard] Failed to load dashboard metrics:", metricsError);
+  }
+
   const activeQueueCount = activeQueueResult.count || 0;
   const pendingDocsCount = pendingDocsResult.count || 0;
   const todayRoutedCount = todayRoutedResult.count || 0;
@@ -120,6 +135,27 @@ export default async function ReceptionDashboardPage() {
         return "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300";
     }
   };
+
+  // Returned before rendering anything derived from the failed queries. Every
+  // figure on this page is one of those counts, and a reception desk shown
+  // zeroes would stand idle.
+  if (metricsError) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">Reception Dashboard</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Front desk waitlists, document validations, and active triage routing
+          </p>
+        </div>
+        <DataLoadError
+          what="the reception dashboard"
+          error={metricsError}
+          retryHref="/reception/dashboard"
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
