@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requirePermission } from "@/lib/auth/helpers";
-import { errorResponse, successResponse } from "@/lib/api-response";
+import { errorResponse, handleRouteError, successResponse } from "@/lib/api-response";
 import { logEvent } from "@/lib/logger";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 import { validateName } from "@/lib/validation";
@@ -133,8 +133,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
     return successResponse({ ...profile, email }, "Staff member updated successfully");
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    return errorResponse("Failed to update staff member", 500, message);
+    return handleRouteError(error, "Failed to update staff member");
   }
 }
 
@@ -188,7 +187,6 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 
     return successResponse(profile, `Staff member ${isActive ? "activated" : "deactivated"} successfully`);
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    return errorResponse("Failed to update staff status", 500, message);
+    return handleRouteError(error, "Failed to update staff status");
   }
 }

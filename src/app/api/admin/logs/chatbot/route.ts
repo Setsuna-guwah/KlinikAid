@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { errorResponse, successResponse } from "@/lib/api-response";
+import { errorResponse, handleRouteError, successResponse } from "@/lib/api-response";
 import { toZonedTime, format } from "date-fns-tz";
 import { requirePermission } from "@/lib/auth/helpers";
 
@@ -16,11 +16,6 @@ export async function GET(request: Request) {
 
   try {
     await requirePermission("chatbot_logs.read");
-  } catch {
-    return errorResponse("Forbidden: Access denied.", 403);
-  }
-
-  try {
     const { searchParams } = new URL(request.url);
     const sessionId = searchParams.get("sessionId");
     const includeStats = searchParams.get("includeStats") === "true";
@@ -122,9 +117,7 @@ export async function GET(request: Request) {
       truncated,
       ...(todayStats && { todayStats }),
     });
-  } catch (err) {
-    console.error("Chatbot logs GET error:", err);
-    const message = err instanceof Error ? err.message : "Failed to fetch chatbot logs.";
-    return errorResponse(message, 500);
+  } catch (error: unknown) {
+    return handleRouteError(error, "Failed to fetch chatbot logs.");
   }
 }

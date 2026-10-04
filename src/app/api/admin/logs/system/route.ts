@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { errorResponse, successResponse } from "@/lib/api-response";
+import { errorResponse, handleRouteError, successResponse } from "@/lib/api-response";
 import { logEvent } from "@/lib/logger";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 import { requirePermission } from "@/lib/auth/helpers";
@@ -17,11 +17,6 @@ export async function GET(request: Request) {
 
   try {
     await requirePermission("system_logs.read");
-  } catch {
-    return errorResponse("Forbidden: Access denied.", 403);
-  }
-
-  try {
     const { searchParams } = new URL(request.url);
     const eventType = searchParams.get("eventType");
     const startDate = searchParams.get("startDate");
@@ -110,9 +105,7 @@ export async function GET(request: Request) {
       page,
       truncated,
     });
-  } catch (err) {
-    console.error("System logs GET error:", err);
-    const message = err instanceof Error ? err.message : "Failed to fetch system logs.";
-    return errorResponse(message, 500);
+  } catch (error: unknown) {
+    return handleRouteError(error, "Failed to fetch system logs.");
   }
 }

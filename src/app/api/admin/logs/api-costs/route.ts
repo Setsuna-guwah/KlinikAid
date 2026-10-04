@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { errorResponse, successResponse } from "@/lib/api-response";
+import { errorResponse, handleRouteError, successResponse } from "@/lib/api-response";
 import { toZonedTime, format } from "date-fns-tz";
 import { requirePermission } from "@/lib/auth/helpers";
 
@@ -16,11 +16,6 @@ export async function GET() {
 
   try {
     await requirePermission("system_logs.read");
-  } catch {
-    return errorResponse("Forbidden: Access denied.", 403);
-  }
-
-  try {
     // 2. Calculate PHT 30-day window start timestamp (Revision D)
     const nowPHT = toZonedTime(new Date(), "Asia/Manila");
     const todayStr = format(nowPHT, "yyyy-MM-dd", { timeZone: "Asia/Manila" });
@@ -39,9 +34,7 @@ export async function GET() {
     }
 
     return successResponse(data || []);
-  } catch (err) {
-    console.error("API costs GET error:", err);
-    const message = err instanceof Error ? err.message : "Failed to fetch daily token usage costs.";
-    return errorResponse(message, 500);
+  } catch (error: unknown) {
+    return handleRouteError(error, "Failed to fetch daily token usage costs.");
   }
 }

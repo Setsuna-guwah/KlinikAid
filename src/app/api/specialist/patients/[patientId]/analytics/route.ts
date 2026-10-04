@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/auth/helpers";
-import { errorResponse, successResponse } from "@/lib/api-response";
+import { errorResponse, handleRouteError, successResponse } from "@/lib/api-response";
 
 export async function GET(
   request: Request,
@@ -19,13 +19,6 @@ export async function GET(
 
   try {
     await requirePermission("specialist.analytics");
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    const isForbidden = message.includes("FORBIDDEN");
-    return errorResponse(message, isForbidden ? 403 : 401);
-  }
-
-  try {
 
     if (!patientId) {
       return errorResponse("Patient ID is required", 400);
@@ -86,8 +79,6 @@ export async function GET(
 
     return successResponse(formattedRecords, "Patient chronological records fetched successfully");
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error("Failed to fetch chronological patient records:", message);
-    return errorResponse("Failed to fetch chronological patient records", 500);
+    return handleRouteError(error, "Failed to fetch chronological patient records");
   }
 }
