@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/auth/helpers";
-import { errorResponse, successResponse } from "@/lib/api-response";
+import { errorResponse, handleRouteError, successResponse } from "@/lib/api-response";
 import { logEvent } from "@/lib/logger";
 import { toZonedTime, format } from "date-fns-tz";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
@@ -107,7 +107,6 @@ export async function POST(
 
     return successResponse(updatedDoc, "Document rejected successfully");
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    return errorResponse("Failed to reject document", 500, message);
+    return handleRouteError(error, "Failed to reject document");
   }
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { hasPermission, requireAnyPermission } from "@/lib/auth/helpers";
-import { errorResponse, successResponse } from "@/lib/api-response";
+import { errorResponse, handleRouteError, successResponse } from "@/lib/api-response";
 import { logEvent } from "@/lib/logger";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 import { validateLabResult } from "@/lib/records/validateLabResult";
@@ -66,8 +66,7 @@ export async function GET(request: Request) {
 
     return successResponse(records || [], "Department records retrieved successfully");
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    return errorResponse("Failed to fetch department records", 500, message);
+    return handleRouteError(error, "Failed to fetch department records");
   }
 }
 
@@ -287,7 +286,6 @@ export async function POST(request: Request) {
       { status: 201 }
     );
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    return errorResponse("Failed to save department records", 500, message);
+    return handleRouteError(error, "Failed to save department records");
   }
 }

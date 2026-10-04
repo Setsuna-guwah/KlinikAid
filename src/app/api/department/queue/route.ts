@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireAnyPermission } from "@/lib/auth/helpers";
-import { errorResponse, successResponse } from "@/lib/api-response";
+import { errorResponse, handleRouteError, successResponse } from "@/lib/api-response";
 
 export async function GET(request: Request) {
   const supabase = createClient();
@@ -61,7 +61,6 @@ export async function GET(request: Request) {
 
     return successResponse(queue || [], "Queue retrieved successfully");
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    return errorResponse("Failed to fetch department queue", 500, message);
+    return handleRouteError(error, "Failed to fetch department queue");
   }
 }

@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/auth/helpers";
-import { errorResponse, successResponse } from "@/lib/api-response";
+import { errorResponse, handleRouteError, successResponse } from "@/lib/api-response";
 
 /**
  * Maximum rows this endpoint will return.
@@ -35,13 +35,6 @@ export async function GET(request: Request) {
 
   try {
     await requirePermission("specialist.patients");
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    const isForbidden = message.includes("FORBIDDEN");
-    return errorResponse(message, isForbidden ? 403 : 401);
-  }
-
-  try {
 
     // Parse filters
     const { searchParams } = new URL(request.url);
@@ -162,8 +155,6 @@ export async function GET(request: Request) {
       "Patients fetched successfully"
     );
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error("Failed to fetch patients for analytics:", message);
-    return errorResponse("Failed to fetch patients for analytics", 500);
+    return handleRouteError(error, "Failed to fetch patients for analytics");
   }
 }

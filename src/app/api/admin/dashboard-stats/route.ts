@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/auth/helpers";
-import { errorResponse, successResponse } from "@/lib/api-response";
+import { handleRouteError, successResponse } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
 
@@ -112,7 +112,6 @@ export async function GET() {
       departmentBreakdown
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    return errorResponse("Failed to fetch dashboard metrics", 500, message);
+    return handleRouteError(error, "Failed to fetch dashboard metrics");
   }
 }

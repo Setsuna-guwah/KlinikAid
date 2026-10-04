@@ -1,3 +1,4 @@
+import { AuthError } from "@/lib/api-response";
 import { createClient } from "@/lib/supabase/server";
 import { Profile, UserRole, Department } from "@/types";
 import { User } from "@supabase/supabase-js";
@@ -46,11 +47,11 @@ export async function requireRole(allowedRoles: UserRole[]): Promise<Profile> {
   const { user, profile } = await getCurrentUser();
 
   if (!user || !profile) {
-    throw new Error("UNAUTHORIZED: Session not found");
+    throw new AuthError(401, "UNAUTHORIZED: Session not found");
   }
 
   if (!allowedRoles.includes(profile.role)) {
-    throw new Error(`FORBIDDEN: User role '${profile.role}' does not match required roles`);
+    throw new AuthError(403, `FORBIDDEN: User role '${profile.role}' does not match required roles`);
   }
 
   return profile;
@@ -148,12 +149,12 @@ export async function requirePermission(permissionName: string): Promise<Profile
   const { user, profile } = await getCurrentUser();
 
   if (!user || !profile) {
-    throw new Error("UNAUTHORIZED: Session not found");
+    throw new AuthError(401, "UNAUTHORIZED: Session not found");
   }
 
   const allowed = await hasPermission(user.id, permissionName);
   if (!allowed) {
-    throw new Error(`FORBIDDEN: Missing permission '${permissionName}'`);
+    throw new AuthError(403, `FORBIDDEN: Missing permission '${permissionName}'`);
   }
 
   return profile;
@@ -163,12 +164,12 @@ export async function requireAnyPermission(permissionNames: string[]): Promise<P
   const { user, profile } = await getCurrentUser();
 
   if (!user || !profile) {
-    throw new Error("UNAUTHORIZED: Session not found");
+    throw new AuthError(401, "UNAUTHORIZED: Session not found");
   }
 
   const allowed = await hasAnyPermission(user.id, permissionNames);
   if (!allowed) {
-    throw new Error(`FORBIDDEN: Missing one of permissions '${permissionNames.join(", ")}'`);
+    throw new AuthError(403, `FORBIDDEN: Missing one of permissions '${permissionNames.join(", ")}'`);
   }
 
   return profile;
@@ -187,7 +188,8 @@ export async function requireDepartment(allowedDepartments: Department[]): Promi
   }
 
   if (!profile.department || !allowedDepartments.includes(profile.department)) {
-    throw new Error(
+    throw new AuthError(
+      403,
       `FORBIDDEN: Department '${profile.department || "none"}' does not match required departments`
     );
   }

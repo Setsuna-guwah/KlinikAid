@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requirePermission } from "@/lib/auth/helpers";
-import { errorResponse, successResponse } from "@/lib/api-response";
+import { AuthError, errorResponse, handleRouteError, successResponse } from "@/lib/api-response";
 import { logEvent } from "@/lib/logger";
 import { DEPARTMENTS, SYSTEM_EVENT_TYPES } from "@/lib/constants";
 import { validateName } from "@/lib/validation";
@@ -81,8 +81,7 @@ export async function GET() {
 
     return successResponse(staffWithEmails);
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    return errorResponse("Failed to list staff", 500, message);
+    return handleRouteError(error, "Failed to list staff");
   }
 }
 
@@ -238,6 +237,11 @@ export async function POST(request: Request) {
       201
     );
   } catch (error: unknown) {
+    // A refusal is not a staff-creation failure: a caller without `staff.manage`
+    // must not be told "500, try again", because retrying will never succeed.
+    if (error instanceof AuthError) {
+      return handleRouteError(error, "Failed to create staff member");
+    }
     const safeError = getStaffCreateErrorMessage(error);
     const message = error instanceof Error ? error.message : String(error);
     return errorResponse(safeError.message, safeError.status, message);
