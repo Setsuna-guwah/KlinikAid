@@ -18,7 +18,7 @@ import DataLoadError from "@/components/DataLoadError";
 export const dynamic = "force-dynamic";
 
 export default async function PatientDashboardPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   // 1. Get current authenticated user
   const {

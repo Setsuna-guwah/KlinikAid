@@ -25,7 +25,7 @@ export async function createSpecialistRecordAction(
   patientId: string,
   payload: SpecialistRecordPayload
 ): Promise<RecordResult> {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   try {
     const profile = await requirePermission("specialist.records");

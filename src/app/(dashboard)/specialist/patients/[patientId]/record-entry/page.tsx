@@ -5,18 +5,18 @@ import { notFound, redirect } from "next/navigation";
 import SpecialistRecordEntryClient from "@/components/SpecialistRecordEntryClient";
 
 interface PageProps {
-  params: {
+  params: Promise<{
     patientId: string;
-  };
+  }>;
 }
 
 export const dynamic = "force-dynamic";
 
 export default async function SpecialistRecordEntryPage({ params }: PageProps) {
   const profile = await requirePermission("specialist.records");
-  const { patientId } = params;
+  const { patientId } = await params;
 
-  const supabase = createClient();
+  const supabase = await createClient();
 
   // Fetch specialist private patient demographics
   const { data: patient, error } = await supabase

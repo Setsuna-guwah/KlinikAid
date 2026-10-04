@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { hasPermission } from "@/lib/auth/helpers";
 
 export async function getReceptionDocumentSignedUrlAction(documentId: string) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
 
   if (authError || !user) {

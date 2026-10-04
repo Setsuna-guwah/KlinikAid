@@ -8,7 +8,7 @@ import { getDefaultLandingPath } from "@/lib/auth/helpers";
 export const dynamic = "force-dynamic";
 
 export default async function MfaEnrollPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   // 1. Get current authenticated user
   const { data: { user }, error: authError } = await supabase.auth.getUser();

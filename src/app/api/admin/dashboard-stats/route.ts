@@ -8,7 +8,7 @@ export async function GET() {
   try {
     // 1. Authorize Admin
     await requirePermission("profiles.manage");
-    const supabase = createClient();
+    const supabase = await createClient();
 
     // 2. Calculate Philippine start of today (UTC+8)
     const now = new Date();

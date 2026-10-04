@@ -8,9 +8,9 @@ import DataLoadError from "@/components/DataLoadError";
 export const dynamic = "force-dynamic";
 
 interface PatientAnalyticsPageProps {
-  params: {
+  params: Promise<{
     patientId: string;
-  };
+  }>;
 }
 
 interface RecordData {
@@ -37,8 +37,8 @@ export default async function PatientAnalyticsPage({
   // Guard access: only admin and medical_specialist roles
   await requirePermission("specialist.analytics");
 
-  const supabase = createClient();
-  const { patientId } = params;
+  const supabase = await createClient();
+  const { patientId } = await params;
 
   // 1. Fetch patient details from specialist_patients
   const { data: patient, error: patientError } = await supabase

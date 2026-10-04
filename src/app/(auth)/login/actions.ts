@@ -48,8 +48,8 @@ export async function loginAction(
       return { error: "Email and password are required." };
     }
 
-    const supabase = createClient();
-    const reqHeaders = headers();
+    const supabase = await createClient();
+    const reqHeaders = await headers();
     const ipAddress = reqHeaders.get("x-forwarded-for")?.split(",")[0] || null;
 
     // 1. Authenticate with password

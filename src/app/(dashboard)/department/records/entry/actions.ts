@@ -48,7 +48,7 @@ function isUnreadableOcrText(text: string | null | undefined) {
 export async function extractLabResultValuesAction(
   formData: FormData
 ): Promise<ExtractLabResultValuesActionResult> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
 
   if (authError || !user) {
@@ -122,7 +122,7 @@ export async function extractLabResultValuesAction(
 export async function extractDepartmentTextAction(
   formData: FormData
 ): Promise<ExtractDepartmentTextActionResult> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
 
   if (authError || !user) {

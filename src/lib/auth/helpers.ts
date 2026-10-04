@@ -11,7 +11,7 @@ export async function getCurrentUser(): Promise<{
   profile: Profile | null;
 }> {
   try {
-    const supabase = createClient();
+    const supabase = await createClient();
     const {
       data: { user },
       error: userError,
@@ -57,7 +57,7 @@ export async function requireRole(allowedRoles: UserRole[]): Promise<Profile> {
 }
 
 export async function hasPermission(userId: string, permissionName: string): Promise<boolean> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data, error } = await supabase.rpc("user_has_permission", {
     p_user_id: userId,
     p_permission_name: permissionName,

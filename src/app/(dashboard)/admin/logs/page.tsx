@@ -23,7 +23,7 @@ export default async function AdminLogsPage() {
     redirect("/403");
   }
 
-  const supabase = createClient();
+  const supabase = await createClient();
 
   // 2. Fetch profiles for user filter dropdown (excluding patient role for ease of audit)
   const { data: profilesData, error: profilesError } = await supabase

@@ -13,7 +13,7 @@ export interface PatientIdentityProps {
 }
 
 export default async function PatientTemplatesPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   // 1. Auth gate
   const { data: { user }, error: authError } = await supabase.auth.getUser();

@@ -10,7 +10,7 @@ export default async function SpecialistPatientsPage() {
   // Enforce access: only admin and specialist
   await requirePermission("specialist.patients");
 
-  const supabase = createClient();
+  const supabase = await createClient();
 
   // 1. Fetch patients (prevent unbounded scan)
   const { data: patients, error: patientsError } = await supabase

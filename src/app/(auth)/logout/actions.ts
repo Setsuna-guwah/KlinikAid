@@ -10,8 +10,8 @@ import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
  * Signs the current user out, logs the logout event, and redirects to /login.
  */
 export async function logoutAction(): Promise<never> {
-  const supabase = createClient();
-  const reqHeaders = headers();
+  const supabase = await createClient();
+  const reqHeaders = await headers();
   const ipAddress = reqHeaders.get("x-forwarded-for")?.split(",")[0] || null;
 
   // Retrieve current user session to audit who logged out

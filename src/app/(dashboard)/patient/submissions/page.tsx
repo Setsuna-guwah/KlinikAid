@@ -10,7 +10,7 @@ import { Document, PatientQueue } from "@/types";
 export const dynamic = "force-dynamic";
 
 export default async function PatientSubmissionsPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   // 1. Get current authenticated user
   const {

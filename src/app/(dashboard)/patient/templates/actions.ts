@@ -83,7 +83,7 @@ export async function submitTemplateDocumentAction(
   templateName: string,
   fieldsPayload: Record<string, string>
 ): Promise<TemplateSubmitResult> {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   try {
     // 1. Authenticate patient session (Rule 1 & Rule 9)

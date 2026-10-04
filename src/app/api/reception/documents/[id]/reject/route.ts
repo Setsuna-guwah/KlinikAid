@@ -7,9 +7,9 @@ import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   // 1. Session Check (Rule 1)
   const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -20,7 +20,7 @@ export async function POST(
   try {
     // 2. Role Check (Rule 2)
     const profile = await requirePermission("documents.manage");
-    const documentId = params.id;
+    const documentId = (await params).id;
 
     // 3. Parse and validate payload
     let body: { rejection_reason?: string } = {};

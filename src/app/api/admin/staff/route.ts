@@ -50,7 +50,7 @@ function isDepartment(value: unknown): value is Department {
 export async function GET() {
   try {
     await requirePermission("staff.manage");
-    const supabase = createClient();
+    const supabase = await createClient();
     const adminClient = createAdminClient();
 
     // Fetch profiles and auth users in parallel
@@ -118,7 +118,7 @@ export async function POST(request: Request) {
       return errorResponse(nameCheck.error ?? "Invalid full name.", 400);
     }
 
-    const supabase = createClient();
+    const supabase = await createClient();
 
     // Look up role details from DB
     const { data: dbRole, error: dbRoleError } = await supabase

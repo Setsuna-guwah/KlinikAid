@@ -34,7 +34,7 @@ function chunkText(text: string, chunkSize = 1000, overlap = 200): string[] {
  * Validates that current user is an admin.
  */
 async function verifyAdmin() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {
     throw new Error("Unauthorized: Please log in.");

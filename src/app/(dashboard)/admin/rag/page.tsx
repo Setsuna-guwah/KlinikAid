@@ -29,7 +29,7 @@ export default async function RagPage() {
     redirect("/403");
   }
   
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data, error } = await supabase
     .from("rag_documents")
     .select("id, title, content, metadata, created_at")

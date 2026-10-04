@@ -69,7 +69,7 @@ export async function registerAction(
   }
 
   // 2. Initialize Client
-  const client = createClient();
+  const client = await createClient();
 
   // 3. Call Centralized Patient Creator
   const res = await createPatient(

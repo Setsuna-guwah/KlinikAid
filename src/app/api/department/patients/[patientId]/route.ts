@@ -4,10 +4,10 @@ import { errorResponse, successResponse } from "@/lib/api-response";
 
 export async function GET(
   request: Request,
-  { params }: { params: { patientId: string } }
+  { params }: { params: Promise<{ patientId: string }> }
 ) {
-  const supabase = createClient();
-  const { patientId } = params;
+  const supabase = await createClient();
+  const { patientId } = await params;
 
   if (!patientId) {
     return errorResponse("patientId parameter is required", 400);

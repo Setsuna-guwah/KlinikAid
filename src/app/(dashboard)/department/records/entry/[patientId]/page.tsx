@@ -9,17 +9,17 @@ import { Department } from "@/types";
 export const dynamic = "force-dynamic";
 
 interface PageProps {
-  params: {
+  params: Promise<{
     patientId: string;
-  };
-  searchParams: {
+  }>;
+  searchParams: Promise<{
     department?: string;
-  };
+  }>;
 }
 
 export default async function RecordEntryPage({ params, searchParams }: PageProps) {
-  const supabase = createClient();
-  const { patientId } = params;
+  const supabase = await createClient();
+  const { patientId } = await params;
   const { user, profile } = await getCurrentUser();
 
   if (!user || !profile) {
@@ -39,7 +39,7 @@ export default async function RecordEntryPage({ params, searchParams }: PageProp
   // 2. Resolve department
   let dept = profile.department;
   if (canSelectDepartmentContext) {
-    dept = (searchParams.department as Department) || profile.department || "laboratory";
+    dept = ((await searchParams).department as Department) || profile.department || "laboratory";
   }
 
   if (!dept || !["laboratory", "imaging", "ultrasound", "ecg"].includes(dept)) {

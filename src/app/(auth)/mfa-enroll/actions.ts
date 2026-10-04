@@ -7,8 +7,8 @@ import { getTotpFactors } from "@/lib/auth/mfa";
 import { headers } from "next/headers";
 
 export async function verifyMfaFactorAction(factorId: string, code: string) {
-  const supabase = createClient();
-  const reqHeaders = headers();
+  const supabase = await createClient();
+  const reqHeaders = await headers();
   const ipAddress = reqHeaders.get("x-forwarded-for")?.split(",")[0] || null;
 
   // 1. Session check

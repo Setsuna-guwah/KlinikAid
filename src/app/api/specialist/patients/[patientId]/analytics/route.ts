@@ -6,10 +6,10 @@ import { errorResponse, successResponse } from "@/lib/api-response";
 
 export async function GET(
   request: Request,
-  { params }: { params: { patientId: string } }
+  { params }: { params: Promise<{ patientId: string }> }
 ) {
-  const supabase = createClient();
-  const { patientId } = params;
+  const supabase = await createClient();
+  const { patientId } = await params;
 
   // Rule 1 check: calling getUser() as the literal first line
   const { data: { user }, error: authError } = await supabase.auth.getUser();

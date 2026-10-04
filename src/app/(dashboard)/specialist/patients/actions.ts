@@ -71,7 +71,7 @@ export async function createSpecialistPatientAction(
   prevState: unknown,
   formData: FormData
 ): Promise<SpecialistPatientResult> {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   try {
     const profile = await requirePermission("specialist.patients");
@@ -159,7 +159,7 @@ export async function createSpecialistPatientAction(
 }
 
 export async function deleteSpecialistPatientAction(patientId: string): Promise<SpecialistPatientResult> {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   try {
     const profile = await requirePermission("specialist.patients");

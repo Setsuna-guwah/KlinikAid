@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export default async function RolesPage() {
   await requirePermission("roles.read");
-  const supabase = createClient();
+  const supabase = await createClient();
 
   // Load roles, permissions and mappings
   const [rolesRes, permissionsRes, mappingsRes] = await Promise.all([

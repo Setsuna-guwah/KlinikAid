@@ -18,7 +18,7 @@ export async function forgotPasswordAction(
     return { success: false, error: "Please enter a valid email address." };
   }
 
-  const supabase = createClient();
+  const supabase = await createClient();
 
   try {
     // Send password reset email

@@ -52,7 +52,7 @@ function getEventBadgeClass(eventType: string) {
 export default async function AdminDashboardPage() {
   // Enforce admin privileges
   await requirePermission("profiles.manage");
-  const supabase = createClient();
+  const supabase = await createClient();
 
   // Calculate start of today in UTC+8 terms, converted back to UTC ISO for database query
   const startOfToday = getPhtStartOfToday();

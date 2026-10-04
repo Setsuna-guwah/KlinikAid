@@ -46,7 +46,7 @@ function parseOptionalTemperature(value: unknown): { valid: boolean; value: numb
 }
 
 export async function POST(request: Request) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   // 1. Session Check (Rule 1)
   const { data: { user }, error: authError } = await supabase.auth.getUser();

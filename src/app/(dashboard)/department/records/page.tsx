@@ -9,9 +9,9 @@ import { Department } from "@/types";
 export const dynamic = "force-dynamic";
 
 interface PageProps {
-  searchParams: {
+  searchParams: Promise<{
     department?: string;
-  };
+  }>;
 }
 
 interface QueuePatient {
@@ -42,7 +42,7 @@ interface DbQueueItem {
 }
 
 export default async function DepartmentRecordsPage({ searchParams }: PageProps) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { user, profile } = await getCurrentUser();
 
   if (!user || !profile) {
@@ -64,7 +64,7 @@ export default async function DepartmentRecordsPage({ searchParams }: PageProps)
   // 2. Resolve department context
   let dept = profile.department;
   if (canSelectDepartmentContext) {
-    dept = (searchParams.department as Department) || profile.department || "laboratory";
+    dept = ((await searchParams).department as Department) || profile.department || "laboratory";
   }
 
   if (!dept || !["laboratory", "imaging", "ultrasound", "ecg"].includes(dept)) {

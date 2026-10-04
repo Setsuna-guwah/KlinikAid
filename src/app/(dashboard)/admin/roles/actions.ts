@@ -47,7 +47,7 @@ export async function createCustomRoleAction(
     
     const cleanName = name.trim();
 
-    const supabase = createClient();
+    const supabase = await createClient();
 
     // Validate that role name is unique
     const { data: existingRole } = await supabase
@@ -145,7 +145,7 @@ export async function updateCustomRoleAction(
     const cleanDescription = values.description?.trim() || null;
     const permissionIds = normalizePermissionIds(values.permissionIds);
 
-    const supabase = createClient();
+    const supabase = await createClient();
 
     const { data: role, error: roleError } = await supabase
       .from("roles")
@@ -248,7 +248,7 @@ export async function deleteCustomRoleAction(roleId: string) {
       return { success: false, error: "You cannot modify your own assigned role." };
     }
 
-    const supabase = createClient();
+    const supabase = await createClient();
 
     const { data: role, error: roleError } = await supabase
       .from("roles")
@@ -325,7 +325,7 @@ export async function deleteCustomRoleAction(roleId: string) {
 export async function getRolesAction() {
   try {
     await requirePermission("roles.manage");
-    const supabase = createClient();
+    const supabase = await createClient();
     const { data, error } = await supabase
       .from("roles")
       .select("*")

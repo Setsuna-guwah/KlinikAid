@@ -21,7 +21,7 @@ interface DashboardLayoutProps {
  * Validates user authentication and account status on the server.
  */
 export default async function DashboardLayout({ children }: DashboardLayoutProps) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   // 1. Retrieve session
   const {
@@ -111,7 +111,7 @@ export default async function DashboardLayout({ children }: DashboardLayoutProps
   }
 
   // 4. Handle access denial logging and redirection (Revision B)
-  const reqHeaders = headers();
+  const reqHeaders = await headers();
   const xPathname = reqHeaders.get("x-pathname") || "";
 
   if (!xPathname) {

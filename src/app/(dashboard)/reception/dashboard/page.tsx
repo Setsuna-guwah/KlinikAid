@@ -37,7 +37,7 @@ function formatPhTime(utcString: string) {
 export default async function ReceptionDashboardPage() {
   // 1. Authenticate user and enforce roles (Rule 1 & Rule 2)
   await requirePermission("patients.manage");
-  const supabase = createClient();
+  const supabase = await createClient();
 
   // 2. Calculate start of today in UTC+8 terms, converted back to UTC ISO for database query
   const startOfToday = getPhtStartOfToday();

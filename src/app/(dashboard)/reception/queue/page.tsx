@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function ReceptionQueuePage() {
   // 1. Authenticate user and enforce roles (Rule 1 & Rule 2)
   await requirePermission("documents.manage");
-  const supabase = createClient();
+  const supabase = await createClient();
 
   // 2. Fetch initial documents with patient and uploader relationships
   const { data: rawDocs, error } = await supabase

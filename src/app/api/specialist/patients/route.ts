@@ -5,7 +5,7 @@ import { requirePermission } from "@/lib/auth/helpers";
 import { errorResponse, successResponse } from "@/lib/api-response";
 
 export async function GET(request: Request) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   // Rule 1 check: calling getUser() as the literal first line
   const { data: { user }, error: authError } = await supabase.auth.getUser();

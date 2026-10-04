@@ -25,7 +25,7 @@ interface MatchedDocument {
 
 export async function POST(request: Request) {
   // 1. Session first (Standing Rule #1)
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
 
   if (authError || !user) {

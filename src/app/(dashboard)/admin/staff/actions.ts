@@ -13,7 +13,7 @@ export async function sendStaffResetEmailAction(email: string) {
     }
 
     // Use server client to trigger recovery email flow
-    const supabase = createClient();
+    const supabase = await createClient();
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${SITE_ORIGIN}/reset-password`,
     });

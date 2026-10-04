@@ -31,7 +31,7 @@ export async function createPatientByStaffAction(
   formData: FormData
 ): Promise<ReceptionPatientResult> {
   // 1. Authenticate receptionist session (Rule 1)
-  const client = createClient();
+  const client = await createClient();
   const { data: { user }, error: authError } = await client.auth.getUser();
 
   if (authError || !user) {

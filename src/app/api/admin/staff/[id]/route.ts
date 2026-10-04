@@ -21,10 +21,10 @@ function normalizeEmployeeType(value: unknown) {
 }
 
 // PUT: update staff details (full name, email, role, department)
-export async function PUT(request: Request, { params }: { params: { id: string } }) {
+export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const adminProfile = await requirePermission("staff.manage");
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
     const { email, fullName, roleId, department } = body;
     const employeeType = normalizeEmployeeType(body.employeeType);
@@ -39,7 +39,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     }
 
     const adminClient = createAdminClient();
-    const supabase = createClient();
+    const supabase = await createClient();
 
     // Look up role details from DB
     const { data: dbRole, error: dbRoleError } = await supabase
@@ -139,10 +139,10 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 }
 
 // PATCH: toggle staff active status (activate / deactivate)
-export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const adminProfile = await requirePermission("staff.manage");
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
     const { isActive } = body;
 
@@ -150,7 +150,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       return errorResponse("Missing isActive boolean in request body", 400);
     }
 
-    const supabase = createClient();
+    const supabase = await createClient();
     const adminClient = createAdminClient();
 
     // 1. Update active status in profiles table
