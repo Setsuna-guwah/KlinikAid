@@ -13,6 +13,9 @@ import {
   Loader2
 } from "lucide-react";
 import { LAB_REFERENCE_RANGES, DEPARTMENTS, LAB_TEST_GROUPS } from "@/lib/constants";
+import { getAge } from "@/lib/utils";
+import { fetchJson } from "@/lib/fetch-json";
+import { useHydrated } from "@/lib/use-hydrated";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -23,6 +26,24 @@ import {
 } from "@/app/(dashboard)/department/records/entry/actions";
 
 const STRICT_NUMBER_REGEX = /^-?\d+(\.\d+)?$/;
+
+/**
+ * What POST /api/department/records returns on success.
+ *
+ * `queue` is part of the payload rather than a sibling of it so that a partial
+ * save cannot be mistaken for a complete one: the client cannot reach `closed`
+ * without also having handled the result.
+ */
+interface SavedRecords {
+  records: unknown[];
+  queue: {
+    department: string;
+    completed_count: number;
+    closed: boolean;
+    matched_open_entry: boolean;
+    error: string | null;
+  };
+}
 
 interface Patient {
   id: string;
@@ -104,13 +125,13 @@ export default function RecordEntryClient({
   const [findings, setFindings] = useState<string>("");
   const [impression, setImpression] = useState<string>("");
 
-  // Age calculation
-  const getAge = (dobString: string) => {
-    const dob = new Date(dobString);
-    const diff = Date.now() - dob.getTime();
-    const ageDate = new Date(diff);
-    return Math.abs(ageDate.getUTCFullYear() - 1970);
-  };
+  // Age calculation.
+  //
+  // This was a private copy of `getAge` from @/lib/utils that read Date.now()
+  // during render, which is the hydration mismatch #19 describes. The shared
+  // helper is used instead so there is one implementation, and the value is
+  // withheld until mount so the server and client renders cannot disagree.
+  const hydrated = useHydrated();
 
   // Check out-of-range status
   const checkRange = (paramName: string, valueStr: string) => {
@@ -360,19 +381,38 @@ export default function RecordEntryClient({
       }
 
       setIsSubmitting(true);
-      // POST to API
-      const res = await fetch("/api/department/records", {
+
+      // The save and the queue close are two writes, not one, and the second can
+      // fail after the first has committed. Reporting one unconditional success
+      // toast told the technologist the patient was closed while they stayed
+      // open in the queue and reception remained blocked from re-triaging them.
+      const outcome = await fetchJson<SavedRecords>("/api/department/records", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.message || "Failed to save records");
+      if (outcome.kind === "failed") {
+        throw outcome.error;
       }
 
-      toast.success("Results saved and queue updated successfully!");
+      const queue = outcome.data?.queue;
+
+      if (queue?.closed) {
+        toast.success("Results saved and queue updated successfully!");
+      } else if (queue?.error) {
+        // The results are in the system and must not be re-entered, so this is
+        // not a failure of the save. It is a failure of the queue close, which
+        // leaves the patient open and blocks reception.
+        toast.error(
+          "Results were saved, but the queue entry was not closed. This patient is still open for this department — tell reception before re-triaging."
+        );
+      } else {
+        toast.warning(
+          "Results were saved. No open queue entry was found for this department, so nothing was closed."
+        );
+      }
+
       router.push(`/department/records?department=${activeDept}`);
       router.refresh();
     } catch (err: unknown) {
@@ -437,7 +477,7 @@ export default function RecordEntryClient({
               <div>
                 <span className="text-slate-400 block">Age / DOB</span>
                 <span className="font-semibold text-slate-700 dark:text-slate-300">
-                  {getAge(patient.date_of_birth)} yrs • {patient.date_of_birth}
+                  {hydrated ? getAge(patient.date_of_birth, Date.now()) : ""} yrs • {patient.date_of_birth}
                 </span>
               </div>
             </div>

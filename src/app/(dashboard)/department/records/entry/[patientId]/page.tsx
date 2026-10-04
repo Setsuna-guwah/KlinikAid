@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser, hasAnyPermission } from "@/lib/auth/helpers";
 import RecordEntryClient from "@/components/RecordEntryClient";
 import DataLoadError from "@/components/DataLoadError";
+import { classifyRead } from "@/lib/read-outcome";
 import { Department } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -52,13 +53,28 @@ export default async function RecordEntryPage({ params, searchParams }: PageProp
   }
 
   // 3. Fetch patient demographics
-  const { data: patient, error: patientError } = await supabase
-    .from("patients")
-    .select("*")
-    .eq("id", patientId)
-    .single();
+  const patientRead = classifyRead(
+    await supabase.from("patients").select("*").eq("id", patientId).single()
+  );
 
-  if (patientError || !patient) {
+  // "The patient ID does not exist in our records" is a conclusion a
+  // technologist acts on: they move on to the next queue card and the patient is
+  // never processed. A failed read is not that conclusion, so it gets its own
+  // surface instead of borrowing the not-found copy.
+  if (patientRead.kind === "failed") {
+    console.error("[RecordEntryPage] Failed to load patient:", patientRead.error);
+    return (
+      <div className="p-6 space-y-4">
+        <DataLoadError
+          what="this patient"
+          error={patientRead.error}
+          retryHref={`/department/records/entry/${patientId}?department=${dept}`}
+        />
+      </div>
+    );
+  }
+
+  if (patientRead.kind === "absent") {
     return (
       <div className="p-6 text-center space-y-4">
         <h1 className="text-xl font-bold text-red-500">Patient Not Found</h1>
@@ -73,10 +89,13 @@ export default async function RecordEntryPage({ params, searchParams }: PageProp
     );
   }
 
+  const patient = patientRead.data;
+
   // 4. Fetch history for context/comparison
-  const { data: historyData, error: historyError } = await supabase
-    .from("department_records")
-    .select(`
+  const historyRead = classifyRead(
+    await supabase
+      .from("department_records")
+      .select(`
       id,
       test_type,
       test_name,
@@ -91,29 +110,30 @@ export default async function RecordEntryPage({ params, searchParams }: PageProp
         full_name
       )
     `)
-    .eq("patient_id", patientId)
-    .eq("department", dept)
-    .order("created_at", { ascending: false });
+      .eq("patient_id", patientId)
+      .eq("department", dept)
+      .order("created_at", { ascending: false })
+  );
 
   // This history is the context a technologist compares a new result against. Its
   // error was never read, so a failed fetch rendered as an empty prior-results
   // list -- which asserts the patient has no previous results for this test,
   // right at the moment someone is deciding what to enter. Withheld, because an
   // empty comparison history is a clinical input, not a cosmetic gap.
-  if (historyError) {
-    console.error("[RecordEntryPage] Failed to load prior results:", historyError);
+  if (historyRead.kind === "failed") {
+    console.error("[RecordEntryPage] Failed to load prior results:", historyRead.error);
     return (
       <div className="p-6 space-y-4">
         <DataLoadError
           what="this patient's prior results"
-          error={historyError}
+          error={historyRead.error}
           retryHref={`/department/records/entry/${patientId}`}
         />
       </div>
     );
   }
 
-  const history = (historyData || []).map((h) => {
+  const history = (historyRead.kind === "ok" ? historyRead.data ?? [] : []).map((h) => {
     let recorderObj = null;
     if (h.recorder) {
       const rec = h.recorder as unknown as { full_name: string } | { full_name: string }[];

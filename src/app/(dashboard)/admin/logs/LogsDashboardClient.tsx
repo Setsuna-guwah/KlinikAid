@@ -24,6 +24,8 @@ import {
 import { toast } from "sonner";
 import { SYSTEM_EVENT_TYPES, GEMINI_BLENDED_USD_PER_1M_TOKENS, CHART_COLORS } from "@/lib/constants";
 import LogEventBadge from "@/components/LogEventBadge";
+import DataLoadError from "@/components/DataLoadError";
+import { fetchJson, type ApiError } from "@/lib/fetch-json";
 import { formatPhTime } from "@/lib/utils";
 import { 
   Loader2, 
@@ -147,6 +149,14 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
   const [systemLoading, setSystemLoading] = useState(false);
   const [isExporting, startExport] = useTransition();
 
+  // Per-panel failure state. Each panel is an independent query, and each was
+  // previously initialised to empty and left there on failure -- so a failed
+  // audit fetch rendered "No system events match selected filters" (an audit
+  // trail that reads as "nothing happened") and a failed cost fetch rendered 30
+  // hard zero-filled days with an "Under Budget" badge. Empty and failed are
+  // different claims and each panel now states which one it is making.
+  const [systemError, setSystemError] = useState<ApiError | null>(null);
+
   // Filters
   const [filterEventType, setFilterEventType] = useState<string>("all");
   const [filterUserId, setFilterUserId] = useState<string>("all");
@@ -161,6 +171,7 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
   const [chatTotal, setChatTotal] = useState(0);
   const [chatPage, setChatPage] = useState(1);
   const [chatLoading, setChatLoading] = useState(false);
+  const [chatError, setChatError] = useState<ApiError | null>(null);
   const [todayStats, setTodayStats] = useState<{ queries: number; tokens: number } | null>(null);
 
   // Conversation Drawer
@@ -174,6 +185,12 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
   // ----------------------------------------------------
   const [dailyCosts, setDailyCosts] = useState<DailyCost[]>([]);
   const [costLoading, setCostLoading] = useState(false);
+  // Distinguishes "we spent nothing" from "we could not read the spend". Without
+  // this the chart is zero-filled to 30 days before the request is even made, so
+  // a first-load failure is indistinguishable from a quiet month -- and the
+  // weekly table then reports every week as "Under Budget".
+  const [costError, setCostError] = useState<ApiError | null>(null);
+  const [costLoaded, setCostLoaded] = useState(false);
 
   // ----------------------------------------------------
   // FETCH LOGICS
@@ -182,119 +199,128 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
   // Fetch System Logs (Paginated & Filtered)
   const fetchSystemLogs = async () => {
     setSystemLoading(true);
-    try {
-      const params = new URLSearchParams({
-        page: systemPage.toString(),
-        limit: "15",
-      });
+    setSystemError(null);
 
-      if (filterEventType !== "all") params.set("eventType", filterEventType);
-      if (filterUserId !== "all") params.set("userId", filterUserId);
-      if (filterStartDate) params.set("startDate", new Date(filterStartDate).toISOString());
-      if (filterEndDate) {
-        // Enforce full day boundary
-        const end = new Date(filterEndDate);
-        end.setHours(23, 59, 59, 999);
-        params.set("endDate", end.toISOString());
-      }
-      if (filterSearch.trim()) params.set("eventType", filterSearch.trim()); // Wait, search uses special check or endpoint maps it
+    const params = new URLSearchParams({
+      page: systemPage.toString(),
+      limit: "15",
+    });
 
-      const response = await fetch(`/api/admin/logs/system?${params.toString()}`);
-      const result = await response.json();
-
-      if (result.success) {
-        // Client-side text filter for description search
-        let logs: SystemLog[] = result.data.logs || [];
-        if (filterSearch.trim()) {
-          logs = logs.filter(log => 
-            log.description.toLowerCase().includes(filterSearch.toLowerCase())
-          );
-        }
-        setSystemLogs(logs);
-        setSystemTotal(result.data.total || 0);
-      } else {
-        toast.error(result.error || "Failed to fetch system logs.");
-      }
-    } catch (err) {
-      console.error(err);
-      toast.error("An unexpected error occurred while fetching system logs.");
-    } finally {
-      setSystemLoading(false);
+    if (filterEventType !== "all") params.set("eventType", filterEventType);
+    if (filterUserId !== "all") params.set("userId", filterUserId);
+    if (filterStartDate) params.set("startDate", new Date(filterStartDate).toISOString());
+    if (filterEndDate) {
+      // Enforce full day boundary
+      const end = new Date(filterEndDate);
+      end.setHours(23, 59, 59, 999);
+      params.set("endDate", end.toISOString());
     }
+    if (filterSearch.trim()) params.set("eventType", filterSearch.trim());
+
+    const outcome = await fetchJson<{
+      logs?: SystemLog[];
+      total?: number;
+    }>(`/api/admin/logs/system?${params.toString()}`);
+
+    setSystemLoading(false);
+
+    if (outcome.kind === "failed") {
+      // Clear the rows. Leaving the previous page visible under the new filters
+      // is the same defect: the operator reads an audit trail that was never
+      // retrieved as though it were the filtered result.
+      setSystemLogs([]);
+      setSystemTotal(0);
+      setSystemError(outcome.error);
+      return;
+    }
+
+    // Client-side text filter for description search
+    let logs: SystemLog[] = outcome.data?.logs || [];
+    if (filterSearch.trim()) {
+      logs = logs.filter(log =>
+        log.description.toLowerCase().includes(filterSearch.toLowerCase())
+      );
+    }
+    setSystemLogs(logs);
+    setSystemTotal(outcome.data?.total || 0);
   };
 
   // Fetch Chatbot Logs
   const fetchChatbotLogs = async (forceStats = false) => {
     setChatLoading(true);
-    try {
-      const params = new URLSearchParams({
-        page: chatPage.toString(),
-        limit: "15",
-      });
-      // Stats only fetched on page 1 initial load (Revision F)
-      if (chatPage === 1 || forceStats) {
-        params.set("includeStats", "true");
-      }
+    setChatError(null);
 
-      const response = await fetch(`/api/admin/logs/chatbot?${params.toString()}`);
-      const result = await response.json();
+    const params = new URLSearchParams({
+      page: chatPage.toString(),
+      limit: "15",
+    });
+    // Stats only fetched on page 1 initial load (Revision F)
+    if (chatPage === 1 || forceStats) {
+      params.set("includeStats", "true");
+    }
 
-      if (result.success) {
-        setChatLogs(result.data.logs || []);
-        setChatTotal(result.data.total || 0);
-        if (result.data.todayStats) {
-          setTodayStats(result.data.todayStats);
-        }
-      } else {
-        toast.error(result.error || "Failed to fetch chatbot logs.");
-      }
-    } catch (err) {
-      console.error(err);
-      toast.error("An unexpected error occurred while fetching chatbot logs.");
-    } finally {
-      setChatLoading(false);
+    const outcome = await fetchJson<{
+      logs?: ChatbotLog[];
+      total?: number;
+      todayStats?: { queries: number; tokens: number } | null;
+    }>(`/api/admin/logs/chatbot?${params.toString()}`);
+
+    setChatLoading(false);
+
+    if (outcome.kind === "failed") {
+      setChatLogs([]);
+      setChatTotal(0);
+      setChatError(outcome.error);
+      return;
+    }
+
+    setChatLogs(outcome.data?.logs || []);
+    setChatTotal(outcome.data?.total || 0);
+    if (outcome.data?.todayStats) {
+      setTodayStats(outcome.data.todayStats);
     }
   };
 
   // Fetch API Cost Tracker Data
   const fetchCostTracker = async () => {
     setCostLoading(true);
-    try {
-      const response = await fetch("/api/admin/logs/api-costs");
-      const result = await response.json();
+    setCostError(null);
 
-      if (result.success) {
-        setDailyCosts(result.data || []);
-      } else {
-        toast.error(result.error || "Failed to fetch API cost usage.");
-      }
-    } catch (err) {
-      console.error(err);
-      toast.error("An unexpected error occurred while fetching cost aggregates.");
-    } finally {
-      setCostLoading(false);
+    const outcome = await fetchJson<DailyCost[]>("/api/admin/logs/api-costs");
+
+    setCostLoading(false);
+
+    if (outcome.kind === "failed") {
+      setDailyCosts([]);
+      setCostLoaded(false);
+      setCostError(outcome.error);
+      return;
     }
+
+    setDailyCosts(outcome.data || []);
+    setCostLoaded(true);
   };
 
   // Fetch specific session thread
   const fetchSessionThread = async (sessId: string) => {
     setSessionLoading(true);
     setSessionTruncated(false);
-    try {
-      const response = await fetch(`/api/admin/logs/chatbot?sessionId=${sessId}`);
-      const result = await response.json();
-      if (result.success) {
-        setSessionMessages(result.data.logs || []);
-        setSessionTruncated(!!result.data.truncated);
-      } else {
-        toast.error(result.error || "Failed to retrieve conversation history.");
-      }
-    } catch (err) {
-      console.error(err);
-      toast.error("An error occurred while loading the conversation.");
-    } finally {
-      setSessionLoading(false);
+
+    const outcome = await fetchJson<{
+      logs?: ChatbotLog[];
+      truncated?: boolean;
+    }>(`/api/admin/logs/chatbot?sessionId=${sessId}`);
+
+    setSessionLoading(false);
+
+    if (outcome.kind === "failed") {
+      setSessionMessages([]);
+      toast.error("Could not load that conversation.");
+      return;
     }
+
+    setSessionMessages(outcome.data?.logs || []);
+    setSessionTruncated(Boolean(outcome.data?.truncated));
   };
 
   // Trigger data load based on tab
@@ -334,16 +360,18 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
           params.set("endDate", end.toISOString());
         }
 
-        const response = await fetch(`/api/admin/logs/system?${params.toString()}`);
-        const result = await response.json();
+        const exportOutcome = await fetchJson<{
+          logs?: SystemLog[];
+          truncated?: boolean;
+        }>(`/api/admin/logs/system?${params.toString()}`);
 
-        if (!result.success) {
-          toast.error(result.error || "Export failed.");
+        if (exportOutcome.kind === "failed") {
+          toast.error(exportOutcome.error.message || "Export failed.");
           return;
         }
 
-        const logs: SystemLog[] = result.data.logs || [];
-        if (result.data.truncated) {
+        const logs: SystemLog[] = exportOutcome.data?.logs || [];
+        if (exportOutcome.data?.truncated) {
           toast.warning("Truncated export: Only the first 10,000 logs were fetched.");
         }
 
@@ -651,6 +679,12 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
                         </div>
                       </TableCell>
                     </TableRow>
+                  ) : systemError ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="p-6">
+                        <DataLoadError what="the system audit trail" error={systemError} />
+                      </TableCell>
+                    </TableRow>
                   ) : systemLogs.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5} className="h-48 text-center text-slate-500">
@@ -803,6 +837,12 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
                         </div>
                       </TableCell>
                     </TableRow>
+                  ) : chatError ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="p-6">
+                        <DataLoadError what="the chatbot audit trail" error={chatError} />
+                      </TableCell>
+                    </TableRow>
                   ) : chatLogs.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={7} className="h-48 text-center text-slate-500">
@@ -929,9 +969,13 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
                     <p className="text-sm text-slate-500">Loading cost telemetry...</p>
                   </div>
                 </div>
-              ) : filledData.length === 0 ? (
+              ) : costError ? (
+                <div className="h-72 flex items-center justify-center p-4">
+                  <DataLoadError what="API token consumption" error={costError} />
+                </div>
+              ) : !costLoaded ? (
                 <div className="h-72 flex items-center justify-center text-slate-500 text-sm">
-                  No telemetry metrics gathered yet.
+                  No telemetry has been loaded yet.
                 </div>
               ) : (
                 <div className="h-72 w-full mt-4">
@@ -1022,6 +1066,18 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
                     <TableRow>
                       <TableCell colSpan={6} className="h-32 text-center text-slate-500">
                         Loading weekly quotas...
+                      </TableCell>
+                    </TableRow>
+                  ) : costError ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="p-6">
+                        <DataLoadError what="weekly quota performance" error={costError} />
+                      </TableCell>
+                    </TableRow>
+                  ) : !costLoaded ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="h-32 text-center text-slate-500">
+                        No weekly quotas have been loaded yet.
                       </TableCell>
                     </TableRow>
                   ) : weeklyBreakdown.length === 0 ? (

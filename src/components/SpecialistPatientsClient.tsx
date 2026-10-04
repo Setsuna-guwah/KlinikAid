@@ -10,9 +10,13 @@ import {
   Activity,
   ChevronLeft,
   ChevronRight,
-  RefreshCw
+  RefreshCw,
+  AlertTriangle
 } from "lucide-react";
 import { getAge, formatPhTime as formatPhDate } from "@/lib/utils";
+import { fetchJson, type ApiError } from "@/lib/fetch-json";
+import DataLoadError from "@/components/DataLoadError";
+import { useHydrated } from "@/lib/use-hydrated";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -31,8 +35,21 @@ interface PatientData {
   last_test_date: string | null;
 }
 
+interface RosterPage {
+  patients: PatientData[];
+  /** Uncapped count of patients matching the search terms. */
+  matchCount: number;
+  /** True when `matchCount` exceeds what was returned. */
+  truncated: boolean;
+  limit: number;
+}
+
 interface SpecialistPatientsClientProps {
   initialPatients: PatientData[];
+  /** Total patients on file, or null when the count could not be read. */
+  rosterTotal: number | null;
+  /** Maximum rows the server will return in one response. */
+  rosterLimit: number;
 }
 
 import { 
@@ -48,7 +65,9 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 
 export default function SpecialistPatientsClient({
-  initialPatients
+  initialPatients,
+  rosterTotal,
+  rosterLimit,
 }: SpecialistPatientsClientProps) {
   const [patients, setPatients] = useState<PatientData[]>(initialPatients);
   const [searchQuery, setSearchQuery] = useState("");
@@ -57,6 +76,17 @@ export default function SpecialistPatientsClient({
   const [endDate, setEndDate] = useState("");
   const [loading, setLoading] = useState(false);
   const isFirstMount = useRef(true);
+
+  // Whether the list below is the unfiltered directory or the result of a
+  // search. A search that fails must not leave the directory on screen while the
+  // filter inputs still show the query that was typed: the specialist then reads
+  // a patient's record as being in scope when the roster was never filtered.
+  const [searchError, setSearchError] = useState<ApiError | null>(null);
+  // What the server said this list actually covers, as opposed to how many rows
+  // came back. Null until a search has reported it.
+  const [matchCount, setMatchCount] = useState<number | null>(null);
+  const [truncated, setTruncated] = useState(false);
+  const hydrated = useHydrated();
 
   // Specialist Modal & Action States
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -74,24 +104,33 @@ export default function SpecialistPatientsClient({
     end: string
   ) => {
     setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (query) params.set("query", query);
-      if (dept) params.set("department", dept);
-      if (start) params.set("startDate", start);
-      if (end) params.set("endDate", end);
+    setSearchError(null);
 
-      const res = await fetch(`/api/specialist/patients?${params.toString()}`);
-      const result = await res.json();
-      if (result.success) {
-        setPatients(result.data);
-      }
-    } catch (err) {
-      console.error("Failed to search patients:", err);
-    } finally {
-      setLoading(false);
-      setCurrentPage(1); // reset to page 1 on new search
+    const params = new URLSearchParams();
+    if (query) params.set("query", query);
+    if (dept) params.set("department", dept);
+    if (start) params.set("startDate", start);
+    if (end) params.set("endDate", end);
+
+    const outcome = await fetchJson<RosterPage>(`/api/specialist/patients?${params.toString()}`);
+
+    setLoading(false);
+    setCurrentPage(1); // reset to page 1 on new search
+
+    if (outcome.kind === "failed") {
+      // Empty the list rather than leaving the previous result set visible. A
+      // failed search showing the old rows is indistinguishable from a search
+      // that matched, which is how the wrong patient's record gets read.
+      setPatients([]);
+      setMatchCount(null);
+      setTruncated(false);
+      setSearchError(outcome.error);
+      return;
     }
+
+    setPatients(outcome.data?.patients ?? []);
+    setMatchCount(outcome.data?.matchCount ?? null);
+    setTruncated(Boolean(outcome.data?.truncated));
   }, []);
 
   const handleCreatePatient = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -160,6 +199,19 @@ export default function SpecialistPatientsClient({
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentItems = patients.slice(indexOfFirstItem, indexOfLastItem);
   const totalPages = Math.ceil(patients.length / itemsPerPage);
+
+  // Whether the visible list is a filtered result or the whole directory.
+  // Derived rather than stored so it cannot drift out of step with the inputs.
+  const hasActiveFilter = Boolean(
+    searchQuery.trim() || deptFilter.trim() || startDate.trim() || endDate.trim()
+  );
+
+  // The honest size of what is on screen. This is never the row count: the
+  // server caps the roster, so `patients.length` is an upper bound and reporting
+  // it as "of N patients" tells a specialist their patient list ends at 100 when
+  // it does not.
+  const visibleTotal = hasActiveFilter ? matchCount : rosterTotal;
+  const isTruncated = hasActiveFilter ? truncated : (rosterTotal ?? 0) > patients.length;
 
   // Philippine date formatter is imported from @/lib/utils
 
@@ -284,10 +336,18 @@ export default function SpecialistPatientsClient({
                       </div>
                     </td>
                   </tr>
+                ) : searchError ? (
+                  <tr>
+                    <td colSpan={7} className="p-6">
+                      <DataLoadError what="the patient roster" error={searchError} />
+                    </td>
+                  </tr>
                 ) : currentItems.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="p-12 text-center text-slate-400 dark:text-slate-500">
-                      No patients match search terms or department filters.
+                      {hasActiveFilter
+                        ? "No patients match search terms or department filters."
+                        : "No patients in this directory yet."}
                     </td>
                   </tr>
                 ) : (
@@ -300,7 +360,7 @@ export default function SpecialistPatientsClient({
                         {patient.last_name}, {patient.first_name}
                       </td>
                       <td className="p-4 text-slate-500">
-                        {getAge(patient.date_of_birth)} yrs • <span className="capitalize">{patient.gender}</span>
+                        {hydrated ? getAge(patient.date_of_birth, Date.now()) : ""} yrs • <span className="capitalize">{patient.gender}</span>
                       </td>
                       <td className="p-4 text-center font-medium text-slate-700 dark:text-slate-300">
                         {patient.total_records}
@@ -352,11 +412,32 @@ export default function SpecialistPatientsClient({
             </table>
           </div>
 
+          {/* Truncation disclosure. A capped list that does not say it is capped
+              is indistinguishable from a complete one, and "of 100 patients"
+              reads as the size of the directory. */}
+          {isTruncated && !searchError ? (
+            <div className="flex items-start gap-2 border-t border-amber-100 dark:border-amber-900/30 bg-amber-50/50 dark:bg-amber-950/10 px-4 py-3 text-xs text-amber-800 dark:text-amber-300">
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+              <p>
+                Showing the first {patients.length} of {visibleTotal}{" "}
+                {hasActiveFilter ? "matching" : "patients on file"}. The roster is
+                loaded in pages of at most {rosterLimit}, so{" "}
+                {hasActiveFilter
+                  ? "patients beyond this page cannot be reached by this search."
+                  : "patients further down the alphabet are not listed here."}{" "}
+                Narrow the search to reach them.
+              </p>
+            </div>
+          ) : null}
+
           {/* Pagination Controls */}
           {totalPages > 1 && (
             <div className="flex items-center justify-between p-4 border-t border-slate-100 dark:border-slate-800 text-xs">
               <p className="text-slate-500">
-                Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, patients.length)} of {patients.length} patients
+                Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, patients.length)} of {patients.length} loaded
+                {visibleTotal !== null && visibleTotal > patients.length
+                  ? ` (${visibleTotal} ${hasActiveFilter ? "match" : "on file"} in total)`
+                  : ""}
               </p>
               <div className="flex gap-2">
                 <button

@@ -114,6 +114,15 @@ export default function StaffManagementPage() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [employeeTitleInput, setEmployeeTitleInput] = useState("");
 
+  // The role catalogue is not optional data. It decides which roles may be
+  // granted, and `isDeptStaff` below is derived from it -- so an empty list does
+  // not just produce an empty dropdown, it hides the department field and lets a
+  // staff account be created with the wrong role/department pairing. That is a
+  // privilege grant, so a failed read must never be presented as an empty
+  // catalogue. The `roles` table is never legitimately empty in this app.
+  const [rolesError, setRolesError] = useState<string | null>(null);
+  const [rolesLoaded, setRolesLoaded] = useState(false);
+
   // Confirmation dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
@@ -183,9 +192,28 @@ export default function StaffManagementPage() {
 
   // Fetch db roles list on mount
   const fetchRoles = async () => {
-    const res = await getRolesAction();
-    if (res.success && res.data) {
-      setDbRoles(res.data);
+    setRolesError(null);
+    try {
+      const res = await getRolesAction();
+      if (res.success && res.data) {
+        setDbRoles(res.data);
+        setRolesLoaded(true);
+      } else {
+        setDbRoles([]);
+        setRolesLoaded(false);
+        setRolesError(
+          res.error || "The role catalogue could not be loaded, so staff accounts cannot be created or edited safely."
+        );
+      }
+    } catch (err) {
+      console.error("Failed to fetch roles:", err);
+      setDbRoles([]);
+      setRolesLoaded(false);
+      setRolesError(
+        err instanceof Error
+          ? err.message
+          : "The role catalogue could not be loaded, so staff accounts cannot be created or edited safely."
+      );
     }
   };
 
@@ -265,6 +293,17 @@ export default function StaffManagementPage() {
     try {
       setSubmitting(true);
       setErrorMsg("");
+
+      // Defence in depth against a form rendered from a failed roles read. The
+      // UI hides the role picker in that state, but the guard is here because
+      // this branch decides what role an account is granted.
+      if (!rolesLoaded) {
+        setErrorMsg(
+          "The role catalogue could not be loaded. No changes were saved — reload the page and try again."
+        );
+        setSubmitting(false);
+        return;
+      }
 
       const isEdit = !!editingStaff;
       const url = isEdit ? `/api/admin/staff/${editingStaff.id}` : "/api/admin/staff";
@@ -371,11 +410,26 @@ export default function StaffManagementPage() {
           </p>
         </div>
 
-        <Button onClick={handleCreateOpen} className="gap-2 bg-primary hover:bg-primary/90 text-white font-semibold">
+        <Button
+          onClick={handleCreateOpen}
+          disabled={!rolesLoaded}
+          className="gap-2 bg-primary hover:bg-primary/90 text-white font-semibold"
+        >
           <Plus className="h-4 w-4" />
           Add Staff
         </Button>
       </div>
+
+      {/* Blocking banner. The registry list below is still usable; only the
+          privilege-granting form is withheld, because it cannot be rendered
+          correctly without the role catalogue. */}
+      {rolesError ? (
+        <DataLoadError
+          what="the role catalogue"
+          error={rolesError}
+          retryHref="/admin/staff"
+        />
+      ) : null}
 
       {/* Main Table Card */}
       <Card className="border border-slate-200/80 dark:border-slate-800 shadow-sm">
@@ -708,6 +762,13 @@ export default function StaffManagementPage() {
             {/* Role Select */}
             <div className="space-y-2">
               <Label htmlFor="role" className="text-xs font-semibold">System Role</Label>
+              {!rolesLoaded ? (
+                <DataLoadError
+                  what="the role catalogue, so this account cannot be granted a role"
+                  error={rolesError}
+                  retryHref="/admin/staff"
+                />
+              ) : (
               <Select
                 value={watchRoleId || undefined}
                 onValueChange={(val) => {
@@ -732,6 +793,7 @@ export default function StaffManagementPage() {
                   ))}
                 </SelectContent>
               </Select>
+              )}
             </div>
 
             {/* Department (Shown conditionally if role is department_staff) */}

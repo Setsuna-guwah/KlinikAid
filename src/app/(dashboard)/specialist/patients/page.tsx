@@ -6,6 +6,12 @@ import DataLoadError from "@/components/DataLoadError";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Maximum rows rendered before the roster tells the specialist it is truncated.
+ * Mirrors `PATIENT_PAGE_CAP` in `/api/specialist/patients/route.ts`.
+ */
+const ROSTER_PAGE_CAP = 100;
+
 export default async function SpecialistPatientsPage() {
   // Enforce access: only admin and specialist
   await requirePermission("specialist.patients");
@@ -17,10 +23,22 @@ export default async function SpecialistPatientsPage() {
     .from("specialist_patients")
     .select("*")
     .order("last_name", { ascending: true })
-    .limit(100);
+    .limit(ROSTER_PAGE_CAP);
 
   if (patientsError) {
     console.error("Error fetching patients list:", patientsError);
+  }
+
+  // How many patients exist in total. The list above is capped, so without this
+  // the roster reports "of 100 patients" as though that were the whole
+  // directory -- and any patient past the cap is invisible to their own
+  // specialist, permanently and silently.
+  const { count: rosterTotal, error: rosterTotalError } = await supabase
+    .from("specialist_patients")
+    .select("id", { count: "exact", head: true });
+
+  if (rosterTotalError) {
+    console.error("Error fetching roster total:", rosterTotalError);
   }
 
   // 2. Fetch records for these patients in a separate query to prevent massive nested scans (capped at 50000)
@@ -47,7 +65,7 @@ export default async function SpecialistPatientsPage() {
   // results, asserted as fact. A roster of confident wrong counts is more
   // dangerous than no roster, so the whole view is withheld rather than shown
   // with fabricated zeroes.
-  const loadError = patientsError ?? recordsError;
+  const loadError = patientsError ?? recordsError ?? rosterTotalError;
 
   const formattedPatients = (patients || []).map((patient) => {
     const patientRecords = records.filter((r) => r.specialist_patient_id === patient.id);
@@ -88,7 +106,11 @@ export default async function SpecialistPatientsPage() {
         />
       ) : null}
       {loadError ? null : (
-        <SpecialistPatientsClient initialPatients={formattedPatients} />
+        <SpecialistPatientsClient
+          initialPatients={formattedPatients}
+          rosterTotal={rosterTotal ?? null}
+          rosterLimit={ROSTER_PAGE_CAP}
+        />
       )}
     </>
   );

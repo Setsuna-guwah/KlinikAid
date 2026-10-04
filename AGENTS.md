@@ -23,23 +23,23 @@ put its values in a file that gets tracked.
 | Typecheck | `npx tsc --noEmit` |
 | Lint | `npm run lint` |
 | Build | `npm run build` |
+| Unit tests | `npm test` (`npx vitest run`; `--watch` via `npm run test:watch`) |
 
 **`npm run review` is broken** — it invokes `node scripts/review.js` and no `scripts/`
 directory exists. Don't rely on it.
 
 ## Verification
 
-**There is no test suite.** No runner, no test files, no `test`/`e2e` script, no Playwright
-or Vitest config. `npx tsc --noEmit`, `npm run lint` and `npm run build` are the entire
-automated gate, plus manual browser inspection.
-
-`next build` runs ESLint, so **a lint error fails the build**. A clean `master` is:
+A clean `master` is:
 
 ```
 npx tsc --noEmit   -> exit 0
 npm run lint       -> no warnings or errors
 npm run build      -> Compiled successfully, 37/37 static pages
+npm test           -> 24 passed (2 files)
 ```
+
+`next build` runs ESLint, so **a lint error fails the build**.
 
 The build needs `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` to be
 present or `/reset-password` fails to prerender. To check the build without real
@@ -49,6 +49,57 @@ credentials, pass them inline — do **not** write a `.env.local` full of placeh
 NEXT_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co \
 NEXT_PUBLIC_SUPABASE_ANON_KEY=placeholder npm run build
 ```
+
+### What the test suite does and does not cover
+
+Vitest, `src/**/*.test.ts`, node environment, no DOM. It covers the two central
+modules that the "a failed query is not an empty query" fixes depend on:
+
+- `src/lib/read-outcome.ts` — `classifyRead`, the three-way read classifier.
+- `src/lib/fetch-json.ts` — `fetchJson`, the client-side outcome wrapper.
+
+**Not covered: component rendering.** There are no jsdom/`@testing-library` tests, so
+"does this page actually render `DataLoadError`" is still answered by reading the code or
+clicking through the app. The load-bearing guarantee for the call sites is a *compile-time*
+one instead: `classifyRead` and `fetchJson` return unions whose failure branch has no `data`
+member, so reading the payload without handling the failure is a `tsc` error. `tsc --noEmit`
+is therefore part of the contract, not just a type check.
+
+There are **no credentials for any role in the repo**, so the auth-gated pages cannot be
+driven in a browser. Unauthenticated requests 307 to `/login`; that is as far as you can
+verify without a session. Say so in a PR rather than implying a page was exercised.
+
+## Reading data without confusing a failure for an empty result
+
+`src/lib/DataLoadError`-style error surfaces exist because a failed query and an empty
+result are different claims. Two helpers now enforce that centrally — **use them instead of
+writing a new `if (result.success)`**:
+
+```ts
+// server component / route handler
+const read = classifyRead(await supabase.from("patients").select("*").eq("id", id).single());
+if (read.kind === "failed") return <DataLoadError error={read.error} />;
+if (read.kind === "absent") notFound();
+const patient = read.data;
+
+// client component
+const out = await fetchJson<Logs>("/api/admin/logs/system");
+if (out.kind === "failed") { setError(out.error); return; }
+setLogs(out.data.logs);
+```
+
+Two PostgREST facts that make this necessary, both confirmed against the live DB:
+
+- `.single()` reports **zero rows as an error** (`PGRST116`), not as `data: null`. So
+  `if (error || !data) notFound()` cannot tell "no such patient" from "the database did not
+  answer".
+- `PGRST116` fires for **many rows too** (`details: "The result contains 2 rows"`), which is
+  why `isZeroRowsError` checks `details` and not just the code.
+
+**Residual limit, not fixable client-side:** RLS *filters* rows out rather than erroring, so
+a policy that hides a row is byte-identical on the wire to a row that does not exist. `roles`
+has 10 rows under the service role and reads as "0 rows" to `anon`. `classifyRead` cannot
+distinguish those two. Do not read `absent` as proof the row is gone.
 
 ## Browser access — read this
 

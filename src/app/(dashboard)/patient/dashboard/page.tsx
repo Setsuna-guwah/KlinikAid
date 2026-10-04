@@ -65,10 +65,19 @@ export default async function PatientDashboardPage() {
       .order("created_at", { ascending: false })
       .limit(1),
 
-    // Total and pending documents
+    // Total and pending documents.
+    //
+    // Scoped to this patient in the query, not only by RLS. The read previously
+    // selected every `documents` row clinic-wide and carried a comment claiming
+    // the scoping happened in memory below -- it did not, there was no filter.
+    // RLS is currently the only thing making these counts correct, so the page
+    // was one policy change away from telling a patient that another patient's
+    // submissions were theirs. Belt and braces: the other two queries on this
+    // page are already filtered by `patient_id`, and this one now is too.
     supabase
       .from("documents")
-      .select("id, status"),
+      .select("id, status")
+      .eq("patient_id", patient.id),
 
     // Results count
     supabase
@@ -90,7 +99,8 @@ export default async function PatientDashboardPage() {
     console.error("[PatientDashboard] Failed to load dashboard metrics:", metricsError);
   }
 
-  // Filter documents in memory for patient scoping
+  // Already scoped to this patient by the query above. The previous comment here
+  // described an in-memory filter that did not exist.
   const patientDocs = (documentsCountResult.data || []) as { id: string; status: string }[];
   const totalSubmissions = patientDocs.length;
   const pendingSubmissions = patientDocs.filter(d => d.status === "pending").length;

@@ -1,3 +1,4 @@
+import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { hasPermission, requireAnyPermission } from "@/lib/auth/helpers";
 import { errorResponse, successResponse } from "@/lib/api-response";
@@ -193,6 +194,13 @@ export async function POST(request: Request) {
     // before PHT midnight was invisible to the department, un-re-triable, and
     // could never be closed by this path. All three must stay unfiltered so that
     // "blocks reception" and "is actionable by the department" stay equivalent.
+    //
+    // These two writes are NOT atomic. The results above are already committed
+    // by the time this runs, so a failure here cannot be rolled back and must
+    // not be reported as if the whole operation succeeded -- see the response
+    // below. Making this atomic needs a Postgres function taking both writes
+    // together, in the shape of `archive_specialist_patient` from
+    // migration_22; that is tracked separately because it requires DDL.
     const { data: updatedQueue, error: queueError } = await supabase
       .from("patient_queue")
       .update({
@@ -242,7 +250,42 @@ export async function POST(request: Request) {
       );
     }
 
-    return successResponse(insertedData, "Department records saved successfully", 201);
+    // The client cannot tell a partial success from a full one unless the
+    // response says which happened. Two distinct outcomes, both of which used to
+    // reach the technologist as "saved and queue updated successfully!":
+    //
+    //   - the update errored, so the patient is still queued and open;
+    //   - the update matched no row, so there was no open entry to close, which
+    //     usually means the patient was never routed to this department.
+    //
+    // Both leave reception blocked from re-triaging by the 409 guard, so both are
+    // reported rather than assumed away. The records themselves did save, so the
+    // status stays 201 -- returning 500 here would invite a retry that
+    // duplicates every result row.
+    return NextResponse.json(
+      {
+        success: true,
+        message:
+          completedCount > 0
+            ? "Department records saved successfully"
+            : "Department records saved, but the patient's queue entry was not closed",
+        data: {
+          records: insertedData,
+          queue: {
+            department: dept,
+            completed_count: completedCount,
+            closed: completedCount > 0,
+            // True when the update ran cleanly but matched no open entry.
+            matched_open_entry: completedCount > 0,
+            // Set when the update itself failed.
+            error: queueError
+              ? "The queue update failed. The patient is still listed as open for this department."
+              : null,
+          },
+        },
+      },
+      { status: 201 }
+    );
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return errorResponse("Failed to save department records", 500, message);

@@ -17,9 +17,17 @@ import { Badge } from "@/components/ui/badge";
 
 interface SpecialistDashboardClientProps {
   stats: {
-    totalPatients: number;
-    flaggedThisWeek: number;
-    departmentsCovered: number;
+    /**
+     * `null` means the underlying query failed, so the figure is unknown -- not
+     * zero. It is rendered as such rather than substituted with a 0, because a
+     * confident "0" for "Total Clinic Patients" or "Flagged Results" is a claim
+     * the specialist will act on. The page renders a DataLoadError banner
+     * alongside, but a KPI that reads as measured is more persuasive than a
+     * banner someone has already scrolled past.
+     */
+    totalPatients: number | null;
+    flaggedThisWeek: number | null;
+    departmentsCovered: number | null;
   };
   recentFlagged: Array<{
     id: string;
@@ -88,10 +96,12 @@ export default function SpecialistDashboardClient({
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-extrabold text-slate-900 dark:text-white">
-              {stats.totalPatients}
+              {stats.totalPatients ?? "\u2014"}
             </div>
             <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
-              Registered patient directory records
+              {stats.totalPatients === null
+                ? "Not measured \u2014 the query failed"
+                : "Registered patient directory records"}
             </p>
           </CardContent>
         </Card>
@@ -108,10 +118,12 @@ export default function SpecialistDashboardClient({
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-extrabold text-slate-900 dark:text-white">
-              {stats.flaggedThisWeek}
+              {stats.flaggedThisWeek ?? "\u2014"}
             </div>
             <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
-              Out-of-bounds parameters needing review
+              {stats.flaggedThisWeek === null
+                ? "Not measured \u2014 the query failed"
+                : "Out-of-bounds parameters needing review"}
             </p>
           </CardContent>
         </Card>
@@ -128,10 +140,12 @@ export default function SpecialistDashboardClient({
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-extrabold text-slate-900 dark:text-white">
-              {stats.departmentsCovered}
+              {stats.departmentsCovered ?? "\u2014"}
             </div>
             <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
-              Active diagnostic departments in records
+              {stats.departmentsCovered === null
+                ? "Not measured \u2014 a group count failed"
+                : "Active diagnostic departments in records"}
             </p>
           </CardContent>
         </Card>
