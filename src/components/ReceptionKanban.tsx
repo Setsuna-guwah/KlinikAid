@@ -25,6 +25,16 @@ import { Input } from "@/components/ui/input";
 
 interface ReceptionKanbanProps {
   initialDocuments: Document[];
+  /**
+   * True totals from the server, or null when the count could not be read.
+   *
+   * These exist so the board can admit what it is not showing. `null` is
+   * meaningful and must not be collapsed to 0: "0 documents omitted" is a claim
+   * the board cannot support if the count failed, and it is the one claim that
+   * would make a truncated board look complete.
+   */
+  actionableTotal: number | null;
+  completedTotal: number | null;
 }
 
 type ColumnId = "submitted" | "ai_verified" | "staff_review" | "approved" | "rejected";
@@ -37,7 +47,11 @@ interface Column {
   icon: React.ReactNode;
 }
 
-export default function ReceptionKanban({ initialDocuments }: ReceptionKanbanProps) {
+export default function ReceptionKanban({
+  initialDocuments,
+  actionableTotal,
+  completedTotal,
+}: ReceptionKanbanProps) {
   const supabase = createClient();
   const [documents, setDocuments] = useState<Document[]>(initialDocuments);
   const [searchQuery, setSearchQuery] = useState("");
@@ -166,6 +180,28 @@ export default function ReceptionKanban({ initialDocuments }: ReceptionKanbanPro
     columnsData[colId].push(doc);
   });
 
+  // What this board is not showing.
+  //
+  // The server loads `pending` and terminal documents under separate caps, so
+  // "how many rows are on screen" is no longer the same question as "how many
+  // documents exist". Both are reported, and the difference is stated rather
+  // than absorbed.
+  //
+  // `null` means the true total could not be measured. It is deliberately not
+  // treated as 0, because 0 omitted is a completeness claim this board cannot
+  // make when the count failed -- the same reason `classifyRead` refuses to
+  // report an unreadable count as zero.
+  const loadedActionable = documents.filter((doc) => doc.status === "pending").length;
+  const loadedCompleted = documents.length - loadedActionable;
+
+  const actionableOmitted =
+    actionableTotal === null ? null : Math.max(0, actionableTotal - loadedActionable);
+  const completedOmitted =
+    completedTotal === null ? null : Math.max(0, completedTotal - loadedCompleted);
+
+  const totalsUnknown = actionableTotal === null || completedTotal === null;
+  const anythingOmitted = (actionableOmitted ?? 0) > 0 || (completedOmitted ?? 0) > 0;
+
   const columns: Column[] = [
     {
       id: "submitted",
@@ -262,9 +298,61 @@ export default function ReceptionKanban({ initialDocuments }: ReceptionKanbanPro
           />
         </div>
         <div className="text-xs text-slate-500 dark:text-slate-400 font-medium sm:ml-auto">
-          Showing {filteredDocuments.length} of {documents.length} submissions
+          Showing {filteredDocuments.length} of {documents.length} loaded
         </div>
       </div>
+
+      {/* Truncation disclosure.
+          The board loads under server-side caps, so the row count on screen is
+          not the number of documents that exist. That gap is stated here rather
+          than left for reception to infer, because a board that looks complete
+          while omitting referrals is how a referral is never actioned. */}
+      {anythingOmitted ? (
+        <div
+          role="status"
+          className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/60 px-4 py-3 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-200"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="space-y-1">
+            <p className="font-semibold">This board is showing a capped view.</p>
+            <ul className="list-disc space-y-0.5 pl-4">
+              {actionableOmitted ? (
+                <li>
+                  {actionableOmitted} awaiting-action{" "}
+                  {actionableOmitted === 1 ? "document is" : "documents are"} not
+                  listed. Anything not shown here is older than what is, so
+                  search will not find it.
+                </li>
+              ) : null}
+              {completedOmitted ? (
+                <li>
+                  {completedOmitted} completed{" "}
+                  {completedOmitted === 1 ? "document is" : "documents are"} not
+                  listed. Only the most recent approved and rejected documents are
+                  loaded.
+                </li>
+              ) : null}
+            </ul>
+            <p className="text-amber-800/80 dark:text-amber-300/80">
+              Every pending document{" "}
+              {actionableOmitted ? "up to the cap" : "currently"} is loaded, so
+              nothing awaiting triage has been dropped from the top of the queue.
+            </p>
+          </div>
+        </div>
+      ) : totalsUnknown ? (
+        <div
+          role="status"
+          className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-3 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-300"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>
+            The total document count could not be read, so this board cannot
+            confirm how much it is leaving out. Treat the columns as a partial
+            view until the page reloads successfully.
+          </p>
+        </div>
+      ) : null}
 
       {/* Kanban Board Grid */}
       <div className="grid grid-cols-1 xl:grid-cols-5 gap-5 h-[calc(100vh-240px)] min-h-[600px] overflow-x-auto pb-4">
