@@ -1,0 +1,5 @@
+# Normalize line endings on commit and check out LF everywhere. Without this a
+# Windows checkout rewrites every tracked file to CRLF, which shows up as ~90
+# whole-file modifications here and buries real changes in line-ending churn.
+# text=auto leaves binary assets (png, woff) untouched.
+* text=auto eol=lf
