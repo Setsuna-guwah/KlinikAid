@@ -11,6 +11,9 @@ import {
   AlertCircle
 } from "lucide-react";
 import { getAge, formatPhTime, formatPhTimeFull } from "@/lib/utils";
+import { fetchJson, type ApiError } from "@/lib/fetch-json";
+import DataLoadError from "@/components/DataLoadError";
+import { useHydrated } from "@/lib/use-hydrated";
 import { 
   ResponsiveContainer, 
   ComposedChart, 
@@ -109,9 +112,32 @@ export default function SpecialistAnalyticsClient({
 }: SpecialistAnalyticsClientProps) {
   const [metrics] = useState<string[]>(initialMetrics);
   const [selectedMetric, setSelectedMetric] = useState<string>(initialMetrics[0] || "");
-  const [records, setRecords] = useState<RecordData[]>(initialRecords);
+
+  // The records are held together with the metric they actually belong to,
+  // rather than beside the metric currently selected in the dropdown.
+  //
+  // Those two are not the same thing. Keeping them in one state object is what
+  // makes "the heading says Hemoglobin and the chart shows Glucose" impossible
+  // to represent, rather than merely unlikely: there is no arrangement of these
+  // two fields that produces a mismatched label, and no `setRecords` call that
+  // can leave the previous metric's series under the new metric's name. The
+  // reference range and the "Normal limit" badge are read from the same payload
+  // as the line, so they stay internally consistent and are simply wrong for
+  // the metric on screen -- confidently wrong, which is the dangerous kind.
+  const [loaded, setLoaded] = useState<{ metric: string; records: RecordData[] }>({
+    metric: initialMetrics[0] || "",
+    records: initialRecords,
+  });
+  const [fetchError, setFetchError] = useState<ApiError | null>(null);
   const [loading, setLoading] = useState(false);
   const isFirstMount = useRef(true);
+
+  // Guards against an out-of-order response. Switching the metric twice quickly
+  // can land the slower first response last, which would put Hemoglobin's series
+  // back under a Glucose heading -- the same defect the server error case
+  // produced, reached by a different route. Only the newest request may write.
+  const latestRequest = useRef(0);
+  const hydrated = useHydrated();
 
   useEffect(() => {
     if (!selectedMetric) return;
@@ -121,25 +147,40 @@ export default function SpecialistAnalyticsClient({
       return;
     }
 
-    const fetchAnalytics = async () => {
+    const fetchAnalytics = async (metric: string) => {
+      const requestId = ++latestRequest.current;
       setLoading(true);
-      try {
-        const res = await fetch(
-          `/api/specialist/patients/${patientId}/analytics?metric=${encodeURIComponent(selectedMetric)}`
-        );
-        const result = await res.json();
-        if (result.success) {
-          setRecords(result.data);
-        }
-      } catch (err) {
-        console.error("Error fetching patient analytics:", err);
-      } finally {
+      setFetchError(null);
+
+      const outcome = await fetchJson<RecordData[]>(
+        `/api/specialist/patients/${patientId}/analytics?metric=${encodeURIComponent(metric)}`
+      );
+
+      if (requestId !== latestRequest.current) return;
+
+      if (outcome.kind === "failed") {
+        // Drop the previous metric's records. Leaving them in place is the bug:
+        // the card header, the "Normal limit" badge and the history table are
+        // all driven by `selectedMetric` and by `records` separately, so keeping
+        // the old array renders the old series under the new heading.
+        setLoaded({ metric, records: [] });
+        setFetchError(outcome.error);
         setLoading(false);
+        return;
       }
+
+      setLoaded({ metric, records: outcome.data ?? [] });
+      setLoading(false);
     };
 
-    fetchAnalytics();
+    void fetchAnalytics(selectedMetric);
   }, [selectedMetric, patientId]);
+
+  // The rendered records are the loaded ones *and* only while they still belong
+  // to the selected metric. Belt and braces against the invariant above: if a
+  // future change ever desynchronises the two, this withholds the chart rather
+  // than rendering it under the wrong name.
+  const records = loaded.metric === selectedMetric ? loaded.records : [];
 
   // Shared helper functions are imported from @/lib/utils
 
@@ -228,7 +269,7 @@ export default function SpecialistAnalyticsClient({
             <div>
               <p className="text-[10px] uppercase font-semibold text-slate-400 dark:text-slate-500">Demographics</p>
               <p className="text-sm font-semibold text-slate-700 dark:text-slate-400">
-                {getAge(dob)} years old • <span className="capitalize">{gender}</span>
+                {hydrated ? getAge(dob, Date.now()) : ""} years old • <span className="capitalize">{gender}</span>
               </p>
             </div>
             <div>
@@ -263,6 +304,11 @@ export default function SpecialistAnalyticsClient({
               <RefreshCw className="h-5 w-5 animate-spin text-indigo-500 mr-2" />
               Refreshing database statistics...
             </div>
+          ) : fetchError ? (
+            <DataLoadError
+              what={`results for ${selectedMetric || "this parameter"}`}
+              error={fetchError}
+            />
           ) : records.length === 0 ? (
             <div className="h-[400px] flex items-center justify-center text-slate-400 dark:text-slate-500 text-xs border border-dashed border-slate-100 dark:border-slate-800 rounded-xl">
               No historical data recorded for metric: {selectedMetric}
@@ -393,7 +439,16 @@ export default function SpecialistAnalyticsClient({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-850">
-                {records.length === 0 ? (
+                {fetchError ? (
+                  <tr>
+                    <td colSpan={6} className="p-6">
+                      <DataLoadError
+                        what={`results for ${selectedMetric || "this parameter"}`}
+                        error={fetchError}
+                      />
+                    </td>
+                  </tr>
+                ) : records.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="p-6 text-center text-slate-400 dark:text-slate-500">
                       No records found for this metric.

@@ -4,6 +4,26 @@ import { createClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/auth/helpers";
 import { errorResponse, successResponse } from "@/lib/api-response";
 
+/**
+ * Maximum rows this endpoint will return.
+ *
+ * The roster is deliberately capped rather than left unbounded, but a cap that
+ * is not reported is indistinguishable from a complete list. Every response
+ * therefore carries the uncapped number of search matches alongside the capped
+ * page, so the client can say "N match, first 100 listed" instead of implying
+ * the list is everything.
+ */
+const PATIENT_PAGE_CAP = 100;
+
+interface RosterPage {
+  patients: Array<Record<string, unknown>>;
+  /** Uncapped count of patients matching the search terms. */
+  matchCount: number;
+  /** True when `matchCount` exceeds what was returned. */
+  truncated: boolean;
+  limit: number;
+}
+
 export async function GET(request: Request) {
   const supabase = createClient();
 
@@ -30,8 +50,13 @@ export async function GET(request: Request) {
     const startDateFilter = searchParams.get("startDate")?.trim() || "";
     const endDateFilter = searchParams.get("endDate")?.trim() || "";
 
-    // 1. Fetch patients from specialist_patients
-    let queryBuilder = supabase.from("specialist_patients").select("*");
+    // 1. Fetch patients from specialist_patients.
+    //
+    // `count: "exact"` (without `head`) asks for the uncapped total in the same
+    // round trip as the capped page, so the response can state how many patients
+    // match rather than implying the page is all of them. `head` is deliberately
+    // not used: it would suppress the rows this endpoint exists to return.
+    let queryBuilder = supabase.from("specialist_patients").select("*", { count: "exact" });
 
     if (searchVal) {
       if (searchVal.toLowerCase().startsWith("pt-")) {
@@ -50,14 +75,28 @@ export async function GET(request: Request) {
       }
     }
 
-    const { data: patients, error: patientsError } = await queryBuilder.limit(100);
+    const {
+      data: patients,
+      error: patientsError,
+      count: matchCount,
+    } = await queryBuilder.limit(PATIENT_PAGE_CAP);
 
     if (patientsError) {
       throw patientsError;
     }
 
+    const totalMatches = matchCount ?? 0;
+
     if (!patients || patients.length === 0) {
-      return successResponse([], "No patients found");
+      return successResponse<RosterPage>(
+        {
+          patients: [],
+          matchCount: totalMatches,
+          truncated: false,
+          limit: PATIENT_PAGE_CAP,
+        },
+        "No patients found"
+      );
     }
 
     // 2. Fetch records for these patients from specialist_records
@@ -113,7 +152,15 @@ export async function GET(request: Request) {
       })
       .filter(Boolean);
 
-    return successResponse(results, "Patients fetched successfully");
+    return successResponse<RosterPage>(
+      {
+        patients: results as Array<Record<string, unknown>>,
+        matchCount: totalMatches,
+        truncated: results.length < totalMatches,
+        limit: PATIENT_PAGE_CAP,
+      },
+      "Patients fetched successfully"
+    );
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("Failed to fetch patients for analytics:", message);

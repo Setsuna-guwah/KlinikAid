@@ -4,6 +4,7 @@ import { requirePermission } from "@/lib/auth/helpers";
 import { createClient } from "@/lib/supabase/server";
 import SpecialistAnalyticsClient from "@/components/SpecialistAnalyticsClient";
 import DataLoadError from "@/components/DataLoadError";
+import { classifyRead } from "@/lib/read-outcome";
 
 export const dynamic = "force-dynamic";
 
@@ -41,37 +42,56 @@ export default async function PatientAnalyticsPage({
   const { patientId } = params;
 
   // 1. Fetch patient details from specialist_patients
-  const { data: patient, error: patientError } = await supabase
-    .from("specialist_patients")
-    .select("*")
-    .eq("id", patientId)
-    .single();
+  const patientLookup = classifyRead(
+    await supabase.from("specialist_patients").select("*").eq("id", patientId).single()
+  );
 
-  if (patientError || !patient) {
+  // This page already withheld its metrics and records queries rather than
+  // rendering an empty chart. The patient lookup above them still collapsed both
+  // outcomes into notFound(), so a failed read showed a 404 -- which reads as
+  // "this patient was archived or deleted" and makes the specialist skip a
+  // patient who is still there. Only a confirmed zero-row match may claim 404.
+  if (patientLookup.kind === "failed") {
+    console.error("Error fetching specialist patient for analytics:", patientLookup.error);
+    return (
+      <div className="space-y-6">
+        <DataLoadError
+          what="this patient"
+          error={patientLookup.error}
+          retryHref={`/specialist/patients/${patientId}/analytics`}
+        />
+      </div>
+    );
+  }
+
+  if (patientLookup.kind === "absent") {
     notFound();
   }
 
+  const patient = patientLookup.data;
+
   // 2. Fetch distinct metrics (test names) recorded for this patient from specialist_records
-  const { data: metricsData, error: metricsError } = await supabase
-    .from("specialist_records")
-    .select("test_name")
-    .eq("specialist_patient_id", patientId);
-
-  if (metricsError) {
-    console.error("Error fetching patient metrics list:", metricsError);
-  }
-
-  const distinctMetrics = Array.from(
-    new Set((metricsData || []).map((r) => r.test_name).filter(Boolean))
+  const metricsRead = classifyRead(
+    await supabase
+      .from("specialist_records")
+      .select("test_name")
+      .eq("specialist_patient_id", patientId)
   );
 
   // 3. Fetch initial chronological records for the first metric (if available)
   let initialRecords: RecordData[] = [];
-  let recordsErrorForView: { message: string } | null = null;
-  if (distinctMetrics.length > 0) {
-    const { data: records, error: recordsError } = await supabase
-      .from("specialist_records")
-      .select(`
+  let recordsErrorForView: unknown = null;
+
+  const distinctMetrics =
+    metricsRead.kind === "ok"
+      ? Array.from(new Set((metricsRead.data ?? []).map((r) => r.test_name).filter(Boolean)))
+      : [];
+
+  if (metricsRead.kind === "ok" && distinctMetrics.length > 0) {
+    const recordsRead = classifyRead(
+      await supabase
+        .from("specialist_records")
+        .select(`
         id,
         test_name,
         test_value,
@@ -87,15 +107,16 @@ export default async function PatientAnalyticsPage({
           full_name
         )
       `)
-      .eq("specialist_patient_id", patientId)
-      .eq("test_name", distinctMetrics[0])
-      .order("created_at", { ascending: true });
+        .eq("specialist_patient_id", patientId)
+        .eq("test_name", distinctMetrics[0])
+        .order("created_at", { ascending: true })
+    );
 
-    if (recordsError) {
-      console.error("Error fetching initial records for first metric:", recordsError);
-      recordsErrorForView = recordsError;
-    } else {
-      initialRecords = (records || []).map((r) => {
+    if (recordsRead.kind === "failed") {
+      console.error("Error fetching initial records for first metric:", recordsRead.error);
+      recordsErrorForView = recordsRead.error;
+    } else if (recordsRead.kind === "ok") {
+      initialRecords = (recordsRead.data ?? []).map((r) => {
         const rec = r as unknown as RecordData;
         const rawRecorder = r.recorder;
         const recorderObj = Array.isArray(rawRecorder)
@@ -123,12 +144,12 @@ export default async function PatientAnalyticsPage({
   // A failed metrics query yields an empty metric list, which the client renders
   // as "No records found for this metric" -- asserting that this patient has no
   // results when the results were simply unreachable. Withhold the view.
-  if (metricsError) {
+  if (metricsRead.kind === "failed") {
     return (
       <div className="space-y-6">
         <DataLoadError
           what={`analytics for ${patient.first_name} ${patient.last_name}`}
-          error={metricsError}
+          error={metricsRead.error}
           retryHref={`/specialist/patients/${patientId}/analytics`}
         />
       </div>

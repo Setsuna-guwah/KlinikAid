@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { errorResponse, successResponse } from "@/lib/api-response";
+import { classifyRead } from "@/lib/read-outcome";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import crypto from "crypto";
 
@@ -77,17 +78,35 @@ export async function POST(request: Request) {
     }
 
     // 4. Perform vector similarity search in public.rag_documents
-    const { data: matchedDocs, error: rpcError } = await supabase.rpc("match_documents", {
-      query_embedding: queryEmbedding,
-      match_threshold: 0.6,
-      match_count: 5,
-    });
+    //
+    // A failed search must not become an answer. The previous `|| []` made
+    // "the vector index was unreachable" and "the knowledge base has nothing on
+    // this" produce the same grounding string, and the model was then instructed
+    // to answer *only* from it -- so a broken index returned a fluent, confident
+    // 200 asserting the clinic has no information, indistinguishable from a
+    // genuine gap in the documents. Absence of evidence and failure to look are
+    // separated here, once, so no caller downstream has to.
+    const search = classifyRead(
+      await supabase.rpc("match_documents", {
+        query_embedding: queryEmbedding,
+        match_threshold: 0.6,
+        match_count: 5,
+      })
+    );
 
-    if (rpcError) {
-      console.error("RAG match_documents RPC error:", rpcError);
+    if (search.kind === "failed") {
+      console.error("RAG match_documents RPC error:", search.error);
+      // 503, not 200: the assistant genuinely could not answer, and a patient
+      // told "we have no information" may act on that. The chat UI surfaces the
+      // message, which points them at a human who can actually check.
+      return errorResponse(
+        "The clinic assistant is temporarily unavailable because its document search could not be reached. Please contact the reception desk.",
+        503
+      );
     }
 
-    const matchedDocsList = (matchedDocs as unknown as MatchedDocument[]) || [];
+    const matchedDocsList =
+      search.kind === "ok" ? ((search.data ?? []) as unknown as MatchedDocument[]) : [];
 
     // 5. Construct RAG context
     const context = matchedDocsList.length > 0
@@ -136,6 +155,11 @@ ${context}`;
     });
 
     if (logError) {
+      // The conversation is the audit record of what the assistant told a
+      // patient. Swallowing this means a clinically-relevant exchange can vanish
+      // from /admin/logs with nothing to indicate it happened. The answer to the
+      // patient is still returned -- the log write failing does not make the
+      // reply wrong -- but it is raised on the server so it is not silent.
       console.error("Failed to log chatbot interaction:", logError);
     }
 

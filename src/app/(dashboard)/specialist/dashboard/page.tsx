@@ -3,6 +3,7 @@ import { requirePermission } from "@/lib/auth/helpers";
 import { createClient } from "@/lib/supabase/server";
 import SpecialistDashboardClient from "@/components/SpecialistDashboardClient";
 import DataLoadError from "@/components/DataLoadError";
+import { classifyRead, readErrors } from "@/lib/read-outcome";
 
 export const dynamic = "force-dynamic";
 
@@ -13,29 +14,42 @@ export default async function SpecialistDashboardPage() {
   const supabase = createClient();
 
   // 1. Fetch total count of patients from specialist_patients
-  const { count: totalPatients, error: totalPatientsError } = await supabase
+  const totalPatientsResult = await supabase
     .from("specialist_patients")
     .select("id", { count: "exact", head: true });
 
-  if (totalPatientsError) {
-    console.error("Error fetching total patients:", totalPatientsError);
+  if (totalPatientsResult.error) {
+    console.error("Error fetching total patients:", totalPatientsResult.error);
   }
+
+  // A head-count query reports its answer in `count`, not `data`, so the count
+  // is what gets classified. Feeding `data` (always null here) instead would
+  // make every count look like a successful zero.
+  const totalPatientsRead = classifyRead({
+    data: totalPatientsResult.count,
+    error: totalPatientsResult.error,
+  });
 
   // 2. Fetch flagged count in the last 7 days from specialist_records
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const { count: flaggedThisWeek, error: flaggedError } = await supabase
+  const flaggedResult = await supabase
     .from("specialist_records")
     .select("id", { count: "exact", head: true })
     .eq("is_flagged", true)
     .gte("created_at", sevenDaysAgo);
 
-  if (flaggedError) {
-    console.error("Error fetching flagged count:", flaggedError);
+  if (flaggedResult.error) {
+    console.error("Error fetching flagged count:", flaggedResult.error);
   }
+
+  const flaggedRead = classifyRead({
+    data: flaggedResult.count,
+    error: flaggedResult.error,
+  });
 
   // 3. Get count of distinct test groups in records
   const testGroups = ["Complete Blood Count (CBC)", "Fasting Blood Sugar (FBS)", "Renal Function", "Lipid Profile"];
-  const groupCounts = await Promise.all(
+  const groupReads = await Promise.all(
     testGroups.map(async (group) => {
       const { count, error } = await supabase
         .from("specialist_records")
@@ -43,12 +57,19 @@ export default async function SpecialistDashboardPage() {
         .eq("test_type", group);
       if (error) {
         console.error(`Error counting records for group ${group}:`, error);
-        return 0;
       }
-      return count || 0;
+      return classifyRead({ data: count, error });
     })
   );
-  const departmentsCovered = groupCounts.filter((c) => c > 0).length;
+
+  // These four used to `return 0` on error and their errors were never
+  // collected, which is how a partial failure rendered as a healthy dashboard
+  // reporting "Departments Covered 0" with no banner at all. Their errors now
+  // feed the same aggregate as every other query on the page.
+  const departmentsCoveredKnown = groupReads.every((read) => read.kind === "ok");
+  const departmentsCovered = groupReads.filter(
+    (read) => read.kind === "ok" && (read.data ?? 0) > 0
+  ).length;
 
   // 4. Fetch 10 most recent flagged results joining specialist_patients (referenced as patient)
   const { data: recentFlaggedData, error: flaggedListError } = await supabase
@@ -122,19 +143,26 @@ export default async function SpecialistDashboardPage() {
   // this week", which is exactly the claim a specialist must never be misled
   // about. The failures are therefore surfaced as a banner rather than being
   // summed into the widgets, so no number below is silently fabricated.
-  const loadErrors = [
-    totalPatientsError,
-    flaggedError,
-    flaggedListError,
-    activityError,
-  ].filter(Boolean);
+  //
+  // All eight queries contribute. An earlier version listed only four, so the
+  // four group counts could fail on their own and the dashboard rendered
+  // "Active Modalities 0" with no indication anything was wrong -- a partial
+  // failure, which is the case a whole-table REVOKE probe cannot reproduce.
+  const loadErrors = readErrors([
+    totalPatientsRead,
+    flaggedRead,
+    classifyRead({ data: recentFlaggedData, error: flaggedListError }),
+    classifyRead({ data: recentActivity, error: activityError }),
+    ...groupReads,
+  ]);
 
   const stats = {
-    // A failed count renders as its zero equivalent; the banner above states
-    // that these are unknown rather than measured.
-    totalPatients: totalPatients || 0,
-    flaggedThisWeek: flaggedThisWeek || 0,
-    departmentsCovered
+    // null means "not measured", which is rendered as such. Zero means
+    // "measured, and there were none" -- a different and equally important
+    // claim. Collapsing the two is what the banner above exists to prevent.
+    totalPatients: totalPatientsRead.kind === "ok" ? totalPatientsRead.data : null,
+    flaggedThisWeek: flaggedRead.kind === "ok" ? flaggedRead.data : null,
+    departmentsCovered: departmentsCoveredKnown ? departmentsCovered : null,
   };
 
   const formattedRecentFlagged = (recentFlaggedData || []).map((r) => {

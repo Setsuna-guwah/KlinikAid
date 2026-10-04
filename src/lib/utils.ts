@@ -6,10 +6,21 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function getAge(dobString: string): string | number {
+/**
+ * Age in whole years from a date of birth.
+ *
+ * `now` is required rather than defaulted to `Date.now()`. Reading the clock
+ * inside this function is invisible at the call site, which is exactly how the
+ * hydration mismatch in #19 survived a fix that covered some call sites and not
+ * others: a caller in an event handler wants the current time, a caller in
+ * render must not have it. Making the caller pass the reference time forces that
+ * decision to be made out loud, and gives the function a single implementation
+ * to reason about.
+ */
+export function getAge(dobString: string, now: number): string | number {
   try {
     const dob = new Date(dobString);
-    const diff = Date.now() - dob.getTime();
+    const diff = now - dob.getTime();
     const ageDate = new Date(diff);
     return Math.abs(ageDate.getUTCFullYear() - 1970);
   } catch {
