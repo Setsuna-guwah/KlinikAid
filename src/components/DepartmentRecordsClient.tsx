@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { DEPARTMENTS } from "@/lib/constants";
-import { formatPhTimeFull } from "@/lib/utils";
+import { formatPhTimeFull, getAge } from "@/lib/utils";
 
 interface QueuePatient {
   id: string;
@@ -109,15 +109,6 @@ export default function DepartmentRecordsClient({
     params.set("tab", tab);
     setSearchTerm("");
     router.replace(`${pathname}?${params.toString()}`);
-  };
-
-  // Age helper
-  const getAge = (dobString?: string) => {
-    if (!dobString) return "";
-    const dob = new Date(dobString);
-    const diff = Date.now() - dob.getTime();
-    const ageDate = new Date(diff);
-    return Math.abs(ageDate.getUTCFullYear() - 1970);
   };
 
   // How long a queue entry has been waiting. Entries are no longer hidden at PHT
@@ -375,7 +366,7 @@ export default function DepartmentRecordsClient({
                           {p?.first_name} {p?.last_name}
                         </h3>
                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                          {p?.gender ? p.gender.charAt(0).toUpperCase() + p.gender.slice(1) : "N/A"} • {hydrated ? getAge(p?.date_of_birth) : ""} yrs old
+                          {p?.gender ? p.gender.charAt(0).toUpperCase() + p.gender.slice(1) : "N/A"} • {hydrated ? getAge(p?.date_of_birth, Date.now()) : ""} yrs old
                         </p>
                       </div>
 
