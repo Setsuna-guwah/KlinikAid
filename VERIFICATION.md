@@ -5,6 +5,9 @@ once per installed Playwright version. Run `npm run verify` before handing a
 change back. It runs typecheck, lint, unit tests, configuration tests, production
 build and anonymous browser checks in order, stopping at the first failed gate.
 Each gate writes a log and the command reports a JSON receipt path.
+CI adds `--install-browser` to install its pinned browser only after the code
+checks pass. A failing typecheck, lint, unit/config test or build stops before
+browser installation and browser tests.
 
 The browser checks start and stop their own built app on 127.0.0.1:3098.
 Parallel workers need separate worktrees and available ports: set `VERIFY_PORT`
