@@ -15,11 +15,17 @@ const env = {
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 const results = [];
 let passed = true;
-for (const gate of ["typecheck", "lint", "test", "build", "test:browser"]) {
+const gates = ["typecheck", "lint", "test", "build"];
+if (process.argv.includes("--install-browser")) gates.push("browser:install");
+gates.push("test:browser");
+for (const gate of gates) {
   const log = join(directory, gate.replaceAll(":", "-") + ".log");
   const descriptor = openSync(log, "w", 0o600);
   const start = Date.now();
-  const result = spawnSync(npm, ["run", gate], { env, stdio: ["ignore", descriptor, descriptor], shell: process.platform === "win32" });
+  const args = gate === "browser:install"
+    ? ["exec", "--no", "--", "playwright", "install", "--with-deps", "--only-shell", "chromium"]
+    : ["run", gate];
+  const result = spawnSync(npm, args, { env, stdio: ["ignore", descriptor, descriptor], shell: process.platform === "win32" });
   closeSync(descriptor);
   const success = !result.error && result.status === 0;
   results.push({ gate, passed: success, exitCode: result.status, durationMs: Date.now() - start, log });
