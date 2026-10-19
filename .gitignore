@@ -85,3 +85,7 @@ review/
 # Security reviews, audits and vulnerability write-ups. The repo is public:
 # anything describing where the system is weak stays on this machine.
 private/
+
+# Scripted browser verification artifacts
+playwright-report/
+test-results/

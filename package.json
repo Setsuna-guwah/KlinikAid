@@ -10,7 +10,10 @@
     "review": "node scripts/review.js",
     "test": "vitest run && node --test next.config.test.mjs",
     "test:watch": "vitest",
-    "test:rls": "NODE_OPTIONS=\"$NODE_OPTIONS --experimental-websocket\" vitest run --config vitest.rls.config.ts"
+    "test:rls": "NODE_OPTIONS=\"$NODE_OPTIONS --experimental-websocket\" vitest run --config vitest.rls.config.ts",
+    "typecheck": "tsc --noEmit",
+    "test:browser": "playwright test",
+    "verify": "node tools/verify.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
@@ -36,6 +39,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.1",
     "@types/node": "^20",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

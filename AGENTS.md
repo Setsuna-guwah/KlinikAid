@@ -31,6 +31,13 @@ directory exists. Don't rely on it.
 
 ## Verification
 
+Before verification or opening a PR, read [VERIFICATION.md](VERIFICATION.md).
+The shared local/CI command is npm run verify. Use draft PRs for worker output;
+request acceptance review after the Merge readiness check passes. Reuse the
+successful run for its tested revision rather than repeating its checks in the
+lead. Add task-specific coverage where the shared checks do not prove acceptance.
+
+
 A clean `master` is:
 
 ```
