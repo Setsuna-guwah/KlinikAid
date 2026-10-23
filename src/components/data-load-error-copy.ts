@@ -16,3 +16,12 @@ const DESCRIPTIONS: Record<DataLoadErrorKind, string> = {
 export function dataLoadErrorDescription(kind: DataLoadErrorKind): string {
   return DESCRIPTIONS[kind];
 }
+
+/**
+ * Wording for a chart whose data failed to load (regression for #219). The
+ * kind-keyed defaults are about lists, records and pages; none fits a chart,
+ * whose failure mode reads visually as "no data plotted" — i.e. no usage —
+ * which a failed fetch does not establish.
+ */
+export const CHART_DATA_LOAD_ERROR_DESCRIPTION =
+  "This chart is blank because the request failed, not because there was no usage. The consumption it would show cannot be trusted until it loads.";

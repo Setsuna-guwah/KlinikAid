@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CHART_DATA_LOAD_ERROR_DESCRIPTION,
   dataLoadErrorDescription,
   type DataLoadErrorKind,
 } from "./data-load-error-copy";
@@ -40,5 +41,22 @@ describe("dataLoadErrorDescription", () => {
       expect(description.length).toBeGreaterThan(0);
     }
     expect(new Set(descriptions).size).toBe(kinds.length);
+  });
+});
+
+describe("CHART_DATA_LOAD_ERROR_DESCRIPTION", () => {
+  it("does not use list wording and does not claim there was no usage", () => {
+    // Regression for #219: the API cost area chart rendered the list
+    // default, telling admins "This list is empty" where a chart is blank.
+    expect(CHART_DATA_LOAD_ERROR_DESCRIPTION).not.toMatch(/list/i);
+    expect(CHART_DATA_LOAD_ERROR_DESCRIPTION).toMatch(/chart is blank because the request failed/i);
+    expect(CHART_DATA_LOAD_ERROR_DESCRIPTION).toMatch(/not because there was no usage/i);
+  });
+
+  it("is distinct from every kind-keyed default", () => {
+    const kinds: DataLoadErrorKind[] = ["list", "record", "page"];
+    for (const kind of kinds) {
+      expect(CHART_DATA_LOAD_ERROR_DESCRIPTION).not.toBe(dataLoadErrorDescription(kind));
+    }
   });
 });
