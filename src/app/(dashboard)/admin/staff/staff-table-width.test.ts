@@ -109,3 +109,52 @@ describe("personnel registry fit below xl (#220)", () => {
     expect(roleFallback, "departmentBadge rendered in an xl:hidden element").toBeTruthy();
   });
 });
+
+/**
+ * Issue #230: between ~641px and ~1001px the registry outgrew its card again
+ * — at 768px the card's content box is 462px against a 695px table
+ * min-content, so Role/Status/Actions sat 56/163/233px past the right edge
+ * with no hint that the table scrolls sideways at all (its scrollbar lives
+ * at the bottom of a ~13,000px-tall container).
+ *
+ * Two levers, both measured with Playwright for the pull request and recorded
+ * in private/230/:
+ *
+ *   1. the Email column exists only from `lg` up (its 162px is what kept
+ *      min-content above the 462px card), and below `lg` the address renders
+ *      under the name with the same clamp and title fallback — the pattern
+ *      issue #220 used for Department. With it gone, the table's min-content
+ *      is ~533px: inside the card at 641px (607px) and 1001px (695px);
+ *   2. what is left over — `lg`-and-below 768px cards, and everything below
+ *      `sm`, where scrolling inside the card is by design (issue #211) — is
+ *      announced by a sticky cue rendered only while
+ *      scrollWidth > clientWidth, so the hint is in the viewport instead of
+ *      next to the unreachable scrollbar.
+ */
+describe("personnel registry fit in the mid band (#230)", () => {
+  it("shows the Email column only from lg up", () => {
+    const emailHead = source.match(/<TableHead[^>]*>\s*Email\s*<\/TableHead>/)?.[0];
+    expect(emailHead, "the Email TableHead").toBeTruthy();
+    expect(emailHead).toMatch(/\bhidden lg:table-cell\b/);
+    expect(emailCell, "the Email TableCell").toMatch(/\bhidden lg:table-cell\b/);
+  });
+
+  it("keeps the address reachable below lg, under the name", () => {
+    const emailFallback = source.match(
+      /<div[^>]*className="lg:hidden[^"]*"[^>]*title=\{staff\.email\}[^>]*>/,
+    )?.[0];
+    expect(emailFallback, "the under-name email div").toBeTruthy();
+    expect(emailFallback, "clamped like the column cell was").toMatch(/\bsm:truncate\b/);
+    expect(emailFallback, "full address on title").toMatch(/title=\{staff\.email\}/);
+  });
+
+  it("renders a sticky scroll cue only while the table overflows the card", () => {
+    expect(source, "cue markup").toMatch(/data-testid="staff-table-scroll-cue"/);
+    expect(source, "cue sticks inside the viewport").toMatch(
+      /data-testid="staff-table-scroll-cue"[\s\S]{0,200}sticky top-0/,
+    );
+    expect(source, "cue shown only on measured overflow").toMatch(
+      /container\.scrollWidth > container\.clientWidth/,
+    );
+  });
+});

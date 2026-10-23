@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -29,6 +29,7 @@ import {
   UserMinus,
   UserPlus,
   Loader2,
+  MoveHorizontal,
 } from "lucide-react";
 import { toast } from "sonner";
 import DataLoadError from "@/components/DataLoadError";
@@ -380,6 +381,15 @@ export default function StaffManagementPage() {
     [staffList, filters, searchQuery]
   );
 
+  // Between `sm` and `lg` the card is narrower than the table's min-content
+  // (issue #230: at 768px the card holds 462px against a ~533px table), so
+  // the table still scrolls sideways inside its card there. Its own
+  // scrollbar sits at the bottom of a ~13,000px-tall container, nowhere near
+  // the viewport, so this flag drives a cue that says a column is out of
+  // view. It is recomputed whenever the row set or the layout changes.
+  const tableWrapRef = useRef<HTMLDivElement | null>(null);
+  const [tableOverflows, setTableOverflows] = useState(false);
+
   // A role filter can only be applied once the catalogue has been read: a
   // profile created before `role_id` existed is recognised by its legacy role
   // text, and only the catalogue says which text belongs to which role. Until
@@ -392,6 +402,23 @@ export default function StaffManagementPage() {
   // before roles existed would be dropped -- so the filtered table and its
   // count are not shown at all rather than shown short.
   const roleFilterUnavailable = parsedFilters.roleId !== null && rolesError !== null;
+
+  useEffect(() => {
+    const wrap = tableWrapRef.current;
+    if (!wrap) {
+      setTableOverflows(false);
+      return;
+    }
+    const update = () => {
+      const container = wrap.querySelector('[data-slot="table-container"]');
+      if (!container) return;
+      setTableOverflows(container.scrollWidth > container.clientWidth);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(wrap);
+    return () => observer.disconnect();
+  }, [filteredStaff, loading, fetchError, roleFilterUnavailable]);
 
   // The label of the role the URL points at. A role the catalogue does not
   // know keeps its filter -- the rows carrying it are simply not rows this
@@ -536,6 +563,26 @@ export default function StaffManagementPage() {
           error={rolesError}
           retryHref="/admin/staff"
         />
+      ) : null}
+
+      {/* Scroll cue for the personnel registry (issue #230). It sits
+          outside the Card on purpose: the Card clips its overflow, which
+          would break `position: sticky`, and this placement keeps the cue
+          pinned to the top of the scrollable main area for as long as the
+          page section is on screen. Rendered only while the table really is
+          wider than its card — below `lg` there, and everywhere below `sm`
+          where scrolling inside the card is by design (issue #211) — because
+          the table's own horizontal scrollbar sits at the bottom of a
+          ~13,000px-tall container, far below the viewport. */}
+      {tableOverflows ? (
+        <p
+          data-testid="staff-table-scroll-cue"
+          className="sticky top-0 z-10 flex items-center gap-2 rounded-md border border-slate-200/80 dark:border-slate-800 bg-card/95 px-4 py-2 text-xs font-medium text-slate-500 dark:text-slate-400 shadow-sm backdrop-blur"
+        >
+          <MoveHorizontal className="h-3.5 w-3.5 shrink-0" />
+          More columns lie sideways — scroll the table inside the card to
+          reach them
+        </p>
       ) : null}
 
       {/* Main Table Card */}
@@ -736,11 +783,16 @@ export default function StaffManagementPage() {
             // paddings are scoped to this table only (issue #211 asked for
             // the shared Table to be left alone) and buy ~24px of headroom
             // against the longest name in the roster.
+            <div ref={tableWrapRef}>
             <Table className="[&_td]:px-1.5 [&_th]:px-1.5">
               <TableHeader>
                 <TableRow className="bg-slate-50/75 dark:bg-slate-900/40">
                   <TableHead className="font-semibold text-slate-700 dark:text-slate-300">Name</TableHead>
-                  <TableHead className="font-semibold text-slate-700 dark:text-slate-300">Email</TableHead>
+                  {/* Email keeps its own column only from `lg` up (issue
+                      #230): below that the card is narrower than the five
+                      columns' min-content and Status/Actions sat past its
+                      right edge. The address renders under the name instead. */}
+                  <TableHead className="hidden lg:table-cell font-semibold text-slate-700 dark:text-slate-300">Email</TableHead>
                   <TableHead className="font-semibold text-slate-700 dark:text-slate-300">Role</TableHead>
                   {/* Department moves under the role below `xl` (issue
                       #220), so the column itself only exists from `xl` up. */}
@@ -785,6 +837,15 @@ export default function StaffManagementPage() {
                         >
                           {staff.full_name}
                         </div>
+                        {/* Below `lg` the Email column does not exist, so
+                            the address lives here — same clamp and same
+                            title fallback the column cell had (issue #230). */}
+                        <div
+                          className="lg:hidden mt-1 font-mono text-xs text-slate-600 dark:text-slate-400 max-w-none sm:max-w-[150px] sm:truncate"
+                          title={staff.email}
+                        >
+                          {staff.email}
+                        </div>
                         {titles.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-1">
                             {titles.map((title) => (
@@ -801,16 +862,15 @@ export default function StaffManagementPage() {
                       </TableCell>
 
                       {/* Email: the one cell whose content is unbounded free
-                          text. The longest address was the widest column in
-                          the table, so the table outgrew the card's content
-                          box and the Status/Actions columns fell outside it at
-                          1280px (issue #211). The cell keeps the kit's nowrap,
-                          so the address is clamped instead and the full text
-                          stays on the title attribute. The clamp is `sm` and
-                          up only: below `sm` the table already scrolls inside
-                          the card and a tooltip cannot be opened by touch, so
-                          the wide cell spells the address out. */}
-                      <TableCell className="font-mono text-xs text-slate-600 dark:text-slate-400">
+                          text, and — from `lg` down — a column the card
+                          cannot hold (issue #230: five columns need ~533px
+                          where the 768px card has 462px), so it exists only
+                          from `lg` up and the address renders under the name
+                          below that. In the column it keeps the kit's nowrap
+                          with the address clamped from `sm` up and the full
+                          text on the title attribute, exactly as measured
+                          for issue #211. */}
+                      <TableCell className="hidden lg:table-cell font-mono text-xs text-slate-600 dark:text-slate-400">
                         <div
                           className="max-w-none sm:max-w-[150px] sm:truncate"
                           title={staff.email}
@@ -877,6 +937,7 @@ export default function StaffManagementPage() {
                 })}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>
