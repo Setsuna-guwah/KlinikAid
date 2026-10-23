@@ -37,6 +37,7 @@ export default async function SpecialistRecordEntryPage(props: PageProps) {
       <div className="space-y-6">
         <DataLoadError
           what="this patient"
+          kind="record"
           error={lookup.error}
           retryHref={`/specialist/patients/${patientId}/record-entry`}
         />

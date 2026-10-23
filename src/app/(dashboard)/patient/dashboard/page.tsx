@@ -154,6 +154,7 @@ export default async function PatientDashboardPage() {
       {metricsError ? (
         <DataLoadError
           what="your dashboard"
+          kind="page"
           error={metricsError}
           retryHref="/patient/dashboard"
         />

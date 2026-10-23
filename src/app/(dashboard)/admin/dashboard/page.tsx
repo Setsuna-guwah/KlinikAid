@@ -194,6 +194,7 @@ export default async function AdminDashboardPage() {
         </div>
         <DataLoadError
           what="the admin dashboard"
+          kind="page"
           error={metricsError}
           retryHref="/admin/dashboard"
         />

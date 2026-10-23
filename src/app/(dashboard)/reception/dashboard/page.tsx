@@ -160,6 +160,7 @@ export default async function ReceptionDashboardPage() {
         </div>
         <DataLoadError
           what="the reception dashboard"
+          kind="page"
           error={metricsError}
           retryHref="/reception/dashboard"
         />

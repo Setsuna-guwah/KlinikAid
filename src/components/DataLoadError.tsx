@@ -2,6 +2,10 @@ import * as React from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import {
+  dataLoadErrorDescription,
+  type DataLoadErrorKind,
+} from "@/components/data-load-error-copy";
 
 interface DataLoadErrorProps {
   /** What was being loaded, phrased for a clinician. Defaults to the page subject. */
@@ -11,9 +15,14 @@ interface DataLoadErrorProps {
   /** Optional retry target. Omit to render a non-interactive notice. */
   retryHref?: string;
   /**
-   * Explains what the failure means for this surface. Defaults to the wording
-   * for a list; a surface that shows one record passes its own, because "this
-   * list is empty" is a claim about a list the surface does not have.
+   * The kind of surface that failed: a list, one record, or a whole page.
+   * Picks the default `description`; "this list is empty" is a claim about a
+   * list, so a single-record or whole-page surface passes "record" or "page".
+   */
+  kind?: DataLoadErrorKind;
+  /**
+   * Explains what the failure means for this surface. Overrides the wording
+   * that `kind` would pick, for a surface that needs its own.
    */
   description?: string;
 }
@@ -34,9 +43,11 @@ export function DataLoadError({
   what = "data",
   error,
   retryHref,
-  description = "This list is empty because the request failed, not because there is nothing to show. Nothing below this message can be trusted until it loads.",
+  kind = "list",
+  description,
 }: DataLoadErrorProps) {
   const detail = extractMessage(error);
+  const body = description ?? dataLoadErrorDescription(kind);
 
   return (
     <Alert
@@ -50,7 +61,7 @@ export function DataLoadError({
         Could not load {what}
       </AlertTitle>
       <AlertDescription className="text-rose-700/90 dark:text-rose-200/80">
-        <p>{description}</p>
+        <p>{body}</p>
         {detail ? (
           <p className="mt-2 font-mono text-xs opacity-80">Reason: {detail}</p>
         ) : null}
