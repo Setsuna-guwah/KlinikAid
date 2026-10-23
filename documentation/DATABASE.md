@@ -214,10 +214,11 @@ migration 38 adds no index for it.
 
 ## Migration History
 
-Historical migrations are retained under `src/lib/db/` through migration 41.
+Historical migrations are retained under `src/lib/db/` through migration 42.
 Migration 39 (one patient row per profile) was applied to production on
 2026-10-22. Migration 40 (lab plausibility guard) and migration 41 (patient
-template submission) were applied on 2026-10-23. All three are in the
+template submission) and migration 42 (patient upload submission) were applied
+on 2026-10-23. All four are in the
 `schema.sql` snapshot.
 
 The following are early milestones, not a fresh-project execution sequence:
@@ -396,7 +397,7 @@ Devs must use these exact values to prevent database inserts from failing the co
 - **Queue Status**: `'waiting'`, `'in_progress'`, `'completed'`, `'cancelled'`.
 - **Document Status**: `'pending'`, `'approved'`, `'rejected'`.
 
-### Migration 42 — patient upload submission (written but not applied)
+### Migration 42 — patient upload submission (applied 2026-10-23)
 
 `src/lib/db/migration_42.sql` extends migration 41's retained receipts to
 `submit_upload`. `submit_patient_upload(...)` and `submit_patient_upload_outcome`
@@ -419,14 +420,15 @@ removed as before. The seal keeps a delete that raced the commit from passing
 the patient's delete policy. Rollback restores the pending row and removes the
 seal; no second/final orphan object exists. This changes the pending path's
 lifecycle, not the existing permitted upload prefix. Deploy the migration before
-the new web confirmation and Edge routes. Keep receipts indefinitely. Do not
-regenerate schema.sql or claim deployment until the owner applies it. Revert
+the new web confirmation and Edge routes. Keep receipts indefinitely. Revert
 callers before rollback; retain seals/trigger for submitted files and retained
-upload receipts. Physical Storage behavior still requires isolated deployment
-verification by the owner; SQL fixtures and mocked Storage do not prove it. The
-trigger on `storage.objects` and the metadata write touch a table owned by
-Supabase Storage: confirm both are permitted and do not disturb the Storage API
-in an isolated project before applying.
+upload receipts. The trigger freezes only the columns that identify the file
+(id, bucket, name, owner, version, metadata, user_metadata, archive and delete
+markers), so Storage bookkeeping and column backfills in later Storage releases
+still pass. Before applying, it was exercised through the real Storage API on a
+disposable local stack at production's Storage migration (73): downloads and
+signed URLs work, delete/upsert/move of a referenced file are refused for the
+patient and the service role, and removal after cancel works.
 
 Detected tests on mobile uploads come from OCR the client wrote into its own
 pending row, so they carry `test_detection_source: "client_ocr_catalog_match"`;

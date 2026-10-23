@@ -1,4 +1,4 @@
--- KlinikAid GENERATED current-state snapshot through migration_41 (2026-10-23).
+-- KlinikAid GENERATED current-state snapshot through migration_42 (2026-10-23).
 -- Fresh Supabase projects ONLY: run this file once in the SQL editor, or:
 --   psql "$FRESH_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f src/lib/db/schema.sql
 -- Requires a Supabase database with auth/storage schemas and platform roles.
@@ -591,6 +591,39 @@ $$;
 
 
 --
+-- Name: protect_submitted_upload_object(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_submitted_upload_object() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO ''
+    AS $$
+begin
+  -- Protected only while a document references the file. A patient cancelling
+  -- a pending document deletes the row first (web patient/submissions), and the
+  -- file must then be removable as before; the seal alone does not keep it.
+  if old.bucket_id = 'patient-documents' and exists (
+       select 1 from public.documents d where d.file_path = old.name
+     ) then
+    -- Only the columns that identify the file are frozen. Storage may touch
+    -- bookkeeping (access timestamps) or backfill columns a later Storage
+    -- release adds; refusing those would break Storage's own upgrades.
+    if tg_op = 'UPDATE' and
+       (new.id, new.bucket_id, new.name, new.owner, new.owner_id, new.version,
+        new.metadata, new.user_metadata, new.archived_at, new.is_delete_marker)
+       is not distinct from
+       (old.id, old.bucket_id, old.name, old.owner, old.owner_id, old.version,
+        old.metadata, old.user_metadata, old.archived_at, old.is_delete_marker)
+       then return new; end if;
+    raise exception 'submitted document file is immutable' using errcode = '42501';
+  end if;
+  if tg_op = 'DELETE' then return old; end if;
+  return new;
+end;
+$$;
+
+
+--
 -- Name: refund_login_attempt(text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -831,6 +864,114 @@ begin
     'status', v_status,
     'first_accepted_at', v_receipt.first_accepted_at,
     'replayable', now() < v_receipt.expires_at);
+end;
+$$;
+
+
+--
+-- Name: submit_patient_upload(uuid, uuid, text, uuid, uuid, jsonb, jsonb, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.submit_patient_upload(p_user_id uuid, p_request_id uuid, p_fingerprint text, p_patient_id uuid, p_assessment_id uuid, p_metadata jsonb, p_pending jsonb, p_object_snapshot jsonb) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO ''
+    AS $_$
+declare
+  v_receipt public.submission_receipts;
+  v_pending public.pending_document_ocr;
+  v_category text := coalesce(nullif(p_metadata ->> 'document_type', ''), 'other');
+  v_existing uuid;
+  v_document uuid;
+  v_object uuid;
+  v_metadata jsonb;
+begin
+  if p_user_id is null or p_request_id is null or p_assessment_id is null
+     or coalesce(p_fingerprint, '') = '' or jsonb_typeof(p_metadata) is distinct from 'object' then
+    raise exception 'missing argument' using errcode = '22023';
+  end if;
+  if not exists (select 1 from public.patients p where p.id = p_patient_id and p.profile_id = p_user_id) then
+    raise exception 'patient does not belong to user' using errcode = '42501';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended('submit_upload:' || p_user_id::text || ':' || p_request_id::text, 0));
+  select * into v_receipt from public.submission_receipts r
+    where r.user_id = p_user_id and r.operation = 'submit_upload' and r.request_id = p_request_id;
+  if found then
+    if now() >= v_receipt.expires_at then return jsonb_build_object('outcome', 'expired'); end if;
+    if v_receipt.document_id is null then return jsonb_build_object('outcome', 'withdrawn'); end if;
+    if v_receipt.fingerprint <> p_fingerprint then return jsonb_build_object('outcome', 'conflict'); end if;
+    return jsonb_build_object('outcome', 'replayed', 'document_id', v_receipt.document_id);
+  end if;
+
+  -- Lock without consuming first: rejected duplicates must retain the assessment.
+  select * into v_pending from public.pending_document_ocr o
+    where o.id = p_assessment_id and o.user_id = p_user_id and o.patient_id = p_patient_id for update;
+  if not found or exists (select 1 from public.documents where source_assessment_id = p_assessment_id) then
+    return jsonb_build_object('outcome', 'assessment_not_found');
+  end if;
+  if p_pending is null or not (to_jsonb(v_pending) @> p_pending) then
+    return jsonb_build_object('outcome', 'assessment_not_found');
+  end if;
+  if v_pending.file_type not in ('application/pdf', 'image/jpeg', 'image/png') or
+    v_pending.file_path !~ ('^' || p_user_id::text || '/pending-submissions/' || p_assessment_id::text || '/source\.' ||
+      case v_pending.file_type when 'application/pdf' then 'pdf' when 'image/png' then 'png' else 'jpe?g' end || '$') then
+    return jsonb_build_object('outcome', 'file_invalid');
+  end if;
+  -- The Storage row is locked through commit. Sealing updates its row version,
+  -- so racing deletes/updates either see the seal or fail serialization.
+  select id, metadata into v_object, v_metadata from storage.objects as object_row
+    where bucket_id = 'patient-documents' and name = v_pending.file_path
+      and to_jsonb(object_row) @> p_object_snapshot for update;
+  if not found or coalesce(v_metadata ->> 'mimetype', '') <> v_pending.file_type or
+     coalesce(v_metadata ->> 'size', '') !~ '^[0-9]+$' then
+    return jsonb_build_object('outcome', 'file_invalid');
+  end if;
+  if (v_metadata ->> 'size')::numeric not between 1 and 5242880 then
+    return jsonb_build_object('outcome', 'file_invalid');
+  end if;
+
+  if v_category <> 'other' then
+    perform pg_advisory_xact_lock(hashtextextended('pending_document:' || p_patient_id::text || ':' || v_category, 0));
+    select d.id into v_existing from public.documents d where d.patient_id = p_patient_id and d.status = 'pending'
+      and coalesce(nullif(case when d.file_type = 'template' then d.extracted_metadata ->> 'template_id'
+        else d.extracted_metadata ->> 'document_type' end, ''), 'other') = v_category order by d.created_at limit 1;
+    if found then return jsonb_build_object('outcome', 'duplicate', 'document_id', v_existing, 'status', 'pending'); end if;
+  end if;
+
+  v_document := gen_random_uuid();
+  -- Seal before document insertion; the trigger permits the first seal only.
+  update storage.objects set metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object('klinikaid_document_id', v_document)
+    where id = v_object;
+  delete from public.pending_document_ocr where id = v_pending.id;
+  insert into public.documents(id, patient_id, uploader_id, file_name, file_path, file_type, status, ocr_text, extracted_metadata, source_assessment_id)
+    values (v_document, p_patient_id, p_user_id, v_pending.file_name, v_pending.file_path, v_pending.file_type,
+      'pending', nullif(btrim(v_pending.ocr_text), ''), p_metadata, p_assessment_id);
+  insert into public.system_logs(user_id, event_type, description, metadata)
+    values (p_user_id, 'DOCUMENT_SUBMITTED', 'Patient submitted an assessed document', jsonb_build_object('document_id', v_document));
+  insert into public.submission_receipts(user_id, operation, request_id, fingerprint, document_id)
+    values (p_user_id, 'submit_upload', p_request_id, p_fingerprint, v_document);
+  return jsonb_build_object('outcome', 'created', 'document_id', v_document);
+end;
+$_$;
+
+
+--
+-- Name: submit_patient_upload_outcome(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.submit_patient_upload_outcome(p_user_id uuid, p_request_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO ''
+    AS $$
+declare r public.submission_receipts; s text;
+begin
+  if p_user_id is null or p_request_id is null then raise exception 'missing argument' using errcode = '22023'; end if;
+  perform pg_advisory_xact_lock(hashtextextended('submit_upload:' || p_user_id::text || ':' || p_request_id::text, 0));
+  select * into r from public.submission_receipts where user_id = p_user_id and operation = 'submit_upload' and request_id = p_request_id;
+  if not found then return jsonb_build_object('state', 'not_found'); end if;
+  if r.document_id is null then return jsonb_build_object('state', 'withdrawn', 'first_accepted_at', r.first_accepted_at); end if;
+  select status into s from public.documents where id = r.document_id;
+  return jsonb_build_object('state', 'committed', 'document_id', r.document_id, 'status', s,
+    'first_accepted_at', r.first_accepted_at, 'replayable', now() < r.expires_at);
 end;
 $$;
 
@@ -1493,7 +1634,7 @@ CREATE TABLE public.submission_receipts (
     document_id uuid,
     first_accepted_at timestamp with time zone DEFAULT now() NOT NULL,
     expires_at timestamp with time zone DEFAULT (now() + '30 days'::interval) NOT NULL,
-    CONSTRAINT submission_receipts_operation_check CHECK ((operation = 'submit_template'::text))
+    CONSTRAINT submission_receipts_operation_check CHECK ((operation = ANY (ARRAY['submit_template'::text, 'submit_upload'::text])))
 );
 
 
@@ -2631,6 +2772,14 @@ GRANT ALL ON FUNCTION public.prevent_system_role_deletion() TO service_role;
 
 
 --
+-- Name: FUNCTION protect_submitted_upload_object(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.protect_submitted_upload_object() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.protect_submitted_upload_object() TO service_role;
+
+
+--
 -- Name: FUNCTION refund_login_attempt(p_email text, p_ip text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -2660,6 +2809,22 @@ GRANT ALL ON FUNCTION public.submit_patient_template(p_user_id uuid, p_request_i
 
 REVOKE ALL ON FUNCTION public.submit_patient_template_outcome(p_user_id uuid, p_request_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.submit_patient_template_outcome(p_user_id uuid, p_request_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION submit_patient_upload(p_user_id uuid, p_request_id uuid, p_fingerprint text, p_patient_id uuid, p_assessment_id uuid, p_metadata jsonb, p_pending jsonb, p_object_snapshot jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.submit_patient_upload(p_user_id uuid, p_request_id uuid, p_fingerprint text, p_patient_id uuid, p_assessment_id uuid, p_metadata jsonb, p_pending jsonb, p_object_snapshot jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.submit_patient_upload(p_user_id uuid, p_request_id uuid, p_fingerprint text, p_patient_id uuid, p_assessment_id uuid, p_metadata jsonb, p_pending jsonb, p_object_snapshot jsonb) TO service_role;
+
+
+--
+-- Name: FUNCTION submit_patient_upload_outcome(p_user_id uuid, p_request_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.submit_patient_upload_outcome(p_user_id uuid, p_request_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.submit_patient_upload_outcome(p_user_id uuid, p_request_id uuid) TO service_role;
 
 
 --
@@ -3135,14 +3300,22 @@ create policy "Allow staff and admin read all patient files"
     public.user_has_permission(auth.uid(), 'storage.patient_documents.read')
   );
 
--- Allow authenticated patients to delete their own pending uploads (migration_36)
+-- Allow authenticated patients to delete their own pending uploads (migration_36).
+-- A file sealed or referenced by a submitted document is refused (migration_42).
 create policy "Allow patient delete own pending files"
   on storage.objects for delete
   using (
     bucket_id = 'patient-documents' AND
     (storage.foldername(name))[1] = auth.uid()::text AND
-    (storage.foldername(name))[2] = 'pending-submissions'
+    (storage.foldername(name))[2] = 'pending-submissions' AND
+    metadata ->> 'klinikaid_document_id' is null AND
+    not exists (select 1 from public.documents d where d.file_path = name)
   );
+
+-- A submitted upload's file is immutable while a document references it (migration_42).
+create trigger protect_submitted_upload_object
+  before delete or update on storage.objects
+  for each row execute function public.protect_submitted_upload_object();
 
 CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users
 FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
@@ -3206,7 +3379,8 @@ INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES
   ('20261021000038', 'legacy_38'),
   ('20261022000039', 'legacy_39'),
   ('20261023000040', 'legacy_40'),
-  ('20261023000041', 'legacy_41')
+  ('20261023000041', 'legacy_41'),
+  ('20261023000042', 'legacy_42')
 ON CONFLICT (version) DO NOTHING;
 
 COMMIT;
