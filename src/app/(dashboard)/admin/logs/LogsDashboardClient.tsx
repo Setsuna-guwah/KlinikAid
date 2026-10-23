@@ -122,7 +122,7 @@ const CustomChartTooltip = ({ active, payload, label }: CustomChartTooltipProps)
         <p className="text-amber-400 font-mono font-medium">
           Est. Cost: <span className="font-bold">${cost.toFixed(4)} USD</span>
         </p>
-        <p className="text-slate-400 text-[10px]">
+        <p className="text-slate-300 text-[10px]">
           Queries: {payload[0].payload.query_count || 0}
         </p>
       </div>

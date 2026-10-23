@@ -21,7 +21,11 @@
     --secondary-foreground: 222.2 47.4% 11.2%;
 
     --muted: 36 30% 90%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    /* Issue #171: the stock slate muted text (46.9%) was tuned for white and
+       measured 3.71:1 on --secondary and 4.17:1 on the beige page. 37%
+       clears 5.39:1 on every warm surface (page, --muted, --secondary,
+       --accent) and 6.91:1 on a white card. */
+    --muted-foreground: 215 19% 37%;
 
     --accent: 36 30% 88%;
     --accent-foreground: 222.2 47.4% 11.2%;
@@ -34,6 +38,21 @@
     --ring: 133 21% 31%;
 
     --radius: 0.75rem;
+
+    /* Issue #171: muted text shades retuned for the warm background.
+       Tailwind's slate-400, slate-500 and teal-600 are tuned for white; on
+       the beige page and its tinted cards they measured 2.0-2.25:1,
+       3.71-4.17:1 and 2.92-3.28:1. These are RGB triples consumed by the
+       `text-*` utilities only (tailwind.config.ts `textColor`), so borders,
+       fills and every `dark:` variant keep Tailwind's own values. Minimum
+       contrast across the page, --muted, --secondary, --accent, white and
+       the slate/amber/teal-50 tints:
+         slate-400  hsl(215 19% 40%)  4.77:1
+         slate-500  hsl(215 19% 37%)  5.39:1 (same as --muted-foreground)
+         teal-600   hsl(175 70% 25%)  4.87:1 */
+    --text-slate-400: 83 99 121;
+    --text-slate-500: 76 91 112;
+    --text-teal-600: 19 108 101;
 
     /* Tailwind v4 theme variables the shadcn "base-nova" ui kit expects.
        v4's shadcn theme derives them from --radius:
@@ -73,6 +92,11 @@
 
     --muted: 217.2 32.6% 17.5%;
     --muted-foreground: 215 20.2% 65.1%;
+
+    /* Tailwind's stock values: dark mode already passes (issue #153). */
+    --text-slate-400: 148 163 184;
+    --text-slate-500: 100 116 139;
+    --text-teal-600: 13 148 136;
 
     --accent: 217.2 32.6% 17.5%;
     --accent-foreground: 210 40% 98%;
