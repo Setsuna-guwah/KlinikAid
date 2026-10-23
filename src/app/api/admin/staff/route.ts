@@ -75,14 +75,18 @@ async function fetchStaffEmails(
   const emails = new Map<string, string>();
   for (let i = 0; i < profileIds.length; i += STAFF_EMAIL_LOOKUP_CONCURRENCY) {
     const batch = profileIds.slice(i, i + STAFF_EMAIL_LOOKUP_CONCURRENCY);
-    const results = await Promise.all(batch.map((id) => adminClient.auth.admin.getUserById(id)));
-    results.forEach((result, index) => {
+    // allSettled: a lookup that throws (not just one that returns an error)
+    // must cost one row its email, not fail the whole registry.
+    const results = await Promise.allSettled(batch.map((id) => adminClient.auth.admin.getUserById(id)));
+    results.forEach((settled, index) => {
       const id = batch[index];
-      if (result.error || !result.data?.user) {
-        console.warn("Staff registry: no Auth user for profile", id, errorText(result.error));
+      const error = settled.status === "rejected" ? settled.reason : settled.value.error;
+      const user = settled.status === "fulfilled" ? settled.value.data?.user : null;
+      if (error || !user) {
+        console.warn("Staff registry: no Auth user for profile", id, errorText(error));
         return;
       }
-      emails.set(id, result.data.user.email || "");
+      emails.set(id, user.email || "");
     });
   }
   return emails;

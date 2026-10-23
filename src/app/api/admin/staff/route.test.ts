@@ -198,6 +198,21 @@ describe("staff registry emails", () => {
     expect(rows.map((row) => row.email)).toEqual(["", "still-here@example.com"]);
   });
 
+  it("keeps the other rows when one Auth lookup throws", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const profiles = [staffProfile(6), staffProfile(7)];
+    mocks.profilesOrder.mockResolvedValue({ data: profiles, error: null });
+    mocks.getUserById.mockImplementation(async (id: string) => {
+      if (id === profiles[0].id) throw new Error("network down");
+      return { data: { user: { id, email: "survivor@example.com" } }, error: null };
+    });
+
+    const response = await GET();
+    expect(response.status).toBe(200);
+    const rows = (await response.json()).data as { email: string }[];
+    expect(rows.map((row) => row.email)).toEqual(["", "survivor@example.com"]);
+  });
+
   it("bounds the Auth lookup concurrency", async () => {
     const profiles = Array.from({ length: 25 }, (_, index) => staffProfile(10 + index));
     mocks.profilesOrder.mockResolvedValue({ data: profiles, error: null });
