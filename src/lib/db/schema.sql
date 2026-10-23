@@ -1,4 +1,4 @@
--- KlinikAid GENERATED current-state snapshot through migration_39 (2026-10-22).
+-- KlinikAid GENERATED current-state snapshot through migration_40 (2026-10-23).
 -- Fresh Supabase projects ONLY: run this file once in the SQL editor, or:
 --   psql "$FRESH_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f src/lib/db/schema.sql
 -- Requires a Supabase database with auth/storage schemas and platform roles.
@@ -324,6 +324,77 @@ begin
   );
 end;
 $$;
+
+
+--
+-- Name: enforce_lab_plausibility(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_lab_plausibility() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $_$
+declare
+  v_test_name text;
+  v_value     text;
+  v_min       numeric;
+  v_max       numeric;
+  v_unit      text;
+begin
+  -- A NULL name or value is the column's NOT NULL constraint to refuse, not a
+  -- plausibility question.
+  if new.test_name is null or new.test_value is null then
+    return new;
+  end if;
+
+  -- Only laboratory rows of department_records: the other departments record
+  -- free-text Findings and Impression, which are not lab parameters. Nested IF
+  -- rather than one `and` expression: plpgsql gives no short-circuit guarantee,
+  -- and new.department does not exist on specialist_records.
+  if TG_TABLE_NAME = 'department_records' then
+    if new.department is distinct from 'laboratory' then
+      return new;
+    end if;
+  end if;
+
+  -- Byte-for-byte, the matching validateLabResult does (no case folding, no
+  -- trimming). Unlisted names -- narrative rows and everything the other
+  -- departments record -- return no row and are not this guard's business.
+  select l.test_name, l.plausible_min, l.plausible_max, l.unit
+    into v_test_name, v_min, v_max, v_unit
+    from public.lab_plausibility_limits l
+   where l.test_name = new.test_name;
+
+  if not found then
+    return new;
+  end if;
+
+  -- Web trims before it tests and stores the trimmed text. The stored value is
+  -- never rewritten here: a value that passes is kept exactly as entered.
+  v_value := btrim(new.test_value);
+
+  -- STRICT_NUMBER_REGEX from validateLabResult.ts, verbatim. Sequence matters:
+  -- two statements, so the cast below can only see a value the regex accepted.
+  if v_value !~ '^-?\d+(\.\d+)?$' then
+    raise exception
+      '%: "%" is not a valid number. Enter digits with an optional decimal point, e.g. 95 or 13.2.',
+      v_test_name, v_value
+      using errcode = '23514';
+  end if;
+
+  -- Inclusive bounds, and web's own sentence: validateLabResult.ts builds
+  -- `${testName}: ${value} ${unit} is outside the possible range
+  -- (${plausibleMin}–${plausibleMax} ${unit}). Check the value and its unit.`
+  if v_value::numeric not between v_min and v_max then
+    raise exception
+      '%: % % is outside the possible range (%–% %). Check the value and its unit.',
+      v_test_name, v_value, v_unit, v_min, v_max, v_unit
+      using errcode = '23514';
+  end if;
+
+  return new;
+end;
+$_$;
 
 
 --
@@ -1061,6 +1132,19 @@ CREATE TABLE public.email_verification_codes (
 
 
 --
+-- Name: lab_plausibility_limits; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.lab_plausibility_limits (
+    test_name text NOT NULL,
+    plausible_min numeric NOT NULL,
+    plausible_max numeric NOT NULL,
+    unit text,
+    CONSTRAINT lab_plausibility_limits_bounds CHECK ((plausible_min <= plausible_max))
+);
+
+
+--
 -- Name: login_attempts; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1332,6 +1416,14 @@ ALTER TABLE ONLY public.email_verification_codes
 
 
 --
+-- Name: lab_plausibility_limits lab_plausibility_limits_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.lab_plausibility_limits
+    ADD CONSTRAINT lab_plausibility_limits_pkey PRIMARY KEY (test_name);
+
+
+--
 -- Name: login_attempts login_attempts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1558,6 +1650,13 @@ CREATE UNIQUE INDEX roles_name_folded_idx ON public.roles USING btree (lower(pub
 
 
 --
+-- Name: department_records department_records_lab_plausibility; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER department_records_lab_plausibility BEFORE INSERT OR UPDATE ON public.department_records FOR EACH ROW EXECUTE FUNCTION public.enforce_lab_plausibility();
+
+
+--
 -- Name: profiles profiles_sync_legacy_role; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -1569,6 +1668,13 @@ CREATE TRIGGER profiles_sync_legacy_role BEFORE INSERT OR UPDATE OF role_id, rol
 --
 
 CREATE TRIGGER roles_sync_profile_legacy_role AFTER UPDATE OF name, is_system, base_role ON public.roles FOR EACH ROW WHEN (((old.name IS DISTINCT FROM new.name) OR (old.is_system IS DISTINCT FROM new.is_system) OR (old.base_role IS DISTINCT FROM new.base_role))) EXECUTE FUNCTION public.sync_profiles_for_changed_role();
+
+
+--
+-- Name: specialist_records specialist_records_lab_plausibility; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER specialist_records_lab_plausibility BEFORE INSERT OR UPDATE ON public.specialist_records FOR EACH ROW EXECUTE FUNCTION public.enforce_lab_plausibility();
 
 
 --
@@ -1789,6 +1895,13 @@ CREATE POLICY "Anyone can read RAG documents" ON public.rag_documents FOR SELECT
 --
 
 COMMENT ON POLICY "Anyone can read RAG documents" ON public.rag_documents IS 'Deliberately public: the clinic-information corpus behind the patient chatbot. embedding is withheld by column privileges (migration_23), not by this policy.';
+
+
+--
+-- Name: lab_plausibility_limits Authenticated users can read lab plausibility limits; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Authenticated users can read lab plausibility limits" ON public.lab_plausibility_limits FOR SELECT TO authenticated USING (true);
 
 
 --
@@ -2084,6 +2197,12 @@ ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.email_verification_codes ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: lab_plausibility_limits; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.lab_plausibility_limits ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: login_attempts; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -2247,6 +2366,14 @@ GRANT ALL ON FUNCTION public.clear_login_attempts(p_email text, p_ip text) TO se
 
 REVOKE ALL ON FUNCTION public.create_custom_role(p_name text, p_description text, p_permission_ids uuid[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.create_custom_role(p_name text, p_description text, p_permission_ids uuid[]) TO authenticated;
+
+
+--
+-- Name: FUNCTION enforce_lab_plausibility(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.enforce_lab_plausibility() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.enforce_lab_plausibility() TO service_role;
 
 
 --
@@ -2455,6 +2582,14 @@ GRANT ALL ON TABLE public.documents TO service_role;
 GRANT ALL ON TABLE public.email_verification_codes TO anon;
 GRANT ALL ON TABLE public.email_verification_codes TO authenticated;
 GRANT ALL ON TABLE public.email_verification_codes TO service_role;
+
+
+--
+-- Name: TABLE lab_plausibility_limits; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.lab_plausibility_limits TO service_role;
+GRANT SELECT ON TABLE public.lab_plausibility_limits TO authenticated;
 
 
 --
@@ -2862,7 +2997,8 @@ INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES
   ('20261018000036', 'legacy_36'),
   ('20261020000037', 'legacy_37'),
   ('20261021000038', 'legacy_38'),
-  ('20261022000039', 'legacy_39')
+  ('20261022000039', 'legacy_39'),
+  ('20261023000040', 'legacy_40')
 ON CONFLICT (version) DO NOTHING;
 
 COMMIT;

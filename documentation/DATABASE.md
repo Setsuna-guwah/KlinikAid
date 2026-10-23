@@ -17,7 +17,7 @@ psql "$FRESH_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f src/lib/db/schema.sql
 Use a database administrator connection with permission to create the app's auth
 triggers and storage policies. Supabase must already supply its `auth`, `storage`,
 `extensions` schemas and platform roles; this is not a standalone Postgres installer.
-The snapshot includes the current state **through migration_39**, system role and
+The snapshot includes the current state **through migration_40**, system role and
 permission reference data, a private `patient-documents` bucket, auth triggers,
 Realtime membership, and migration coverage records. It contains no application data.
 It runs in a transaction and refuses an existing public table before changing anything.
@@ -32,7 +32,7 @@ history need their actual schema checked before choosing a migration starting po
 The snapshot assigns coverage markers `20261017000007`–`20261017000026` to previously
 untracked migrations 07–26, retains the two July versions from `applied/`, and uses
 `20261017000027`–`20261017000029` and `20261018000030`–`20261018000036` for 27–36,
-`20261020000037` for 37, `20261021000038` for 38, and `20261022000039` for 39.
+`20261020000037` for 37, `20261021000038` for 38, `20261022000039` for 39, and `20261023000040` for 40.
 Those markers describe snapshot coverage, not individual historical executions.
 
 ### Regenerating the snapshot
@@ -216,8 +216,8 @@ migration 38 adds no index for it.
 
 Historical migrations are retained under `src/lib/db/` through migration 40.
 Migration 39 (one patient row per profile) was applied to production on
-2026-10-22 and is included in the `schema.sql` snapshot. Migration 40 (lab
-plausibility guard) is **written but not applied**.
+2026-10-22, and migration 40 (lab plausibility guard) on 2026-10-23; both are
+included in the `schema.sql` snapshot.
 
 The following are early milestones, not a fresh-project execution sequence:
 
@@ -230,7 +230,7 @@ The following are early milestones, not a fresh-project execution sequence:
 4. **`migration_10.sql`** (Data Privacy Gate)
    - Added the `accepted_privacy_at` consent timestamp to `public.profiles`.
 
-### Migration 40 — lab plausibility guard (**written but not applied**)
+### Migration 40 — lab plausibility guard (applied 2026-10-23)
 
 `src/lib/db/migration_40.sql` moves the lab plausibility rule out of client
 code, where it lived only in `src/lib/constants.ts` (`plausibleMin` /
@@ -239,7 +239,7 @@ enforced it in the two places it writes lab results, but the mobile app inserts
 into `department_records` and `specialist_records` straight through PostgREST
 under the user's own JWT, so web's check never saw those writes (#204).
 
-What the file adds when it is applied:
+What the file adds:
 
 - **`public.lab_plausibility_limits(test_name, plausible_min, plausible_max, unit)`**
   — the six numeric lab parameters, seeded from `LAB_REFERENCE_RANGES` with an
@@ -287,11 +287,10 @@ implausible value writes none of its rows.
   that count inside its own transaction and raises rather than applying if it
   does not; it never deletes or updates a row to make itself fit.
 
-`src/lib/db/schema.sql` is a generated picture of the live database, so it is
-**not regenerated** by the change that adds this file: regenerate the snapshot
-(the procedure above) only after migration 40 has been applied to the database
-the snapshot describes. Until then, `src/lib/db/migration40LabLimits.test.ts`
-checks that the limits seeded in the migration still equal `constants.ts`.
+Migration 40 was applied to production on 2026-10-23 and is in the `schema.sql`
+snapshot. `src/lib/db/migration40LabLimits.test.ts` checks that the limits seeded
+in the migration still equal `constants.ts`; if a bound in `constants.ts` changes,
+the database row needs a new migration too.
 
 ---
 
