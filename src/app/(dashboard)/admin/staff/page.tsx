@@ -580,8 +580,7 @@ export default function StaffManagementPage() {
           className="sticky top-0 z-10 flex items-center gap-2 rounded-md border border-slate-200/80 dark:border-slate-800 bg-card/95 px-4 py-2 text-xs font-medium text-slate-500 dark:text-slate-400 shadow-sm backdrop-blur"
         >
           <MoveHorizontal className="h-3.5 w-3.5 shrink-0" />
-          More columns lie sideways — scroll the table inside the card to
-          reach them
+          More columns to the right — scroll the table sideways to see them
         </p>
       ) : null}
 
