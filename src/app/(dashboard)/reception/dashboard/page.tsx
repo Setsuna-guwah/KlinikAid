@@ -260,7 +260,7 @@ export default async function ReceptionDashboardPage() {
                 <strong className="text-slate-800 dark:text-slate-200">Validate Patient Info:</strong> Compare the patient name, birthdate, and physician signature on uploaded files with their digital profile before approving.
               </li>
               <li>
-                <strong className="text-slate-800 dark:text-slate-200">AI Confidence Indicators:</strong> Submissions flagged with lower confidence score (&lt; 85%) display in the <strong className="text-amber-700 dark:text-amber-400">Staff Review</strong> column. Pay close attention to their parameters.
+                <strong className="text-slate-800 dark:text-slate-200">Queue Board Columns:</strong> The queue board groups every document by its review status: <strong className="text-slate-800 dark:text-slate-200">Pending</strong> (new uploads awaiting your review), <strong className="text-emerald-700 dark:text-emerald-400">Approved</strong>, and <strong className="text-rose-700 dark:text-rose-400">Rejected</strong>. Every new submission appears in Pending.
               </li>
               <li>
                 <strong className="text-slate-800 dark:text-slate-200">Routing & Vitals:</strong> When approving a document, record any vitals (BP, weight, temperature) provided by the patient to assist the medical technologists.

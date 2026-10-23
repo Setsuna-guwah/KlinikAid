@@ -11,7 +11,6 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
-  Sparkles,
   Database,
   Search,
   ChevronRight,
@@ -39,7 +38,11 @@ interface ReceptionKanbanProps {
   completedTotal: number | null;
 }
 
-type ColumnId = "submitted" | "ai_verified" | "staff_review" | "approved" | "rejected";
+/**
+ * One column per value of the `documents.status` column (`DocumentStatus`), so
+ * every column is one that a document can actually be in (issue #200).
+ */
+type ColumnId = "pending" | "approved" | "rejected";
 
 interface Column {
   id: ColumnId;
@@ -90,29 +93,21 @@ export default function ReceptionKanban({
   const lastSearchedQuery = useRef("");
   const [showCompleted, setShowCompleted] = useState(false);
   const [visible, setVisible] = useState<Record<ColumnId, number>>({
-    submitted: PAGE_SIZE,
-    ai_verified: PAGE_SIZE,
-    staff_review: PAGE_SIZE,
+    pending: PAGE_SIZE,
     approved: PAGE_SIZE,
     rejected: PAGE_SIZE,
   });
-  const [activeTab, setActiveTab] = useState<ColumnId>("submitted");
+  const [activeTab, setActiveTab] = useState<ColumnId>("pending");
 
-  // Helper to categorize document into Kanban columns
+  // Bucket by the document's `status` column. The board used to read an
+  // `extracted_metadata.ocr_confidence_score` that nothing in the codebase has
+  // ever written, which left "AI Verified" and "Staff Review" structurally
+  // unreachable (issue #200). Anything not yet approved or rejected is
+  // actionable, so it lands in "pending" rather than disappearing.
   const getColumn = (doc: Document): ColumnId => {
     if (doc.status === "approved") return "approved";
     if (doc.status === "rejected") return "rejected";
-    
-    const metadata = doc.extracted_metadata as { ocr_confidence_score?: number } | null;
-    const score = metadata?.ocr_confidence_score;
-    
-    if (score === undefined || score === null) {
-      return "submitted";
-    }
-    if (score >= 85) {
-      return "ai_verified";
-    }
-    return "staff_review";
+    return "pending";
   };
 
   // Realtime Supabase Subscription
@@ -250,9 +245,7 @@ export default function ReceptionKanban({
 
   // Group documents by column
   const columnsData: Record<ColumnId, Document[]> = {
-    submitted: [],
-    ai_verified: [],
-    staff_review: [],
+    pending: [],
     approved: [],
     rejected: [],
   };
@@ -286,30 +279,12 @@ export default function ReceptionKanban({
 
   const columns: Column[] = [
     {
-      id: "submitted",
-      title: "Submitted",
-      shortTitle: "Submitted",
-      description: "Direct patient web uploads waiting for processing",
+      id: "pending",
+      title: "Pending",
+      shortTitle: "Pending",
+      description: "Uploaded by patients, awaiting reception review",
       bar: "bg-slate-400 dark:bg-slate-500",
       icon: <Database className="h-4 w-4 text-slate-500 dark:text-slate-400" />,
-      completed: false,
-    },
-    {
-      id: "ai_verified",
-      title: "AI Verified",
-      shortTitle: "AI verified",
-      description: "Processed by AI with high confidence score (≥85%)",
-      bar: "bg-primary",
-      icon: <Sparkles className="h-4 w-4 text-primary" />,
-      completed: false,
-    },
-    {
-      id: "staff_review",
-      title: "Staff Review",
-      shortTitle: "Review",
-      description: "Needs receptionist verification due to lower confidence (<85%)",
-      bar: "bg-amber-500 dark:bg-amber-600",
-      icon: <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />,
       completed: false,
     },
     {
@@ -371,17 +346,10 @@ export default function ReceptionKanban({
     if (doc.file_type === "template") {
       return <span className={cn(base, "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200")}>Structured form</span>;
     }
-    const metadata = doc.extracted_metadata as { ocr_confidence_score?: number } | null;
-    const score = metadata?.ocr_confidence_score;
-    if (score === undefined || score === null) {
-      return <span className={cn(base, "bg-slate-200/70 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200")}>Web upload</span>;
-    }
-    if (score >= 85) return <span className={cn(base, "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200")}>AI {score}%</span>;
-    if (score >= 70) return <span className={cn(base, "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200")}>AI {score}%</span>;
-    return <span className={cn(base, "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200")}>AI {score}%</span>;
+    return <span className={cn(base, "bg-slate-200/70 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200")}>Web upload</span>;
   };
 
-  const renderCard = (doc: Document, colId: ColumnId) => {
+  const renderCard = (doc: Document) => {
     const metadata = doc.extracted_metadata as { selected_tests?: DetectedClinicTest[] } | null;
     const tests = Array.isArray(metadata?.selected_tests) ? metadata.selected_tests : [];
     const shown = tests.slice(0, 2);
@@ -399,8 +367,7 @@ export default function ReceptionKanban({
           className={cn(
             "group block rounded-md border border-slate-200 bg-white px-3 py-2 transition-colors hover:border-slate-400",
             "dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700",
-            focusRingInsetClass,
-            colId === "staff_review" && "border-l-[3px] border-l-amber-500"
+            focusRingInsetClass
           )}
         >
           <div className="flex items-center justify-between gap-2">
@@ -455,7 +422,7 @@ export default function ReceptionKanban({
             {searching ? "No matches" : "No documents"}
           </p>
         ) : (
-          <ul className="space-y-2">{list.slice(0, shownCount).map((doc) => renderCard(doc, col.id))}</ul>
+          <ul className="space-y-2">{list.slice(0, shownCount).map((doc) => renderCard(doc))}</ul>
         )}
         {remaining > 0 && (
           <button

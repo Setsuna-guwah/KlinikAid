@@ -2,7 +2,7 @@ import React from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
 export default function ReceptionQueueLoading() {
-  const columns = ["Submitted", "AI Verified", "Staff Review", "Approved", "Rejected"];
+  const columns = ["Pending", "Approved", "Rejected"];
   
   return (
     <div className="space-y-6 animate-pulse">
@@ -13,7 +13,7 @@ export default function ReceptionQueueLoading() {
       </div>
 
       {/* Kanban Board Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 h-[calc(100vh-220px)] min-h-[500px]">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 h-[calc(100vh-220px)] min-h-[500px]">
         {columns.map((col, idx) => (
           <div 
             key={idx} 

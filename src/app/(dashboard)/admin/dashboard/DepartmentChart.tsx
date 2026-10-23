@@ -29,7 +29,11 @@ export default function DepartmentChart({ data }: { data: ChartData[] }) {
 
   return (
     <div className="w-full h-[300px]">
-      <ResponsiveContainer width="100%" height="100%">
+      {/* The parent is a fixed h-[300px], so the height needs no measurement.
+          A numeric height makes the first render's calculated height positive,
+          which suppresses Recharts' width(-1)/height(-1) warning before the
+          ResizeObserver reports the real width; width stays responsive. */}
+      <ResponsiveContainer width="100%" height={300}>
         <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-slate-100 dark:stroke-slate-800" />
           <XAxis 

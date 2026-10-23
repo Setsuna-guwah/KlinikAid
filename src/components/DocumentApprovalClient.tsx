@@ -88,9 +88,7 @@ export default function DocumentApprovalClient({ document: initialDoc, templateR
   const [isPending, startTransition] = useTransition();
 
   const metadata = doc.extracted_metadata as unknown as {
-    ocr_confidence_score?: number;
     ocr_flags?: string[];
-    field_confidences?: Record<string, number>;
     reviewed_at?: string;
     reviewed_by_name?: string;
     review_notes?: string;
@@ -101,9 +99,7 @@ export default function DocumentApprovalClient({ document: initialDoc, templateR
     test_detection_source?: string;
     test_detection_version?: number;
   } | null;
-  const ocrConfidence = metadata?.ocr_confidence_score as number | undefined;
   const ocrFlags = (metadata?.ocr_flags || []) as string[];
-  const fieldConfidences = metadata?.field_confidences as Record<string, number> | undefined;
   const destinationDepartmentLabel = metadata?.destination_department_label
     || (metadata?.destination_department ? DEPARTMENTS[metadata.destination_department]?.label : null);
   const selectedTests = metadata?.selected_tests || [];
@@ -215,25 +211,6 @@ export default function DocumentApprovalClient({ document: initialDoc, templateR
     } finally {
       setIsOpeningFile(false);
     }
-  };
-
-  // Style helper for confidence colors
-  const getConfidenceColorClass = (score: number) => {
-    if (score >= 85) return "bg-emerald-500";
-    if (score >= 70) return "bg-amber-500";
-    return "bg-rose-500";
-  };
-
-  const getConfidenceTextColorClass = (score: number) => {
-    if (score >= 85) return "text-emerald-600 dark:text-emerald-400";
-    if (score >= 70) return "text-amber-600 dark:text-amber-400";
-    return "text-rose-600 dark:text-rose-400";
-  };
-
-  const getConfidenceLabel = (score: number) => {
-    if (score >= 85) return "High Confidence (Approved)";
-    if (score >= 70) return "Medium Confidence (Staff Review)";
-    return "Low Confidence (Verify Carefully)";
   };
 
   // Patient display name helper
@@ -462,16 +439,18 @@ export default function DocumentApprovalClient({ document: initialDoc, templateR
           </Card>
         </div>
 
-        {/* PANEL 3: Right - ML Kit Confidence (Col span 3) */}
+        {/* PANEL 3: Right - Validation checks (Col span 3) */}
         <div className="lg:col-span-3 space-y-6">
           <Card className="border border-slate-200/80 dark:border-slate-800 shadow-sm">
             <CardHeader className="pb-3 border-b border-slate-100 dark:border-slate-800/80">
               <CardTitle className="text-sm font-bold text-slate-950 dark:text-white flex items-center gap-2">
                 <ShieldCheck className="h-4 w-4 text-accentBlue-500" />
-                AI Validation Report
+                Validation Report
               </CardTitle>
               <CardDescription className="text-xs">
-                OCR and data-matching validation metrics
+                {doc.file_type === "template"
+                  ? "Automated checks run against the stored answers"
+                  : "What reception should verify before approving"}
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-4 space-y-5">
@@ -521,69 +500,10 @@ export default function DocumentApprovalClient({ document: initialDoc, templateR
                   </div>
                 </div>
               ) : (
-                <>
-                  {/* Overall Confidence */}
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-end">
-                      <span className="text-xs font-semibold text-slate-500">Overall AI Confidence</span>
-                      <span className={`text-sm font-extrabold ${ocrConfidence !== undefined ? getConfidenceTextColorClass(ocrConfidence) : "text-slate-400"}`}>
-                        {ocrConfidence !== undefined ? `${ocrConfidence}%` : "No OCR Score"}
-                      </span>
-                    </div>
-                    {ocrConfidence !== undefined ? (
-                      <div className="space-y-1.5">
-                        <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all duration-500 ${getConfidenceColorClass(ocrConfidence)}`}
-                            style={{ width: `${ocrConfidence}%` }}
-                          />
-                        </div>
-                        <div className="text-[10px] font-semibold text-slate-400">
-                          {getConfidenceLabel(ocrConfidence)}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-[10px] text-slate-400 italic">
-                        Confidence score not available for this upload.
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Field Confidences */}
-                  {fieldConfidences && Object.keys(fieldConfidences).length > 0 && (
-                    <div className="space-y-3.5 pt-2 border-t border-slate-100 dark:border-slate-900">
-                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Field Matching Scores</span>
-                      <div className="space-y-3">
-                        {Object.entries(fieldConfidences).map(([field, score]) => {
-                          // Map field key to friendly text
-                          const friendlyLabels: Record<string, string> = {
-                            patient_name: "Patient Name",
-                            date_of_birth: "Date of Birth",
-                            test_type: "Test Type",
-                            clinic_header: "Clinic Header",
-                            doctor_signature: "Doctor Signature",
-                          };
-                          const label = friendlyLabels[field] || field.replace(/_/g, " ");
-
-                          return (
-                            <div key={field} className="space-y-1">
-                              <div className="flex justify-between items-center text-[10px]">
-                                <span className="capitalize font-medium text-slate-600 dark:text-slate-400">{label}</span>
-                                <span className={`font-bold ${getConfidenceTextColorClass(score)}`}>{score}%</span>
-                              </div>
-                              <div className="w-full bg-slate-100 dark:bg-slate-800/80 h-1.5 rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full transition-all duration-300 ${getConfidenceColorClass(score)}`}
-                                  style={{ width: `${score}%` }}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Uploaded documents run through no automated checks. Review
+                  the file against the patient&apos;s profile before approving.
+                </p>
               )}
             </CardContent>
           </Card>
@@ -633,7 +553,7 @@ export default function DocumentApprovalClient({ document: initialDoc, templateR
             <div className="space-y-1 max-w-xl">
               <span className="font-bold text-slate-700 dark:text-slate-300">Receptionist Actions</span>
               <p className="text-slate-400 leading-normal">
-                Carefully review the matching metrics. Click Approve to assign the patient to a clinic department queue, or Reject to request a clearer document upload.
+                Carefully review the document. Click Approve to assign the patient to a clinic department queue, or Reject to request a clearer document upload.
               </p>
               {templateReview?.status === "attention" && (
                 <p className="text-amber-700 dark:text-amber-400 font-semibold flex items-center gap-1">

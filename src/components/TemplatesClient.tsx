@@ -20,7 +20,7 @@ import { CLINIC_TEMPLATES, DocumentTemplate, TEMPLATE_DATE_MIN, templateFieldMax
 import { latestTemplateDate, todayInPh } from "@/lib/documents/templateChecks";
 import { submitTemplateDocumentAction } from "@/app/(dashboard)/patient/templates/actions";
 import type { PatientIdentityProps } from "@/app/(dashboard)/patient/templates/page";
-import { focusRingClass } from "@/lib/focus-ring";
+import { focusRingClass, focusRingInsetClass } from "@/lib/focus-ring";
 
 interface TemplatesClientProps {
   patientIdentity: PatientIdentityProps;
@@ -128,11 +128,20 @@ export default function TemplatesClient({ patientIdentity }: TemplatesClientProp
       {!selectedTemplate ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 pt-2">
           {CLINIC_TEMPLATES.map(t => (
-            <Card 
-              key={t.id} 
-              onClick={() => handleSelectTemplate(t)}
-              className="border border-slate-200/80 dark:border-slate-800 hover:border-indigo-500 hover:shadow-md cursor-pointer transition flex flex-col h-full group bg-slate-50/10 hover:bg-white dark:hover:bg-slate-900/50"
+            <Card
+              key={t.id}
+              className="relative border border-slate-200/80 dark:border-slate-800 hover:border-indigo-500 hover:shadow-md cursor-pointer transition flex flex-col h-full group bg-slate-50/10 hover:bg-white dark:hover:bg-slate-900/50"
             >
+              {/* Keyboard entry point (#201). The Card is a div and cannot be a
+                  button, so a stretched button covers it. Card is
+                  `overflow-hidden`, which clips an outset ring on all four
+                  sides, hence the inset indicator (issue #192). */}
+              <button
+                type="button"
+                onClick={() => handleSelectTemplate(t)}
+                aria-label={`Open ${t.name}`}
+                className={`absolute inset-0 cursor-pointer ${focusRingInsetClass}`}
+              />
               <CardHeader className="pb-3 flex-grow">
                 <div className="h-8 w-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mb-3 group-hover:bg-indigo-600 group-hover:text-white transition duration-200">
                   <FileText className="h-4.5 w-4.5" />

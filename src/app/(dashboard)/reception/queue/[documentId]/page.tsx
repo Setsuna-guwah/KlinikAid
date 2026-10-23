@@ -5,6 +5,7 @@ import { requirePermission } from "@/lib/auth/helpers";
 import DocumentApprovalClient from "@/components/DocumentApprovalClient";
 import DataLoadError from "@/components/DataLoadError";
 import { Document } from "@/types";
+import { classifyRead } from "@/lib/read-outcome";
 import { reviewTemplateSubmission } from "@/lib/documents/templateChecks";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export default async function DocumentDetailsPage(props: DocumentDetailsPageProp
   const { documentId } = params;
 
   // 2. Fetch document with patient and uploader profiles
-  const { data: rawDoc, error } = await supabase
+  const documentRead = classifyRead(await supabase
     .from("documents")
     .select(`
       *,
@@ -44,30 +45,31 @@ export default async function DocumentDetailsPage(props: DocumentDetailsPageProp
       )
     `)
     .eq("id", documentId)
-    .single();
+    .single());
 
   // Distinguish "this document does not exist" from "we could not load it".
   // Collapsing both into notFound() tells reception the document is absent
   // when it may exist and simply be unreachable -- and a referral they stop
-  // looking for is a referral that never gets triaged.
-  if (error) {
-    console.error(`Error fetching document details for ID ${documentId}:`, error);
+  // looking for is a referral that never gets triaged. .single() reports zero
+  // rows as a PGRST116 error, so classifyRead is what can tell the two apart.
+  if (documentRead.kind === "failed") {
+    console.error(`Error fetching document details for ID ${documentId}:`, documentRead.error);
     return (
       <div className="space-y-6">
         <DataLoadError
           what="this document"
-          error={error}
+          error={documentRead.error}
           retryHref={`/reception/queue/${documentId}`}
         />
       </div>
     );
   }
 
-  if (!rawDoc) {
+  if (documentRead.kind === "absent") {
     notFound();
   }
 
-  const document = rawDoc as Document;
+  const document = documentRead.data as Document;
   // Checked here, against what is stored, rather than trusted from submission
   // time: rows written before the submit-side bounds existed are re-checked too.
   const templateReview =
