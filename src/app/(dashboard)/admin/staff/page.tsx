@@ -785,9 +785,15 @@ export default function StaffManagementPage() {
                           box and the Status/Actions columns fell outside it at
                           1280px (issue #211). The cell keeps the kit's nowrap,
                           so the address is clamped instead and the full text
-                          stays on the title attribute. */}
+                          stays on the title attribute. The clamp is `sm` and
+                          up only: below `sm` the table already scrolls inside
+                          the card and a tooltip cannot be opened by touch, so
+                          the wide cell spells the address out. */}
                       <TableCell className="font-mono text-xs text-slate-600 dark:text-slate-400">
-                        <div className="max-w-[150px] truncate" title={staff.email}>
+                        <div
+                          className="max-w-none sm:max-w-[150px] sm:truncate"
+                          title={staff.email}
+                        >
                           {staff.email}
                         </div>
                       </TableCell>
