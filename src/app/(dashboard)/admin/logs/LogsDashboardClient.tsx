@@ -25,6 +25,7 @@ import { toast } from "sonner";
 import { SYSTEM_EVENT_TYPES, GEMINI_BLENDED_USD_PER_1M_TOKENS, CHART_COLORS } from "@/lib/constants";
 import LogEventBadge from "@/components/LogEventBadge";
 import DataLoadError from "@/components/DataLoadError";
+import { CHART_DATA_LOAD_ERROR_DESCRIPTION } from "@/components/data-load-error-copy";
 import { fetchJson, type ApiError } from "@/lib/fetch-json";
 import { formatPhTime } from "@/lib/utils";
 import { isInvertedRange, phtDayEnd, phtDayStart } from "@/lib/logs/system-log-query";
@@ -1024,7 +1025,11 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
                 </div>
               ) : costError ? (
                 <div className="h-72 flex items-center justify-center p-4">
-                  <DataLoadError what="API token consumption" error={costError} />
+                  <DataLoadError
+                    what="API token consumption"
+                    error={costError}
+                    description={CHART_DATA_LOAD_ERROR_DESCRIPTION}
+                  />
                 </div>
               ) : !costLoaded ? (
                 <div className="h-72 flex items-center justify-center text-slate-500 dark:text-slate-400 text-sm">
