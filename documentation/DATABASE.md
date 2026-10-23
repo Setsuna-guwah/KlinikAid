@@ -214,9 +214,10 @@ migration 38 adds no index for it.
 
 ## Migration History
 
-Historical migrations are retained under `src/lib/db/` through migration 39.
+Historical migrations are retained under `src/lib/db/` through migration 40.
 Migration 39 (one patient row per profile) was applied to production on
-2026-10-22 and is included in the `schema.sql` snapshot.
+2026-10-22 and is included in the `schema.sql` snapshot. Migration 40 (lab
+plausibility guard) is **written but not applied**.
 
 The following are early milestones, not a fresh-project execution sequence:
 
@@ -228,6 +229,69 @@ The following are early milestones, not a fresh-project execution sequence:
    - Created the private `patient-documents` bucket and added storage policies.
 4. **`migration_10.sql`** (Data Privacy Gate)
    - Added the `accepted_privacy_at` consent timestamp to `public.profiles`.
+
+### Migration 40 — lab plausibility guard (**written but not applied**)
+
+`src/lib/db/migration_40.sql` moves the lab plausibility rule out of client
+code, where it lived only in `src/lib/constants.ts` (`plausibleMin` /
+`plausibleMax`, enforced by `src/lib/records/validateLabResult.ts`). Web
+enforced it in the two places it writes lab results, but the mobile app inserts
+into `department_records` and `specialist_records` straight through PostgREST
+under the user's own JWT, so web's check never saw those writes (#204).
+
+What the file adds when it is applied:
+
+- **`public.lab_plausibility_limits(test_name, plausible_min, plausible_max, unit)`**
+  — the six numeric lab parameters, seeded from `LAB_REFERENCE_RANGES` with an
+  upsert, so a re-run restores what `constants.ts` declares. RLS is enabled:
+  `authenticated` has a SELECT policy and the SELECT grant (clients may read
+  the limits), `anon` and `authenticated` hold no write privilege and there is
+  no write policy, so no client can widen a bound.
+- **`public.enforce_lab_plausibility()`**, a `BEFORE INSERT OR UPDATE` trigger
+  on `department_records` and `specialist_records`. It is `SECURITY DEFINER`
+  with `search_path = ''`, so it reads the limits itself instead of through the
+  caller's RLS: RLS removes rows rather than raising, so under
+  `SECURITY INVOKER` a writer that could not read the limits would be checked
+  against nothing and pass.
+- The check runs only where `test_name` matches a limited parameter byte for
+  byte — the validator's own matching, no case folding and no trimming — and,
+  for `department_records`, only where `department = 'laboratory'`. Narrative
+  rows (`Findings`, `Impression`), the free-text names the other departments
+  record, and every other name are left alone, and a stored `test_value` is
+  never rewritten.
+
+**Error shape clients will see.** A refused write is SQLSTATE `23514`
+(`check_violation`) carrying web's own refusal sentence, e.g.
+
+```
+Fasting Blood Sugar (FBS): -5 mg/dL is outside the possible range (5–3000 mg/dL). Check the value and its unit.
+Fasting Blood Sugar (FBS): "5." is not a valid number. Enter digits with an optional decimal point, e.g. 95 or 13.2.
+```
+
+PostgREST maps `23514` to **HTTP 400** with the body
+`{"code":"23514","message":"<that sentence>","details":null,"hint":null}`,
+so through supabase-js it is `error.code === "23514"` with the sentence in
+`error.message`. The statement aborts as a whole, so a batch that contains one
+implausible value writes none of its rows.
+
+- **Mobile** writes directly, so that is the shape it should show.
+- **Web's own lab paths validate before they insert** and so never reach the
+  trigger: `POST /api/department/records` answers **400** with the same sentence
+  (`ValidationError` through `handleRouteError`), and the specialist record
+  action returns `{ success: false, error: "<same sentence>" }`. If a write did
+  reach the trigger through the department route, that route's catch-all would
+  report its usual **500** `"Failed to save department records"`, with the
+  refusal sentence only in `debug_details` in development.
+- **The pre-flight query** in the file's header counts the rows the rule would
+  refuse and must return zero before anything is applied. The migration repeats
+  that count inside its own transaction and raises rather than applying if it
+  does not; it never deletes or updates a row to make itself fit.
+
+`src/lib/db/schema.sql` is a generated picture of the live database, so it is
+**not regenerated** by the change that adds this file: regenerate the snapshot
+(the procedure above) only after migration 40 has been applied to the database
+the snapshot describes. Until then, `src/lib/db/migration40LabLimits.test.ts`
+checks that the limits seeded in the migration still equal `constants.ts`.
 
 ---
 

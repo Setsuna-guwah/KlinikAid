@@ -1,6 +1,16 @@
 import React from "react";
 
-export default function DashboardLoading() {
+/**
+ * Generic loading skeleton for a dashboard section page.
+ *
+ * This used to live as `src/app/(dashboard)/loading.tsx`, a Suspense boundary
+ * over the whole route group. That boundary streamed the shell -- and with it
+ * the 200 status -- before any page's awaited data read could run notFound(),
+ * so every unknown id under /reception/queue and /specialist/patients answered
+ * HTTP 200 with the not-found UI (issue #213). The boundary now exists only per
+ * section, on sections whose routes never call notFound() after an await.
+ */
+export default function DashboardSectionSkeleton() {
   return (
     <div className="space-y-6 w-full animate-pulse">
       {/* Page Header Skeleton */}

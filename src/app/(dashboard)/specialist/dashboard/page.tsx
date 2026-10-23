@@ -193,6 +193,7 @@ export default async function SpecialistDashboardPage() {
         <div className="mb-6">
           <DataLoadError
             what="your specialist dashboard"
+            kind="page"
             error={loadErrors[0]}
             retryHref="/specialist/dashboard"
           />

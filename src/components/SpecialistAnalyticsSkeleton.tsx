@@ -1,7 +1,7 @@
 import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 
-export default function SpecialistAnalyticsLoading() {
+export default function SpecialistAnalyticsSkeleton() {
   return (
     <div className="space-y-6 animate-pulse">
       {/* Header Loading State */}

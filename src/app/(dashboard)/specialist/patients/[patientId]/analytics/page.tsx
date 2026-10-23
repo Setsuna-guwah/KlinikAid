@@ -1,8 +1,9 @@
-import React from "react";
+import React, { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { requirePermission } from "@/lib/auth/helpers";
 import { createClient } from "@/lib/supabase/server";
 import SpecialistAnalyticsClient from "@/components/SpecialistAnalyticsClient";
+import SpecialistAnalyticsSkeleton from "@/components/SpecialistAnalyticsSkeleton";
 import DataLoadError from "@/components/DataLoadError";
 import { classifyRead } from "@/lib/read-outcome";
 
@@ -56,6 +57,7 @@ export default async function PatientAnalyticsPage(props: PatientAnalyticsPagePr
       <div className="space-y-6">
         <DataLoadError
           what="this patient"
+          kind="record"
           error={patientLookup.error}
           retryHref={`/specialist/patients/${patientId}/analytics`}
         />
@@ -68,6 +70,38 @@ export default async function PatientAnalyticsPage(props: PatientAnalyticsPagePr
   }
 
   const patient = patientLookup.data;
+
+  // The existence check above has to finish before the first byte streams:
+  // once a Suspense boundary commits the shell it also commits the 200
+  // status, and notFound() can no longer turn it into a 404 (issue #213).
+  // The reads below make no not-found claim, so they stream behind the
+  // same skeleton this page streamed behind before.
+  return (
+    <Suspense fallback={<SpecialistAnalyticsSkeleton />}>
+      <SpecialistAnalyticsBody
+        patientId={patient.id}
+        patientName={`${patient.first_name} ${patient.last_name}`}
+        dob={patient.date_of_birth}
+        gender={patient.gender}
+      />
+    </Suspense>
+  );
+}
+
+interface SpecialistAnalyticsBodyProps {
+  patientId: string;
+  patientName: string;
+  dob: string;
+  gender: string;
+}
+
+async function SpecialistAnalyticsBody({
+  patientId,
+  patientName,
+  dob,
+  gender
+}: SpecialistAnalyticsBodyProps) {
+  const supabase = await createClient();
 
   // 2. Fetch distinct metrics (test names) recorded for this patient from specialist_records
   const metricsRead = classifyRead(
@@ -147,7 +181,7 @@ export default async function PatientAnalyticsPage(props: PatientAnalyticsPagePr
     return (
       <div className="space-y-6">
         <DataLoadError
-          what={`analytics for ${patient.first_name} ${patient.last_name}`}
+          what={`analytics for ${patientName}`}
           error={metricsRead.error}
           retryHref={`/specialist/patients/${patientId}/analytics`}
         />
@@ -161,7 +195,7 @@ export default async function PatientAnalyticsPage(props: PatientAnalyticsPagePr
     return (
       <div className="space-y-6">
         <DataLoadError
-          what={`results for ${patient.first_name} ${patient.last_name}`}
+          what={`results for ${patientName}`}
           error={recordsErrorForView}
           retryHref={`/specialist/patients/${patientId}/analytics`}
         />
@@ -171,11 +205,11 @@ export default async function PatientAnalyticsPage(props: PatientAnalyticsPagePr
 
   return (
     <SpecialistAnalyticsClient
-      patientId={patient.id}
-      patientName={`${patient.first_name} ${patient.last_name}`}
-      patientCode={`PT-${patient.id.substring(0, 8).toUpperCase()}`}
-      dob={patient.date_of_birth}
-      gender={patient.gender}
+      patientId={patientId}
+      patientName={patientName}
+      patientCode={`PT-${patientId.substring(0, 8).toUpperCase()}`}
+      dob={dob}
+      gender={gender}
       initialMetrics={distinctMetrics}
       initialRecords={initialRecords}
     />
