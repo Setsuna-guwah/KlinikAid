@@ -17,7 +17,7 @@ psql "$FRESH_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f src/lib/db/schema.sql
 Use a database administrator connection with permission to create the app's auth
 triggers and storage policies. Supabase must already supply its `auth`, `storage`,
 `extensions` schemas and platform roles; this is not a standalone Postgres installer.
-The snapshot includes the current state **through migration_40**, system role and
+The snapshot includes the current state **through migration_41**, system role and
 permission reference data, a private `patient-documents` bucket, auth triggers,
 Realtime membership, and migration coverage records. It contains no application data.
 It runs in a transaction and refuses an existing public table before changing anything.
@@ -32,7 +32,7 @@ history need their actual schema checked before choosing a migration starting po
 The snapshot assigns coverage markers `20261017000007`–`20261017000026` to previously
 untracked migrations 07–26, retains the two July versions from `applied/`, and uses
 `20261017000027`–`20261017000029` and `20261018000030`–`20261018000036` for 27–36,
-`20261020000037` for 37, `20261021000038` for 38, `20261022000039` for 39, and `20261023000040` for 40.
+`20261020000037` for 37, `20261021000038` for 38, `20261022000039` for 39, `20261023000040` for 40, and `20261023000041` for 41.
 Those markers describe snapshot coverage, not individual historical executions.
 
 ### Regenerating the snapshot
@@ -216,9 +216,9 @@ migration 38 adds no index for it.
 
 Historical migrations are retained under `src/lib/db/` through migration 41.
 Migration 39 (one patient row per profile) was applied to production on
-2026-10-22, and migration 40 (lab plausibility guard) on 2026-10-23; both are
-included in the `schema.sql` snapshot. Migration 41 (patient template submission) is
-**written but not applied**.
+2026-10-22. Migration 40 (lab plausibility guard) and migration 41 (patient
+template submission) were applied on 2026-10-23. All three are in the
+`schema.sql` snapshot.
 
 The following are early milestones, not a fresh-project execution sequence:
 
@@ -293,7 +293,7 @@ snapshot. `src/lib/db/migration40LabLimits.test.ts` checks that the limits seede
 in the migration still equal `constants.ts`; if a bound in `constants.ts` changes,
 the database row needs a new migration too.
 
-### Migration 41 — patient template submission (**written but not applied**)
+### Migration 41 — patient template submission (applied 2026-10-23)
 
 `src/lib/db/migration_41.sql` gives patient form templates one server
 operation shared by web and mobile (Stage 1 of the patient submission
@@ -343,7 +343,8 @@ Outcomes, returned as `jsonb` rather than raised:
 **Ordering:** apply before deploying the `patient-document-submission` Edge
 function or the web deploy whose `patient/templates` action calls it. Nothing
 calls the function before then, so applying it alone changes no behaviour.
-Regenerate `schema.sql` after applying.
+Applied to production on 2026-10-23, before #215 merged and the function was
+deployed; `schema.sql` includes it.
 
 **Legacy duplicate report.** Rows written before migration 41 may already have
 more than one pending document per category; the rule applies only to new

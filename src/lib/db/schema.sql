@@ -1,4 +1,4 @@
--- KlinikAid GENERATED current-state snapshot through migration_40 (2026-10-23).
+-- KlinikAid GENERATED current-state snapshot through migration_41 (2026-10-23).
 -- Fresh Supabase projects ONLY: run this file once in the SQL editor, or:
 --   psql "$FRESH_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f src/lib/db/schema.sql
 -- Requires a Supabase database with auth/storage schemas and platform roles.
@@ -698,6 +698,144 @@ $$;
 
 
 --
+-- Name: submit_patient_template(uuid, uuid, text, uuid, text, text, jsonb, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.submit_patient_template(p_user_id uuid, p_request_id uuid, p_fingerprint text, p_patient_id uuid, p_file_name text, p_file_path text, p_metadata jsonb, p_description text) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO ''
+    AS $$
+declare
+  v_receipt public.submission_receipts;
+  v_category text;
+  v_existing uuid;
+  v_document_id uuid;
+begin
+  if p_user_id is null or p_request_id is null or p_patient_id is null
+     or coalesce(p_fingerprint, '') = '' or jsonb_typeof(p_metadata) is distinct from 'object' then
+    raise exception 'missing argument' using errcode = '22023';
+  end if;
+
+  if not exists (
+    select 1 from public.patients p
+    where p.id = p_patient_id
+      and p.profile_id = p_user_id
+  ) then
+    raise exception 'patient does not belong to user' using errcode = '42501';
+  end if;
+
+  v_category := coalesce(nullif(p_metadata ->> 'template_id', ''), 'other');
+
+  -- Same request_id: a concurrent retry waits here, then sees the receipt.
+  perform pg_advisory_xact_lock(
+    hashtextextended('submit_template:' || p_user_id::text || ':' || p_request_id::text, 0));
+
+  select * into v_receipt
+    from public.submission_receipts r
+   where r.user_id = p_user_id
+     and r.operation = 'submit_template'
+     and r.request_id = p_request_id;
+
+  if found then
+    if now() >= v_receipt.expires_at then
+      return jsonb_build_object('outcome', 'expired');
+    end if;
+    if v_receipt.document_id is null then
+      return jsonb_build_object('outcome', 'withdrawn');
+    end if;
+    if v_receipt.fingerprint <> p_fingerprint then
+      return jsonb_build_object('outcome', 'conflict');
+    end if;
+    return jsonb_build_object('outcome', 'replayed', 'document_id', v_receipt.document_id);
+  end if;
+
+  if v_category <> 'other' then
+    perform pg_advisory_xact_lock(
+      hashtextextended('pending_document:' || p_patient_id::text || ':' || v_category, 0));
+
+    select d.id into v_existing
+      from public.documents d
+     where d.patient_id = p_patient_id
+       and d.status = 'pending'
+       and coalesce(nullif(
+             case when d.file_type = 'template'
+                  then d.extracted_metadata ->> 'template_id'
+                  else d.extracted_metadata ->> 'document_type' end, ''), 'other') = v_category
+     order by d.created_at
+     limit 1;
+
+    if found then
+      return jsonb_build_object('outcome', 'duplicate', 'document_id', v_existing, 'status', 'pending');
+    end if;
+  end if;
+
+  insert into public.documents
+    (patient_id, uploader_id, file_name, file_path, file_type, status, extracted_metadata)
+  values
+    (p_patient_id, p_user_id, p_file_name, p_file_path, 'template', 'pending', p_metadata)
+  returning id into v_document_id;
+
+  insert into public.system_logs (user_id, event_type, description, metadata)
+  values (p_user_id, 'DOCUMENT_SUBMITTED', p_description, jsonb_build_object('document_id', v_document_id));
+
+  insert into public.submission_receipts (user_id, operation, request_id, fingerprint, document_id)
+  values (p_user_id, 'submit_template', p_request_id, p_fingerprint, v_document_id);
+
+  return jsonb_build_object('outcome', 'created', 'document_id', v_document_id);
+end;
+$$;
+
+
+--
+-- Name: submit_patient_template_outcome(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.submit_patient_template_outcome(p_user_id uuid, p_request_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO ''
+    AS $$
+declare
+  v_receipt public.submission_receipts;
+  v_status text;
+begin
+  if p_user_id is null or p_request_id is null then
+    raise exception 'missing argument' using errcode = '22023';
+  end if;
+
+  -- Same key as submit_patient_template: wait out an in-flight submit.
+  perform pg_advisory_xact_lock(
+    hashtextextended('submit_template:' || p_user_id::text || ':' || p_request_id::text, 0));
+
+  -- Scoped to the caller, so another user's request_id is simply not found.
+  select * into v_receipt
+    from public.submission_receipts r
+   where r.user_id = p_user_id
+     and r.operation = 'submit_template'
+     and r.request_id = p_request_id;
+
+  if not found then
+    return jsonb_build_object('state', 'not_found');
+  end if;
+
+  if v_receipt.document_id is null then
+    return jsonb_build_object('state', 'withdrawn', 'first_accepted_at', v_receipt.first_accepted_at);
+  end if;
+
+  select d.status into v_status
+    from public.documents d
+   where d.id = v_receipt.document_id;
+
+  return jsonb_build_object(
+    'state', 'committed',
+    'document_id', v_receipt.document_id,
+    'status', v_status,
+    'first_accepted_at', v_receipt.first_accepted_at,
+    'replayable', now() < v_receipt.expires_at);
+end;
+$$;
+
+
+--
 -- Name: sync_email_verified_at(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1344,6 +1482,22 @@ CREATE TABLE public.specialist_records (
 
 
 --
+-- Name: submission_receipts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.submission_receipts (
+    user_id uuid NOT NULL,
+    operation text NOT NULL,
+    request_id uuid NOT NULL,
+    fingerprint text NOT NULL,
+    document_id uuid,
+    first_accepted_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone DEFAULT (now() + '30 days'::interval) NOT NULL,
+    CONSTRAINT submission_receipts_operation_check CHECK ((operation = 'submit_template'::text))
+);
+
+
+--
 -- Name: system_logs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1533,6 +1687,14 @@ ALTER TABLE ONLY public.specialist_patients
 
 ALTER TABLE ONLY public.specialist_records
     ADD CONSTRAINT specialist_records_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: submission_receipts submission_receipts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.submission_receipts
+    ADD CONSTRAINT submission_receipts_pkey PRIMARY KEY (user_id, operation, request_id);
 
 
 --
@@ -1810,6 +1972,22 @@ ALTER TABLE ONLY public.specialist_records
 
 ALTER TABLE ONLY public.specialist_records
     ADD CONSTRAINT specialist_records_specialist_patient_id_fkey FOREIGN KEY (specialist_patient_id) REFERENCES public.specialist_patients(id) ON DELETE CASCADE;
+
+
+--
+-- Name: submission_receipts submission_receipts_document_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.submission_receipts
+    ADD CONSTRAINT submission_receipts_document_id_fkey FOREIGN KEY (document_id) REFERENCES public.documents(id) ON DELETE SET NULL;
+
+
+--
+-- Name: submission_receipts submission_receipts_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.submission_receipts
+    ADD CONSTRAINT submission_receipts_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
 
 
 --
@@ -2275,6 +2453,12 @@ ALTER TABLE public.specialist_patients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.specialist_records ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: submission_receipts; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.submission_receipts ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: system_logs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -2460,6 +2644,22 @@ GRANT ALL ON FUNCTION public.refund_login_attempt(p_email text, p_ip text) TO se
 
 REVOKE ALL ON FUNCTION public.submit_assessed_document(p_assessment_id uuid, p_user_id uuid, p_patient_id uuid, p_file_path text, p_extracted_metadata jsonb, OUT document_id uuid, OUT created boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.submit_assessed_document(p_assessment_id uuid, p_user_id uuid, p_patient_id uuid, p_file_path text, p_extracted_metadata jsonb, OUT document_id uuid, OUT created boolean) TO service_role;
+
+
+--
+-- Name: FUNCTION submit_patient_template(p_user_id uuid, p_request_id uuid, p_fingerprint text, p_patient_id uuid, p_file_name text, p_file_path text, p_metadata jsonb, p_description text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.submit_patient_template(p_user_id uuid, p_request_id uuid, p_fingerprint text, p_patient_id uuid, p_file_name text, p_file_path text, p_metadata jsonb, p_description text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.submit_patient_template(p_user_id uuid, p_request_id uuid, p_fingerprint text, p_patient_id uuid, p_file_name text, p_file_path text, p_metadata jsonb, p_description text) TO service_role;
+
+
+--
+-- Name: FUNCTION submit_patient_template_outcome(p_user_id uuid, p_request_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.submit_patient_template_outcome(p_user_id uuid, p_request_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.submit_patient_template_outcome(p_user_id uuid, p_request_id uuid) TO service_role;
 
 
 --
@@ -2737,6 +2937,13 @@ GRANT ALL ON TABLE public.specialist_records TO service_role;
 
 
 --
+-- Name: TABLE submission_receipts; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.submission_receipts TO service_role;
+
+
+--
 -- Name: TABLE system_logs; Type: ACL; Schema: public; Owner: -
 --
 
@@ -2998,7 +3205,8 @@ INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES
   ('20261020000037', 'legacy_37'),
   ('20261021000038', 'legacy_38'),
   ('20261022000039', 'legacy_39'),
-  ('20261023000040', 'legacy_40')
+  ('20261023000040', 'legacy_40'),
+  ('20261023000041', 'legacy_41')
 ON CONFLICT (version) DO NOTHING;
 
 COMMIT;
