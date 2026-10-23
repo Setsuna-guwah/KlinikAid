@@ -9,8 +9,8 @@ export type DataLoadErrorKind = "list" | "record" | "page";
 const DESCRIPTIONS: Record<DataLoadErrorKind, string> = {
   list: "This list is empty because the request failed, not because there is nothing to show. Nothing below this message can be trusted until it loads.",
   record:
-    "This record could not be loaded, not because it does not exist. Nothing on this page can be trusted until it loads.",
-  page: "This page's data could not be loaded, not because there is nothing to show. Nothing shown here can be trusted until it loads.",
+    "This record could not be loaded. The failed request does not establish whether it exists. Nothing on this page can be trusted until it loads.",
+  page: "This page's data could not be fully loaded because a request failed. Data affected by the failed request cannot be trusted until it loads.",
 };
 
 export function dataLoadErrorDescription(kind: DataLoadErrorKind): string {

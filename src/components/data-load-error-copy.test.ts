@@ -19,11 +19,17 @@ describe("dataLoadErrorDescription", () => {
     }
   });
 
-  it("still says the failure is a failed load, not an empty or missing result", () => {
+  it("keeps every kind's claim inside what a failed read supports", () => {
+    // A failed read neither empties a list nor proves a record's existence,
+    // and dashboards render loaded data beside the error.
+    const record = dataLoadErrorDescription("record");
+    expect(record).toMatch(/does not establish whether it exists/i);
+    expect(record).not.toMatch(/does not exist/i);
+    expect(dataLoadErrorDescription("page")).toMatch(
+      /data affected by the failed request cannot be trusted/i,
+    );
     for (const kind of ["list", "record", "page"] as const) {
-      const description = dataLoadErrorDescription(kind);
-      expect(description).toMatch(/not because/i);
-      expect(description).toMatch(/trusted/i);
+      expect(dataLoadErrorDescription(kind)).toMatch(/trusted until it loads/i);
     }
   });
 
