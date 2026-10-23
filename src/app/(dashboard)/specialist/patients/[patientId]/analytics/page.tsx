@@ -57,6 +57,7 @@ export default async function PatientAnalyticsPage(props: PatientAnalyticsPagePr
       <div className="space-y-6">
         <DataLoadError
           what="this patient"
+          kind="record"
           error={patientLookup.error}
           retryHref={`/specialist/patients/${patientId}/analytics`}
         />

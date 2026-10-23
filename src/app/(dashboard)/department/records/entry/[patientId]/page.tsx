@@ -70,6 +70,7 @@ export default async function RecordEntryPage(props: PageProps) {
       <div className="p-6 space-y-4">
         <DataLoadError
           what="this patient"
+          kind="record"
           error={patientRead.error}
           retryHref={`/department/records/entry/${patientId}?department=${dept}`}
         />

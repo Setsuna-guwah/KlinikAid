@@ -58,6 +58,7 @@ export default async function DocumentDetailsPage(props: DocumentDetailsPageProp
       <div className="space-y-6">
         <DataLoadError
           what="this document"
+          kind="record"
           error={documentRead.error}
           retryHref={`/reception/queue/${documentId}`}
         />
