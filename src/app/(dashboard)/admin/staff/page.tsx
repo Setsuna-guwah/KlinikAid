@@ -731,7 +731,12 @@ export default function StaffManagementPage() {
               ) : null}
             </div>
           ) : (
-            <Table>
+            // The kit's cells carry `p-2`; this registry is the widest table
+            // in the app, so it keeps 6px instead of 8px per side. The
+            // paddings are scoped to this table only (issue #211 asked for
+            // the shared Table to be left alone) and buy ~24px of headroom
+            // against the longest name in the roster.
+            <Table className="[&_td]:px-1.5 [&_th]:px-1.5">
               <TableHeader>
                 <TableRow className="bg-slate-50/75 dark:bg-slate-900/40">
                   <TableHead className="font-semibold text-slate-700 dark:text-slate-300">Name</TableHead>
@@ -774,9 +779,17 @@ export default function StaffManagementPage() {
                         )}
                       </TableCell>
 
-                      {/* Email */}
+                      {/* Email: the one cell whose content is unbounded free
+                          text. The longest address was the widest column in
+                          the table, so the table outgrew the card's content
+                          box and the Status/Actions columns fell outside it at
+                          1280px (issue #211). The cell keeps the kit's nowrap,
+                          so the address is clamped instead and the full text
+                          stays on the title attribute. */}
                       <TableCell className="font-mono text-xs text-slate-600 dark:text-slate-400">
-                        {staff.email}
+                        <div className="max-w-[150px] truncate" title={staff.email}>
+                          {staff.email}
+                        </div>
                       </TableCell>
 
                       {/* Role Badge */}
