@@ -61,3 +61,51 @@ describe("personnel registry email cell (#211)", () => {
     expect(emailCell).toMatch(/title=\{staff\.email\}/);
   });
 });
+
+/**
+ * Issue #220: the same table overflowed again below ~1223px — at 1024x768
+ * the card's content box is 718px against a 917px table min-content, so
+ * Status/Actions fell outside the card — and a 41-character name pushed the
+ * table past the 974px card at 1280px.
+ *
+ * The two levers, both on this page only:
+ *
+ *   1. the Name cell clamps its text like the Email cell (bounded from `sm`
+ *      up, full name on the title attribute), so no roster name can grow
+ *      the table;
+ *   2. the Department column only exists from `xl` up (its ~129px is what
+ *      kept min-content above the 718px card at 1024px), and below `xl`
+ *      the same badge renders under the role so the information stays
+ *      reachable.
+ *
+ * Numbers were measured with Playwright for the pull request; this file
+ * only pins the source-level shape of the fix.
+ */
+
+describe("personnel registry fit below xl (#220)", () => {
+  /** The name text div: identified by its title attribute. */
+  const nameText = source.match(/<div[^>]*title=\{staff\.full_name\}[^>]*>[\s\S]*?<\/div>/)?.[0];
+
+  it("clamps the name to a bounded width with the full name on title", () => {
+    expect(nameText, "the name div with title={staff.full_name}").toBeTruthy();
+    const bound = nameText?.match(/max-w-\[(\d+)px\]/);
+    expect(bound, "max-w-[…px] on the name text").toBeTruthy();
+    expect(bound?.[1] && Number(bound[1])).toBeLessThanOrEqual(150);
+    expect(nameText, "truncate for the ellipsis").toMatch(/\bsm:truncate\b/);
+  });
+
+  it("hides the Department column below xl", () => {
+    const deptHead = source.match(/<TableHead[^>]*>\s*Department\s*<\/TableHead>/)?.[0];
+    expect(deptHead, "the Department TableHead").toBeTruthy();
+    expect(deptHead).toMatch(/\bhidden xl:table-cell\b/);
+
+    const deptCell = source.match(/<TableCell[^>]*xl:table-cell[^>]*>\s*\{departmentBadge\}/)?.[0];
+    expect(deptCell, "the Department TableCell").toBeTruthy();
+    expect(deptCell).toMatch(/\bhidden xl:table-cell\b/);
+  });
+
+  it("keeps the department reachable below xl, under the role", () => {
+    const roleFallback = source.match(/xl:hidden"\s*>\s*\{departmentBadge\}/);
+    expect(roleFallback, "departmentBadge rendered in an xl:hidden element").toBeTruthy();
+  });
+});

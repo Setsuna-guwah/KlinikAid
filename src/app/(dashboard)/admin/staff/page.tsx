@@ -742,7 +742,9 @@ export default function StaffManagementPage() {
                   <TableHead className="font-semibold text-slate-700 dark:text-slate-300">Name</TableHead>
                   <TableHead className="font-semibold text-slate-700 dark:text-slate-300">Email</TableHead>
                   <TableHead className="font-semibold text-slate-700 dark:text-slate-300">Role</TableHead>
-                  <TableHead className="font-semibold text-slate-700 dark:text-slate-300">Department</TableHead>
+                  {/* Department moves under the role below `xl` (issue
+                      #220), so the column itself only exists from `xl` up. */}
+                  <TableHead className="hidden xl:table-cell font-semibold text-slate-700 dark:text-slate-300">Department</TableHead>
                   <TableHead className="font-semibold text-slate-700 dark:text-slate-300 w-32">Status</TableHead>
                   <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-right w-24">Actions</TableHead>
                 </TableRow>
@@ -750,6 +752,15 @@ export default function StaffManagementPage() {
               <TableBody>
                 {filteredStaff.map((staff) => {
                   const deptConfig = staff.department ? DEPARTMENTS[staff.department] : null;
+                  // One markup for the department badge: its own column at
+                  // `xl` and up, under the role below that (issue #220).
+                  const departmentBadge = deptConfig ? (
+                    <Badge className={`text-[10px] font-semibold tracking-wide uppercase px-2 py-0.5 ${deptConfig.color}`}>
+                      {deptConfig.label}
+                    </Badge>
+                  ) : (
+                    <span className="text-slate-500 dark:text-slate-400 font-mono text-xs">—</span>
+                  );
                   const titles = parseEmployeeTitles(staff.employee_type);
 
                   return (
@@ -761,9 +772,19 @@ export default function StaffManagementPage() {
                       // badges inside fall below 4.5:1 (issue #153).
                       className={`transition-colors duration-150 ${!staff.is_active ? "bg-slate-50/40 dark:bg-slate-950/30" : ""}`}
                     >
-                      {/* Name */}
+                      {/* Name: the second unbounded free-text column, and
+                          the one that broke the card again after #211 — a
+                          41-character name pushed the table past the 974px
+                          card at 1280px (issue #220). Clamped exactly like
+                          the email cell below: bounded only from `sm` up,
+                          with the full name on the title attribute. */}
                       <TableCell>
-                        <div className="font-medium text-slate-900 dark:text-white">{staff.full_name}</div>
+                        <div
+                          className="max-w-none sm:max-w-[150px] sm:truncate font-medium text-slate-900 dark:text-white"
+                          title={staff.full_name}
+                        >
+                          {staff.full_name}
+                        </div>
                         {titles.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-1">
                             {titles.map((title) => (
@@ -806,17 +827,20 @@ export default function StaffManagementPage() {
                             return dbRoleObj ? dbRoleObj.name : (USER_ROLES[staff.role as UserRole]?.label || staff.role);
                           })()}
                         </Badge>
+                        {/* Below `xl` the Department column is gone, so the
+                            badge (or the — placeholder) lives here instead to
+                            keep the information reachable (issue #220). */}
+                        <div className="mt-1 xl:hidden">
+                          {departmentBadge}
+                        </div>
                       </TableCell>
 
-                      {/* Department Badge */}
-                      <TableCell>
-                        {deptConfig ? (
-                          <Badge className={`text-[10px] font-semibold tracking-wide uppercase px-2 py-0.5 ${deptConfig.color}`}>
-                            {deptConfig.label}
-                          </Badge>
-                        ) : (
-                          <span className="text-slate-500 dark:text-slate-400 font-mono text-xs">—</span>
-                        )}
+                      {/* Department Badge: its own column from `xl` up;
+                          below `xl` it renders under the role instead (issue
+                          #220 — the column's ~129px is what kept the table's
+                          min-content above the 718px card at 1024px). */}
+                      <TableCell className="hidden xl:table-cell">
+                        {departmentBadge}
                       </TableCell>
 
                       {/* Status Toggle Switch */}
