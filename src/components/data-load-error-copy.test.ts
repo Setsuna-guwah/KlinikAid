@@ -45,12 +45,12 @@ describe("dataLoadErrorDescription", () => {
 });
 
 describe("CHART_DATA_LOAD_ERROR_DESCRIPTION", () => {
-  it("does not use list wording and does not claim there was no usage", () => {
+  it("does not use list wording and leaves usage unknown", () => {
     // Regression for #219: the API cost area chart rendered the list
     // default, telling admins "This list is empty" where a chart is blank.
     expect(CHART_DATA_LOAD_ERROR_DESCRIPTION).not.toMatch(/list/i);
     expect(CHART_DATA_LOAD_ERROR_DESCRIPTION).toMatch(/chart is blank because the request failed/i);
-    expect(CHART_DATA_LOAD_ERROR_DESCRIPTION).toMatch(/not because there was no usage/i);
+    expect(CHART_DATA_LOAD_ERROR_DESCRIPTION).toMatch(/whether there was any usage cannot be told/i);
   });
 
   it("is distinct from every kind-keyed default", () => {
