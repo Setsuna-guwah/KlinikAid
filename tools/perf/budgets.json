@@ -11,5 +11,11 @@
     "navigation": 100,
     "interaction": 100,
     "upload": 100
+  },
+  "overrides": {
+    "$comment": "Per-action ready budgets (ms) by exact action name, used instead of the kind budget.",
+    "login: submit -> landing page ready": 2000,
+    "send chat message -> first reply text visible": 3000,
+    "send chat message -> reply finished": 6000
   }
 }

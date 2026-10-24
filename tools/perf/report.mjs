@@ -32,7 +32,7 @@ const key = (row) => `${row.scenario} | ${row.name}`;
 const ms = (value) => (value === null || value === undefined ? "–" : `${value}`);
 
 function verdict(row) {
-  const budget = budgets.ready[row.kind];
+  const budget = budgets.overrides?.[row.name] ?? budgets.ready[row.kind];
   if (row.failed === row.samples) return "FAIL (error)";
   if (row.kind === "scroll") {
     // Scroll time is set by how far the script wheels; what matters is stutter.
