@@ -1,0 +1,21 @@
+{
+  "$comment": "Median click->content-ready budgets in ms, by action kind. 'feedback' is the most a click may wait before something visible responds. See private/performance/PERFORMANCE.md (gitignored) for how these were chosen.",
+  "ready": {
+    "hard-load": 1500,
+    "navigation": 800,
+    "interaction": 500,
+    "upload": 2500
+  },
+  "scrollFrameMs": 50,
+  "feedback": {
+    "navigation": 100,
+    "interaction": 100,
+    "upload": 100
+  },
+  "overrides": {
+    "$comment": "Per-action ready budgets (ms) by exact action name, used instead of the kind budget.",
+    "login: submit -> landing page ready": 2000,
+    "send chat message -> first reply text visible": 3000,
+    "send chat message -> reply finished": 6000
+  }
+}
