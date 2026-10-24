@@ -1,0 +1,15 @@
+{
+  "$comment": "Median click->content-ready budgets in ms, by action kind. 'feedback' is the most a click may wait before something visible responds. See documentation/PERFORMANCE.md for how these were chosen.",
+  "ready": {
+    "hard-load": 1500,
+    "navigation": 800,
+    "interaction": 500,
+    "scroll": 100,
+    "upload": 2500
+  },
+  "feedback": {
+    "navigation": 100,
+    "interaction": 100,
+    "upload": 100
+  }
+}
