@@ -173,6 +173,8 @@ const summary = [...groups.values()].map((group) => {
     transferKB: metric("transferKB"),
     longTaskMs: metric("longTaskMs"),
     maxEventMs: metric("maxEventMs"),
+    maxFrameMs: metric("maxFrameMs"),
+    slowFrames: metric("slowFrames"),
     cls: { max: Math.max(0, ...ok.map((sample) => sample.cls ?? 0)) },
     lcp: metric("lcp"),
     docTtfb: metric("docTtfb"),

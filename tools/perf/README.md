@@ -50,6 +50,7 @@ Every number comes from `measure()` in `lib.mjs`:
 | `rscTtfb` | Server wait of the slowest RSC or server-action request in the window. |
 | `requests`, `transferKB` | Network activity inside the window (warm HTTP cache after the first iteration). |
 | `longTaskMs`, `maxEventMs` | Main-thread long tasks and the slowest input event (an INP proxy). |
+| `slowFrames`, `maxFrameMs` | Frames longer than 34 ms (a visible stutter). Scrolls are judged by the worst frame, not by `ready`, since scroll time depends on how far the script wheels. |
 | `lcp`, `docTtfb`, `cls` | Hard loads only: Largest Contentful Paint, document TTFB, layout shift. |
 
 Each scenario runs `--iterations` times in one signed-in browser context; the

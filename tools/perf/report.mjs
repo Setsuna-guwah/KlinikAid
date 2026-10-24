@@ -34,6 +34,12 @@ const ms = (value) => (value === null || value === undefined ? "–" : `${value}
 function verdict(row) {
   const budget = budgets.ready[row.kind];
   if (row.failed === row.samples) return "FAIL (error)";
+  if (row.kind === "scroll") {
+    // Scroll time is set by how far the script wheels; what matters is stutter.
+    const worst = row.maxFrameMs?.median ?? null;
+    if (worst === null) return "–";
+    return worst <= budgets.scrollFrameMs ? "pass" : `frame ${worst} ms > ${budgets.scrollFrameMs}`;
+  }
   if (budget === undefined || row.ready.median === null) return "–";
   const fast = row.ready.median <= budget;
   const feedbackBudget = budgets.feedback[row.kind];
@@ -57,11 +63,11 @@ lines.push(`Run: ${env.startedAt} · ${env.base} · route ${env.vercelRoute ?? "
 lines.push("");
 
 if (!second) {
-  lines.push("| Scenario | Action | Kind | Ready median (ms) | p75 | first | Feedback median | RSC TTFB | Requests | KB | Long tasks ms | Verdict |");
-  lines.push("|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|");
+  lines.push("| Scenario | Action | Kind | Ready median (ms) | p75 | first | Feedback median | RSC TTFB | Requests | KB | Long tasks ms | Worst frame ms | Verdict |");
+  lines.push("|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|");
   for (const row of base.summary) {
     lines.push(
-      `| ${row.scenario} | ${row.name} | ${row.kind} | ${ms(row.ready.median)} | ${ms(row.ready.p75)} | ${ms(row.ready.first)} | ${ms(row.feedback.median)} | ${ms(row.rscTtfb.median)} | ${ms(row.requests.median)} | ${ms(row.transferKB.median)} | ${ms(row.longTaskMs.median)} | ${verdict(row)} |`,
+      `| ${row.scenario} | ${row.name} | ${row.kind} | ${ms(row.ready.median)} | ${ms(row.ready.p75)} | ${ms(row.ready.first)} | ${ms(row.feedback.median)} | ${ms(row.rscTtfb.median)} | ${ms(row.requests.median)} | ${ms(row.transferKB.median)} | ${ms(row.longTaskMs.median)} | ${ms(row.maxFrameMs?.median)} | ${verdict(row)} |`,
     );
   }
 } else {

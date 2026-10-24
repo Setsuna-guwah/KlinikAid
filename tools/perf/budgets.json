@@ -4,9 +4,9 @@
     "hard-load": 1500,
     "navigation": 800,
     "interaction": 500,
-    "scroll": 100,
     "upload": 2500
   },
+  "scrollFrameMs": 50,
   "feedback": {
     "navigation": 100,
     "interaction": 100,

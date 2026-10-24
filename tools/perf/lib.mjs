@@ -31,8 +31,16 @@ export const FEEDBACK_SELECTORS = [
  * `measure()` can read the ones that fall inside an action's window.
  */
 function collector() {
-  const store = { longtasks: [], events: [], lcp: [], shifts: [] };
+  const store = { longtasks: [], events: [], lcp: [], shifts: [], frames: [] };
   window.__perf = store;
+  // Frames that took longer than two vsyncs: what a user sees as a stutter.
+  let last = null;
+  const frame = (now) => {
+    if (last !== null && now - last > 34) store.frames.push({ start: last, duration: now - last });
+    last = now;
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
   const observe = (type, push, extra = {}) => {
     try {
       new PerformanceObserver((list) => {
@@ -136,6 +144,7 @@ export function stats(values) {
  *   rscTtfb    server wait of the slowest RSC / server-action request
  *   requests, transferKB   network activity inside the window
  *   longTasks, longTaskMs, maxEventMs (INP proxy), cls, lcp (hard loads),
+ *   slowFrames, maxFrameMs (frames over 34 ms: stutter; the scroll metric),
  *   docTtfb, domContentLoaded (hard loads)
  */
 export function createMeasurer(page, samples, { scenario, iteration }) {
@@ -219,7 +228,7 @@ export function createMeasurer(page, samples, { scenario, iteration }) {
     const browserSide = await page
       .evaluate(
         ({ mark, origin }) => {
-          const store = window.__perf ?? { longtasks: [], events: [], lcp: [], shifts: [] };
+          const store = window.__perf ?? { longtasks: [], events: [], lcp: [], shifts: [], frames: [] };
           // A hard load replaces the document, so everything in it is ours.
           const since = performance.timeOrigin === origin && mark !== null ? mark : 0;
           const inWindow = (list) => list.filter((entry) => entry.start >= since);
@@ -230,6 +239,8 @@ export function createMeasurer(page, samples, { scenario, iteration }) {
             longTasks: longtasks.length,
             longTaskMs: longtasks.reduce((sum, entry) => sum + entry.duration, 0),
             maxEventMs: Math.max(0, ...inWindow(store.events).map((entry) => entry.duration)),
+            slowFrames: inWindow(store.frames).length,
+            maxFrameMs: Math.max(0, ...inWindow(store.frames).map((entry) => entry.duration)),
             cls: inWindow(store.shifts).reduce((sum, entry) => sum + entry.value, 0),
             lcp: fresh ? (store.lcp.at(-1)?.start ?? null) : null,
             docTtfb: fresh && nav ? nav.responseStart - nav.requestStart : null,
