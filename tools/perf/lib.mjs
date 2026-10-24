@@ -10,7 +10,7 @@ import crypto from "node:crypto";
 
 /** Selectors that mean "the page is not finished yet". */
 export const PENDING_SELECTORS = [
-  ".animate-pulse",
+  ":not(svg).animate-pulse",
   "[data-testid='navigation-progress']",
   "[aria-busy='true']",
 ];
@@ -19,7 +19,7 @@ export const PENDING_SELECTORS = [
 export const FEEDBACK_SELECTORS = [
   "[data-testid='navigation-progress']",
   "[data-testid='sidebar-link-pending']",
-  ".animate-pulse",
+  ":not(svg).animate-pulse",
   "[aria-busy='true']",
   "button[disabled] svg.animate-spin",
   "svg.animate-spin",
