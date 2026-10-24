@@ -204,10 +204,14 @@ export function createMeasurer(page, samples, { scenario, iteration }) {
     let transfer = 0;
     let rscTtfb = null;
     let rscCount = 0;
+    // Next keeps link prefetches open, and Playwright's response()/sizes()
+    // wait for completion, so every wait is bounded.
+    const within = (promise, ms = 1500) =>
+      Promise.race([promise.catch(() => null), new Promise((resolve) => setTimeout(() => resolve(null), ms))]);
     for (const request of requests) {
-      const response = await request.response().catch(() => null);
+      const response = await within(request.response());
       if (!response) continue;
-      const sizes = await request.sizes().catch(() => null);
+      const sizes = await within(request.sizes(), 500);
       if (sizes) transfer += sizes.responseBodySize + sizes.responseHeadersSize;
       const headers = request.headers();
       const isRsc = request.url().includes("_rsc=") || headers["rsc"] === "1" || Boolean(headers["next-action"]);
