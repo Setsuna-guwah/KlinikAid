@@ -14,8 +14,12 @@ only the per-action numbers each fix is judged by.
 # Signed-out pages only, no accounts needed
 node tools/perf/run.mjs --iterations 5 --label anon --only anonymous
 
-# Everything, against production, with throwaway accounts
-node tools/perf/run.mjs --accounts /tmp/perf-accounts.json --iterations 5 --label baseline
+# Everything, against production, with throwaway accounts and fixtures
+F=/tmp/perf-accounts.json
+node tools/perf/fixtures.mjs create $F
+PERF_PATIENT_NAME=PerfThrowaway PERF_PATIENT_ID=$(node -p "require('$F').env.PERF_PATIENT_ID") \
+  node tools/perf/run.mjs --accounts $F --iterations 5 --label baseline
+node tools/perf/fixtures.mjs delete $F   # always, also after a failed run
 
 # Render one run, or compare two
 node tools/perf/report.mjs ~/.local/share/klinikaid-perf/perf-<stamp>.json
