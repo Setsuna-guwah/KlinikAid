@@ -28,6 +28,7 @@ function parseArgs(argv) {
     out: path.join(os.homedir(), ".local/share/klinikaid-perf"),
     label: "",
     headed: false,
+    profile: "desktop",
   };
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
@@ -39,6 +40,7 @@ function parseArgs(argv) {
     else if (flag === "--out") args.out = next();
     else if (flag === "--label") args.label = next();
     else if (flag === "--headed") args.headed = true;
+    else if (flag === "--profile") args.profile = next();
     else throw new Error(`unknown flag ${flag}`);
   }
   return args;
@@ -78,7 +80,23 @@ const environment = {
   host: os.hostname(),
   iterations: args.iterations,
   viewport: { width: 1366, height: 768 },
+  profile: args.profile,
 };
+
+/** Network and CPU conditions, applied per page through CDP. */
+const PROFILES = {
+  desktop: null,
+  "mobile-4g": { latency: 150, downloadThroughput: (9 * 1024 * 1024) / 8, uploadThroughput: (3 * 1024 * 1024) / 8, cpu: 4 },
+};
+if (!(args.profile in PROFILES)) throw new Error(`unknown --profile ${args.profile}`);
+async function applyProfile(page) {
+  const profile = PROFILES[args.profile];
+  if (!profile) return;
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Network.enable");
+  await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: profile.latency, downloadThroughput: profile.downloadThroughput, uploadThroughput: profile.uploadThroughput });
+  await cdp.send("Emulation.setCPUThrottlingRate", { rate: profile.cpu });
+}
 
 const browser = await chromium.launch({
   headless: !args.headed,
@@ -98,6 +116,7 @@ try {
     const context = await browser.newContext({ viewport: environment.viewport });
     await instrument(context);
     const page = await context.newPage();
+    await applyProfile(page);
     const state = {};
     try {
       if (account) {
@@ -162,7 +181,7 @@ const summary = [...groups.values()].map((group) => {
 
 fs.mkdirSync(args.out, { recursive: true, mode: 0o700 });
 const stamp = environment.startedAt.replace(/[:.]/g, "-");
-const file = path.join(args.out, `perf-${stamp}${args.label ? `-${args.label.replace(/\W+/g, "_")}` : ""}.json`);
+const file = path.join(args.out, `perf-${stamp}-${args.profile}${args.label ? `-${args.label.replace(/\W+/g, "_")}` : ""}.json`);
 fs.writeFileSync(file, JSON.stringify({ environment, summary, failures, samples }, null, 2));
 console.log(JSON.stringify({ result: file, actions: summary.length, failedSamples: samples.filter((s) => !s.ok).length, failures: failures.length }));
 process.exitCode = failures.length || samples.some((sample) => !sample.ok) ? 1 : 0;

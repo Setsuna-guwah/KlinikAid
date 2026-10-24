@@ -1,5 +1,5 @@
 {
-  "$comment": "Median click->content-ready budgets in ms, by action kind. 'feedback' is the most a click may wait before something visible responds. See documentation/PERFORMANCE.md for how these were chosen.",
+  "$comment": "Median click->content-ready budgets in ms, by action kind. 'feedback' is the most a click may wait before something visible responds. See private/performance/PERFORMANCE.md (gitignored) for how these were chosen.",
   "ready": {
     "hard-load": 1500,
     "navigation": 800,

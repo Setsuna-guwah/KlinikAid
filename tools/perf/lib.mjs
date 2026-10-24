@@ -5,7 +5,7 @@ import crypto from "node:crypto";
  *
  * Every number the benchmark reports comes from `measure()` below, so every
  * scenario times the same things the same way. See tools/perf/README.md for
- * the metric definitions and documentation/PERFORMANCE.md for the budgets.
+ * the metric definitions.
  */
 
 /** Selectors that mean "the page is not finished yet". */

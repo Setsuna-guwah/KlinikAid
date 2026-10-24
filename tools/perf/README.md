@@ -3,8 +3,10 @@
 Times what a user actually waits for on KlinikAid: a click, a page load, a
 search, an upload or a scroll, from the input to the content they came for
 being on screen. It is the definition of "faster" for the performance issues
-(label `performance`); `documentation/PERFORMANCE.md` holds the budgets, the
-baseline and the progress log.
+(label `performance`). The budgets, baseline and progress log live outside git
+in `/home/jonkler/code/Klinikaid/private/performance/PERFORMANCE.md`
+(`private/` is gitignored and this repository is public); GitHub issues carry
+only the per-action numbers each fix is judged by.
 
 ## Run it
 
@@ -30,7 +32,10 @@ node tools/perf/report.mjs BEFORE.json AFTER.json
   `medical_specialist`, `patient`. Scenarios whose role is missing are skipped
   and reported as failures, so a partial run is never mistaken for a full one.
 - Results go to `~/.local/share/klinikaid-perf/` (outside the repo). Copy the
-  summary table into `documentation/PERFORMANCE.md` when it marks progress.
+  summary table into `private/performance/PERFORMANCE.md` when it marks progress.
+- `--profile mobile-4g` emulates a mid-range phone on a Philippine mobile
+  network (150 ms extra RTT, 9 Mbps down, 4x CPU slowdown). Only compare runs
+  with the same profile.
 - The exit code is 1 if any action failed or any scenario was skipped.
 
 ## What is measured
