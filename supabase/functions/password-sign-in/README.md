@@ -11,7 +11,7 @@ Logic and ordering: `src/lib/auth/password-sign-in.ts`, unit-tested by
 `src/lib/auth/password-sign-in.test.ts` (run by `npm test` in CI).
 This folder only binds Supabase clients to those ports.
 
-**Not deployed.** Deployment is the owner's call after review.
+**Deployed** to production on 2026-10-25 (nothing calls it until mobile switches).
 
 ## Deploy
 
@@ -29,17 +29,11 @@ them it returns 503 `auth_unavailable`.
 Requires migration_27 (`begin_login_attempt`, `refund_login_attempt`,
 `clear_login_attempts`, `claim_totp_code`), already in the repo.
 
-Before deploying to production, confirm on staging:
+Before mobile switches to it, confirm:
 
-- Which `x-forwarded-for` hop is the caller (see Client IP). If the last hop is
-  a constant gateway address, every caller shares one bucket per email, and a
-  stranger can lock a clinician out.
-- Which IP GoTrue's own per-IP limit counts for these server-side calls. If it
-  counts the function's egress address, all mobile sign-ins share one
-  30-per-5-minutes sign-in bucket and one token-verification bucket.
 - The GoTrue error codes for a wrong TOTP code and a foreign factor.
 - `deno check --config deno.json index.ts` passes (it does at this commit with
-  Deno 2.1.4), and the deploy bundles `src/lib/auth/*` through the import map.
+  Deno 2.1.4 and 2.9.6), and the deploy bundles `src/lib/auth/*` through the import map.
 
 ## Request
 
@@ -118,15 +112,19 @@ leaves the counter in place. A failed refund costs the user one attempt.
 
 ## Client IP
 
-The limiter key uses the **last** `x-forwarded-for` hop. Proxies append the
-address they observed, so the last hop is what the platform recorded. The first
-hop is whatever the client sent, and a client can rotate it to get fresh buckets.
-Web's loginAction still uses the first hop, which is a known gap there.
+The limiter key is `cf-connecting-ip`, falling back to the first
+`x-forwarded-for` hop. Observed on production on 2026-10-25 with a temporary
+header-echo function:
 
-Open question: which header the Supabase gateway sets or overwrites was not
-confirmed from documentation. Check on staging by echoing the request headers
-before relying on the key. A missing header means IP `""`, shared by every
-request without one, as web does.
+- `cf-connecting-ip` is the caller's address.
+- `x-forwarded-for` arrives as `<client>,<client>, <edge>`. A value sent by the
+  client is discarded, not prepended, so the first hop cannot be spoofed
+  through this gateway. A spoofed `cf-connecting-ip` is refused by the edge
+  (Cloudflare error 1000).
+- The last hop is a rotating edge address (`99.82.170.x`). Keying on it gave
+  every request a fresh bucket, so the limit never tripped.
+
+A missing header means IP `""`, shared by every request without one, as web does.
 
 ## Remaining exposure
 
@@ -134,6 +132,14 @@ request without one, as web does.
   public anon key, sent to GoTrue, is not counted. Only the password-verification
   hook could cover that, and it needs a paid plan. Supabase's own per-IP limit
   (30 per 5 minutes on sign-in) still applies.
+- **GoTrue sees the function's egress IP, not the caller's.** Observed on
+  2026-10-25: sessions created through this function record one shared
+  address. Once mobile switches, every mobile sign-in shares GoTrue's per-IP
+  buckets (production: `sign_in_sign_ups` 30 and `token_verifications` 30 per
+  5 minutes, the defaults). Anyone can spend that budget by trying fresh
+  emails, which this limiter does not stop, and lock out all mobile sign-ins
+  for up to 5 minutes. Raising those limits in Auth settings reduces but does
+  not remove this.
 - **Mobile must switch to this endpoint** in a follow-up PR. Until it does,
   mobile sign-in remains uncounted.
 - **Current-password checks** (web's `verifyCurrentPassword`, mobile's

@@ -84,18 +84,20 @@ export type Reply = {
 };
 
 /**
- * Client IP for the limiter key, from `x-forwarded-for`.
+ * Client IP for the limiter key.
  *
- * Uses the LAST hop. Proxies append the address they saw, so the last hop is
- * what the platform recorded. The first hop is whatever the client sent: a
- * client that sets its own header controls it and can rotate fresh (email, ip)
- * buckets. Web's loginAction uses the first hop, so this is a deliberate
- * divergence until the gateway's trusted header is confirmed (#70 open question).
+ * Observed on production (2026-10-25): the Supabase edge sets
+ * `cf-connecting-ip` to the caller's address and rewrites `x-forwarded-for` to
+ * `<client>, <client>, <edge>`, discarding any value the client sent. The last
+ * hop is a rotating edge address (a fresh bucket per request, so the limit
+ * never trips), so it must not be used. Prefer `cf-connecting-ip`; fall back to
+ * the first `x-forwarded-for` hop, which the edge also sets to the client.
  */
-export function clientIpFromForwardedFor(header: string | null): string | null {
-  if (!header) return null;
-  const hops = header.split(",").map((hop) => hop.trim()).filter((hop) => hop.length > 0);
-  return hops.length > 0 ? hops[hops.length - 1] : null;
+export function clientIpFromHeaders(headers: Headers): string | null {
+  const connecting = headers.get("cf-connecting-ip")?.trim();
+  if (connecting) return connecting;
+  const first = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  return first ? first : null;
 }
 
 /** Seconds until a lock ends, clamped to [1, LOGIN_WINDOW_SECONDS]. */
@@ -170,7 +172,7 @@ async function passwordStep(
   const email = emailField(body.email);
   const password = passwordField(body.password);
   if (!email || !password) return invalidRequest();
-  const ip = clientIpFromForwardedFor(req.headers.get("x-forwarded-for"));
+  const ip = clientIpFromHeaders(req.headers);
 
   // Counted before the password is checked, as web does.
   const refused = await gate(ports, email, ip);
@@ -213,7 +215,7 @@ async function totpStep(
   if (user.kind === "unauthorized") return reply(401, { code: "unauthorized" });
 
   // Counted against the same (email, ip) limit as the password step.
-  const ip = clientIpFromForwardedFor(req.headers.get("x-forwarded-for"));
+  const ip = clientIpFromHeaders(req.headers);
   const refused = await gate(ports, user.email, ip);
   if (refused) return refused;
 

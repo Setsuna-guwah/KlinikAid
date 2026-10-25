@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   type AttemptGate,
-  clientIpFromForwardedFor,
+  clientIpFromHeaders,
   createPasswordSignInHandler,
   decideSecondFactor,
   LOGIN_WINDOW_SECONDS,
@@ -84,14 +84,19 @@ async function json(response: Response): Promise<Record<string, unknown>> {
   return (await response.json()) as Record<string, unknown>;
 }
 
-describe("clientIpFromForwardedFor", () => {
-  it("uses the last hop, which the platform appended, not a client-chosen first hop", () => {
-    expect(clientIpFromForwardedFor("6.6.6.6, 203.0.113.9")).toBe("203.0.113.9");
+describe("clientIpFromHeaders", () => {
+  it("prefers cf-connecting-ip, which the edge sets to the caller", () => {
+    const headers = new Headers({ "cf-connecting-ip": "112.200.1.2", "x-forwarded-for": "112.200.1.2,112.200.1.2, 99.82.170.150" });
+    expect(clientIpFromHeaders(headers)).toBe("112.200.1.2");
   });
 
-  it("returns null when the header is absent or empty", () => {
-    expect(clientIpFromForwardedFor(null)).toBeNull();
-    expect(clientIpFromForwardedFor("  , ")).toBeNull();
+  it("falls back to the first x-forwarded-for hop, never the rotating edge hop", () => {
+    expect(clientIpFromHeaders(new Headers({ "x-forwarded-for": "112.200.1.2, 99.82.170.150" }))).toBe("112.200.1.2");
+  });
+
+  it("returns null when neither header is usable", () => {
+    expect(clientIpFromHeaders(new Headers())).toBeNull();
+    expect(clientIpFromHeaders(new Headers({ "cf-connecting-ip": " ", "x-forwarded-for": "  , " }))).toBeNull();
   });
 });
 
@@ -229,7 +234,7 @@ describe("password action", () => {
 
   it("clears the counter on a completed sign-in without a second factor", async () => {
     const { handle, calls } = fakePorts();
-    const response = await handle(post({ action: "password", email: "a@b.c", password: "pw" }, { "x-forwarded-for": "6.6.6.6, 203.0.113.9" }));
+    const response = await handle(post({ action: "password", email: "a@b.c", password: "pw" }, { "cf-connecting-ip": "203.0.113.9", "x-forwarded-for": "203.0.113.9, 99.82.170.150" }));
     expect(response.status).toBe(200);
     expect(await json(response)).toEqual({ mfa_required: false, session: SESSION });
     expect(calls).toEqual([
