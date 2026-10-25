@@ -29,6 +29,18 @@ them it returns 503 `auth_unavailable`.
 Requires migration_27 (`begin_login_attempt`, `refund_login_attempt`,
 `clear_login_attempts`, `claim_totp_code`), already in the repo.
 
+Before deploying to production, confirm on staging:
+
+- Which `x-forwarded-for` hop is the caller (see Client IP). If the last hop is
+  a constant gateway address, every caller shares one bucket per email, and a
+  stranger can lock a clinician out.
+- Which IP GoTrue's own per-IP limit counts for these server-side calls. If it
+  counts the function's egress address, all mobile sign-ins share one
+  30-per-5-minutes sign-in bucket and one token-verification bucket.
+- The GoTrue error codes for a wrong TOTP code and a foreign factor.
+- `deno check --config deno.json index.ts` passes (it does at this commit with
+  Deno 2.1.4), and the deploy bundles `src/lib/auth/*` through the import map.
+
 ## Request
 
 ```

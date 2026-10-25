@@ -64,14 +64,15 @@ function ports(
         try {
           const { data, error } = await admin
             .rpc("begin_login_attempt", { p_email: email, p_ip: ip ?? "" })
-            .single();
+            .single<{ allowed: boolean; retry_after: string | null }>();
           if (error || !data) {
             console.error("password-sign-in: begin_login_attempt failed");
             return { kind: "failed" };
           }
           if (data.allowed) return { kind: "allowed" };
+          if (!data.retry_after) return { kind: "failed" };
           const retryAfter = new Date(data.retry_after);
-          if (!data.retry_after || Number.isNaN(retryAfter.getTime())) return { kind: "failed" };
+          if (Number.isNaN(retryAfter.getTime())) return { kind: "failed" };
           return { kind: "locked", retryAfter };
         } catch {
           console.error("password-sign-in: begin_login_attempt threw");
