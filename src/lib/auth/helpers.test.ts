@@ -35,8 +35,16 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
-const { getCurrentUser, getProfile, hasPermission, requirePermission, requireAnyPermission, requireRole } =
-  await import("./helpers");
+const {
+  getCurrentUser,
+  getDashboardAccess,
+  getProfile,
+  hasPermission,
+  permissionHolder,
+  requirePermission,
+  requireAnyPermission,
+  requireRole,
+} = await import("./helpers");
 
 const ACTIVE_PROFILE = {
   id: "u-1",
@@ -171,5 +179,61 @@ describe("hasPermission", () => {
   it("denies the permission when the check itself fails", async () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { message: "boom" } });
     await expect(hasPermission("u-1", "roles.read")).resolves.toBe(false);
+  });
+});
+
+describe("getDashboardAccess", () => {
+  it("returns the role name and permission names from the one call", async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: { role_name: "admin", permissions: ["roles.read", "staff.manage"] },
+      error: null,
+    });
+
+    const access = await getDashboardAccess();
+
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(mocks.rpc).toHaveBeenCalledWith("dashboard_access_context");
+    expect(access?.roleName).toBe("admin");
+    expect([...(access?.permissions ?? [])].sort()).toEqual(["roles.read", "staff.manage"]);
+  });
+
+  it("returns nothing when the call fails, so the caller checks each permission instead", async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: "function not found" } });
+    await expect(getDashboardAccess()).resolves.toBeNull();
+  });
+
+  it("returns nothing for an answer of the wrong shape rather than an empty permission set", async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: { permissions: "staff.manage" }, error: null });
+    await expect(getDashboardAccess()).resolves.toBeNull();
+  });
+});
+
+describe("permissionHolder", () => {
+  it("answers from the access call without asking the database again", async () => {
+    const holds = permissionHolder("u-1", {
+      roleName: "admin",
+      permissions: new Set(["staff.manage"]),
+    });
+
+    await expect(holds("staff.manage")).resolves.toBe(true);
+    // A permission the access call did not return is refused, not re-asked.
+    await expect(holds("roles.manage")).resolves.toBe(false);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("checks each permission on its own when there is no access call", async () => {
+    mocks.rpc.mockResolvedValue({ data: true, error: null });
+    const holds = permissionHolder("u-1", null);
+
+    await expect(holds("roles.read")).resolves.toBe(true);
+    expect(mocks.rpc).toHaveBeenCalledWith("user_has_permission", {
+      p_user_id: "u-1",
+      p_permission_name: "roles.read",
+    });
+  });
+
+  it("refuses a permission whose individual check fails, on the fallback path", async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: "boom" } });
+    await expect(permissionHolder("u-1", null)("roles.read")).resolves.toBe(false);
   });
 });
