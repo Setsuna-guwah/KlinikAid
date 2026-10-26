@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { logEvent } from "@/lib/logger";
 import { headers } from "next/headers";
+import { after } from "next/server";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 import { getTotpFactors } from "@/lib/auth/mfa";
 import { getDefaultLandingPath } from "@/lib/auth/helpers";
@@ -14,6 +15,7 @@ import {
   clearLoginAttempts,
   lockedOutMessage,
   refundLoginAttempt,
+  type TotpClaim,
 } from "@/lib/auth/login-attempts";
 
 const LIMITER_UNAVAILABLE = "Sign-in is temporarily unavailable. Please try again shortly.";
@@ -42,6 +44,21 @@ function getSafeAuthErrorMessage(message: string): string {
   }
 
   return message;
+}
+
+/**
+ * Runs a write the sign-in reply does not wait for, once the reply has been sent.
+ * The helpers it calls already log their own failures; this is the backstop for
+ * anything that still throws, so the failure is logged rather than dropped.
+ */
+function runAfterResponse(description: string, write: () => Promise<unknown>): void {
+  after(async () => {
+    try {
+      await write();
+    } catch (err) {
+      console.error(`Login: ${description} failed after the response:`, err);
+    }
+  });
 }
 
 /**
@@ -119,12 +136,22 @@ export async function loginAction(
       return { error: "Authentication failed. No user record found." };
     }
 
+    // 2-4. The profile, the assurance level and, when a code was submitted, the
+    // factor list all read the user the password just signed in. None of them
+    // needs another's answer, so they run together. Each result is still checked
+    // below in the original order before anything is decided.
+    const [profileRead, mfaRead, factorsRead] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("is_active, role, department, full_name")
+        .eq("id", user.id)
+        .single(),
+      supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+      totpCode ? supabase.auth.mfa.listFactors() : null,
+    ]);
+
     // 2. Fetch the profile details
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("is_active, role, department, full_name")
-      .eq("id", user.id)
-      .single();
+    const { data: profile, error: profileError } = profileRead;
 
     if (profileError || !profile) {
       await supabase.auth.signOut();
@@ -155,7 +182,7 @@ export async function loginAction(
     }
 
     // 4. Check if Multi-Factor Authentication (MFA) is required
-    const { data: mfaData, error: mfaError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    const { data: mfaData, error: mfaError } = mfaRead;
 
     if (mfaError || !mfaData) {
       await supabase.auth.signOut();
@@ -166,20 +193,24 @@ export async function loginAction(
       };
     }
 
+    // The replay claim is started only once GoTrue has accepted the code.
+    let totpClaim: Promise<TotpClaim> | null = null;
+
     // If MFA is enrolled (nextLevel is aal2) and the user has not completed the second factor (currentLevel is aal1)
     if (mfaData.nextLevel === "aal2" && mfaData.currentLevel === "aal1") {
       // If we didn't receive a TOTP code, prompt the user for it
       if (!totpCode) {
         // Reaching the code prompt proved the password; don't let it use up
-        // one of the user's code attempts.
-        await refundLoginAttempt(email, ipAddress);
+        // one of the user's code attempts. The reply does not wait for the refund.
+        runAfterResponse("refunding the login attempt", () => refundLoginAttempt(email, ipAddress));
         return {
           status: "mfa_required",
         };
       }
 
-      // List user factors to find TOTP factor ID
-      const { data: factors, error: factorsError } = await supabase.auth.mfa.listFactors();
+      // The factor list was requested because a code was submitted, so it is
+      // present here. A missing read takes the failure branch below.
+      const { data: factors, error: factorsError } = factorsRead ?? { data: null, error: null };
       if (factorsError || !factors) {
         await supabase.auth.signOut();
         return {
@@ -234,40 +265,46 @@ export async function loginAction(
 
       // GoTrue accepts a code for as long as its window lasts, however many
       // times it is presented. Record it so it completes one sign-in only.
-      const claim = await claimTotpCode(totpFactor.id, totpCode);
-      if (claim.kind !== "claimed") {
-        await supabase.auth.signOut();
-        if (claim.kind === "failed") {
-          console.error("TOTP replay check unavailable:", claim.error);
-          return { error: LIMITER_UNAVAILABLE };
-        }
-        await logEvent(
-          supabase,
-          user.id,
-          SYSTEM_EVENT_TYPES.LOGIN_FAILED,
-          `Reused MFA code rejected for user ${profile.full_name}`,
-          ipAddress,
-          { reason: "totp_replay" }
-        );
-        return { error: "That code has already been used. Wait for the next code and try again." };
-      }
+      totpClaim = claimTotpCode(totpFactor.id, totpCode);
     }
 
-    await clearLoginAttempts(email, ipAddress);
+    // The replay claim decides whether this sign-in is accepted; the landing
+    // path only says where an accepted sign-in goes. Neither needs the other.
+    const [claim, redirectUrl] = await Promise.all([
+      totpClaim,
+      // 5. Return success and route destination
+      mustChangePassword(user) ? SET_PASSWORD_PATH : getDefaultLandingPath(user.id, profile),
+    ]);
 
-    // 5. Successful login audit log
-    await logEvent(
-      supabase,
-      user.id,
-      SYSTEM_EVENT_TYPES.LOGIN_SUCCESS,
-      `User ${profile.full_name} (${profile.role}) successfully logged in`,
-      ipAddress
+    if (claim && claim.kind !== "claimed") {
+      await supabase.auth.signOut();
+      if (claim.kind === "failed") {
+        console.error("TOTP replay check unavailable:", claim.error);
+        return { error: LIMITER_UNAVAILABLE };
+      }
+      await logEvent(
+        supabase,
+        user.id,
+        SYSTEM_EVENT_TYPES.LOGIN_FAILED,
+        `Reused MFA code rejected for user ${profile.full_name}`,
+        ipAddress,
+        { reason: "totp_replay" }
+      );
+      return { error: "That code has already been used. Wait for the next code and try again." };
+    }
+
+    // Neither the counter reset nor the success audit row is in the reply, so
+    // both are written after it is sent.
+    runAfterResponse("clearing login attempts", () => clearLoginAttempts(email, ipAddress));
+    runAfterResponse("the login audit row", () =>
+      logEvent(
+        supabase,
+        user.id,
+        SYSTEM_EVENT_TYPES.LOGIN_SUCCESS,
+        `User ${profile.full_name} (${profile.role}) successfully logged in`,
+        ipAddress
+      )
     );
-
-    // 6. Return success and route destination
-    const redirectUrl = mustChangePassword(user)
-      ? SET_PASSWORD_PATH
-      : await getDefaultLandingPath(user.id, profile);
 
     return { success: true, redirectUrl };
   } catch (err) {
