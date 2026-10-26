@@ -4,8 +4,23 @@ import { createClient } from "@/lib/supabase/server";
 import RagManagerClient from "@/components/RagManagerClient";
 import PageHeader from "@/components/PageHeader";
 import { timed } from "@/lib/perf/timing";
+import { preloadRagDocuments, type RagDocumentContent } from "@/lib/rag/document-content";
 
 export const dynamic = "force-dynamic";
+
+/** PostgREST returns at most this many rows for one request, and says nothing when it stops. */
+const POSTGREST_ROW_LIMIT = 1000;
+
+interface GroupedDocument {
+  documentId: string;
+  title: string;
+  sourceType: "text" | "pdf";
+  chunkCount: number;
+  totalLength: number;
+  createdAt: string;
+  /** The document's indexed text, when it was small enough to send with the list. */
+  preloaded: RagDocumentContent | null;
+}
 
 interface RagDocumentRow {
   id: string;
@@ -52,6 +67,7 @@ export default async function RagPage() {
     totalLength: number;
     createdAt: string;
   }> = {};
+  const rowsByDocument = new Map<string, RagDocumentRow[]>();
   
   const rows = (data as unknown as RagDocumentRow[]) || [];
   
@@ -59,6 +75,10 @@ export default async function RagPage() {
     const metadata = row.metadata || {};
     const docId = metadata.document_id || row.id;
     const length = row.content ? row.content.length : 0;
+
+    const chunks = rowsByDocument.get(docId);
+    if (chunks) chunks.push(row);
+    else rowsByDocument.set(docId, [row]);
     
     if (!grouped[docId]) {
       grouped[docId] = {
@@ -80,7 +100,15 @@ export default async function RagPage() {
     }
   });
   
-  const documents = Object.values(grouped);
+  // Small documents carry their text, so opening one needs no second request.
+  // The list was read in full only if it stayed under the row limit.
+  const preloaded = preloadRagDocuments(rowsByDocument, {
+    complete: rows.length < POSTGREST_ROW_LIMIT,
+  });
+  const documents: Array<GroupedDocument> = Object.values(grouped).map((doc) => ({
+    ...doc,
+    preloaded: preloaded.get(doc.documentId) ?? null,
+  }));
   
   return (
     <div className="flex-1 p-8 overflow-y-auto">
