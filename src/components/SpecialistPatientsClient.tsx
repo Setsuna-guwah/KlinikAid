@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { getAge, formatPhTime as formatPhDate } from "@/lib/utils";
 import { fetchJson, type ApiError } from "@/lib/fetch-json";
+import { isLocallySearchable, rosterMatchesText } from "@/lib/specialist-roster-search";
 import DataLoadError from "@/components/DataLoadError";
 import { useHydrated } from "@/lib/use-hydrated";
 import { Card, CardContent } from "@/components/ui/card";
@@ -91,6 +92,16 @@ export default function SpecialistPatientsClient({
   rosterLimit,
 }: SpecialistPatientsClientProps) {
   const [patients, setPatients] = useState<PatientData[]>(initialPatients);
+  // The whole roster, when the page loaded all of it: a text search can then be
+  // answered here instead of by a request. Null whenever the roster is not known
+  // to be complete, which includes after a create or an archive until the next
+  // unfiltered load confirms it again.
+  const fullRoster = useRef<PatientData[] | null>(
+    rosterTotal !== null && rosterTotal <= initialPatients.length ? initialPatients : null,
+  );
+  // The request in flight. A newer search aborts it, so a slow older response
+  // cannot land after the answer to the query on screen.
+  const requestAbort = useRef<AbortController | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [deptFilter, setDeptFilter] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -129,6 +140,9 @@ export default function SpecialistPatientsClient({
     start: string, 
     end: string
   ) => {
+    requestAbort.current?.abort();
+    const controller = new AbortController();
+    requestAbort.current = controller;
     setLoading(true);
     setSearchError(null);
 
@@ -138,7 +152,10 @@ export default function SpecialistPatientsClient({
     if (start) params.set("startDate", start);
     if (end) params.set("endDate", end);
 
-    const outcome = await fetchJson<RosterPage>(`/api/specialist/patients?${params.toString()}`);
+    const outcome = await fetchJson<RosterPage>(`/api/specialist/patients?${params.toString()}`, {
+      signal: controller.signal,
+    });
+    if (controller.signal.aborted) return;
 
     setLoading(false);
     setCurrentPage(1); // reset to page 1 on new search
@@ -157,6 +174,11 @@ export default function SpecialistPatientsClient({
     setPatients(outcome.data?.patients ?? []);
     setMatchCount(outcome.data?.matchCount ?? null);
     setTruncated(Boolean(outcome.data?.truncated));
+
+    // An unfiltered load that was not cut off is the whole roster again.
+    if (!query && !dept && !start && !end && outcome.data && !outcome.data.truncated) {
+      fullRoster.current = outcome.data.patients;
+    }
   }, []);
 
   const handleCreatePatient = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -169,6 +191,7 @@ export default function SpecialistPatientsClient({
         toast.success("Private patient created successfully!");
         setIsModalOpen(false);
         // Refresh the list
+        fullRoster.current = null;
         fetchFilteredPatients(searchQuery, deptFilter, startDate, endDate);
       } else {
         toast.error(res.error || "Failed to create patient");
@@ -196,6 +219,7 @@ export default function SpecialistPatientsClient({
         // The action archives rather than destroys: the patient and their records
         // stay in the database with deleted_at set, and the roster stops listing them.
         toast.success("Patient archived.");
+        fullRoster.current = null;
         fetchFilteredPatients(searchQuery, deptFilter, startDate, endDate);
       } else {
         toast.error(res.error || "Failed to archive patient");
@@ -211,15 +235,33 @@ export default function SpecialistPatientsClient({
     }
   };
 
-  // Trigger search on parameter updates (debounced query/filter search)
+  // Trigger search on parameter updates. A text search over a complete roster is
+  // answered from the roster at once. Anything else goes to the server, debounced,
+  // and the loading row shows straight away rather than after the debounce.
   useEffect(() => {
     if (isFirstMount.current) {
       isFirstMount.current = false;
       return;
     }
+
+    const query = searchQuery.trim();
+    const roster = fullRoster.current;
+    if (roster && !deptFilter && !startDate && !endDate && isLocallySearchable(query)) {
+      requestAbort.current?.abort();
+      const matches = roster.filter((patient) => rosterMatchesText(patient, query));
+      setLoading(false);
+      setSearchError(null);
+      setCurrentPage(1);
+      setPatients(matches);
+      setMatchCount(matches.length);
+      setTruncated(false);
+      return;
+    }
+
+    setLoading(true);
     const delayDebounceFn = setTimeout(() => {
       fetchFilteredPatients(searchQuery, deptFilter, startDate, endDate);
-    }, 400);
+    }, 250);
 
     return () => clearTimeout(delayDebounceFn);
   }, [searchQuery, deptFilter, startDate, endDate, fetchFilteredPatients]);
@@ -442,6 +484,7 @@ export default function SpecialistPatientsClient({
                         </Link>
                         <Link 
                           href={`/specialist/patients/${patient.id}/analytics`}
+                          prefetch
                           className="inline-flex items-center gap-1 font-semibold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 bg-indigo-50/50 hover:bg-indigo-100/70 dark:bg-slate-800 dark:hover:bg-slate-700 px-2.5 py-1.5 rounded-lg transition"
                         >
                           Analytics

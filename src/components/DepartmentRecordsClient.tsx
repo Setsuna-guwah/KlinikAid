@@ -105,11 +105,15 @@ export default function DepartmentRecordsClient({
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
 
+  // Both tabs were rendered by the server, so the tab is only a client view.
+  // Updating the URL with window.history rather than router.replace keeps the
+  // switch local: a router navigation would re-request the page's server
+  // component for a query string that page does not read.
   const handleTabChange = (tab: "queue" | "history") => {
-    const params = new URLSearchParams(searchParams);
+    const params = new URLSearchParams(window.location.search);
     params.set("tab", tab);
     setSearchTerm("");
-    router.replace(`${pathname}?${params.toString()}`);
+    window.history.replaceState(null, "", `${pathname}?${params.toString()}`);
   };
 
   // How long a queue entry has been waiting. Entries are no longer hidden at PHT

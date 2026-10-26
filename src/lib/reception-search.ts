@@ -99,3 +99,45 @@ export function patientNameConditions(term: string): string[] {
 
 /** Most first/last split points tried for a multi-word term. */
 export const MAX_NAME_SPLITS = 6;
+
+/**
+ * The client-side twin of `GET /api/reception/documents/search`: does a loaded
+ * document match the term under the same rules the server applies to its
+ * branches? Used only when the board holds every document, so the local answer
+ * is the complete one. The server stays the authority for a truncated board.
+ *
+ * Case-insensitive substring matching, as the server's `imatch` does. The term
+ * is literal here (no regex, no wildcards), matching the server's escaping.
+ */
+export function documentMatchesSearch(
+  doc: { file_name: string; file_type: string; patient?: { first_name: string; last_name: string } | null; uploader?: { full_name: string } | null },
+  term: string,
+): boolean {
+  const needle = term.trim().toLowerCase();
+  if (needle.length === 0) return false;
+
+  // File-name branch: file_name or file_type anywhere in the term's text.
+  if (doc.file_name.toLowerCase().includes(needle) || doc.file_type.toLowerCase().includes(needle)) {
+    return true;
+  }
+
+  // Uploader branch: the uploader's full name, when the join is present.
+  if (doc.uploader?.full_name.toLowerCase().includes(needle)) {
+    return true;
+  }
+
+  // Patient branch: first or last name, or a first/last split of a multi-word
+  // term. Documents with no patient row cannot match here.
+  if (!doc.patient) return false;
+  const first = doc.patient.first_name.toLowerCase();
+  const last = doc.patient.last_name.toLowerCase();
+  if (first.includes(needle) || last.includes(needle)) return true;
+
+  const words = needle.split(/\s+/).filter(Boolean);
+  for (let i = 1; i < words.length && i <= MAX_NAME_SPLITS; i++) {
+    if (first.includes(words.slice(0, i).join(" ")) && last.includes(words.slice(i).join(" "))) {
+      return true;
+    }
+  }
+  return false;
+}
