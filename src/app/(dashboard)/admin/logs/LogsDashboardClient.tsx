@@ -295,6 +295,8 @@ export default function LogsDashboardClient({
     const request = startSystemRequest();
     systemRequested.current = systemRequestKey;
     if (systemRangeInverted) {
+      // The total is reset without a count, so the next fetch must recount.
+      systemCountedFor.current = null;
       setSystemLogs([]);
       setSystemTotal(0);
       setSystemError(null);
@@ -321,6 +323,9 @@ export default function LogsDashboardClient({
 
     if (outcome.kind === "failed") {
       systemRequested.current = null;
+      // The total is reset without a count, so the next fetch must recount
+      // instead of sending knownTotal=0.
+      systemCountedFor.current = null;
       // Clear the rows. Leaving the previous page visible under the new filters
       // is the same defect: the operator reads an audit trail that was never
       // retrieved as though it were the filtered result.
