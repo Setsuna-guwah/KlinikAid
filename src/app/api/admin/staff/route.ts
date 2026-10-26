@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requirePermission } from "@/lib/auth/helpers";
 import { AuthError, errorResponse, handleRouteError, successResponse } from "@/lib/api-response";
+import { isStaffRegistryPermissionDenied, loadStaffRegistry } from "@/lib/admin/staff-registry";
 import { logEvent } from "@/lib/logger";
 import { DEPARTMENTS, SYSTEM_EVENT_TYPES } from "@/lib/constants";
 import { validateName } from "@/lib/validation";
@@ -51,80 +52,28 @@ function getStaffCreateErrorMessage(error: unknown): { message: string; status: 
 
 const staffEmailSchema = z.string().trim().email("Invalid email address.");
 
-/**
- * Resolve Auth emails for exactly the staff profile ids on screen (#229).
- *
- * The registry used to call `listUsers({ perPage: 1000 })` once and map what
- * came back, but the project holds ~1,460 auth users (mostly patients), so
- * every staff profile beyond the first page got an empty Email cell and
- * dropped out of the email search. Paging through all users would fix that at
- * the cost of shipping every patient user object on every registry load, so
- * the lookup instead costs one small request per staff profile, bounded so a
- * large staff list cannot open unbounded parallel requests against GoTrue.
- *
- * A profile can outlive its Auth user. That is a missing email for one row,
- * not a failed registry read, so the id is logged and left without an email
- * instead of failing the whole page.
- */
-const STAFF_EMAIL_LOOKUP_CONCURRENCY = 10;
-
-async function fetchStaffEmails(
-  adminClient: ReturnType<typeof createAdminClient>,
-  profileIds: string[]
-): Promise<Map<string, string>> {
-  const emails = new Map<string, string>();
-  for (let i = 0; i < profileIds.length; i += STAFF_EMAIL_LOOKUP_CONCURRENCY) {
-    const batch = profileIds.slice(i, i + STAFF_EMAIL_LOOKUP_CONCURRENCY);
-    // allSettled: a lookup that throws (not just one that returns an error)
-    // must cost one row its email, not fail the whole registry.
-    const results = await Promise.allSettled(batch.map((id) => adminClient.auth.admin.getUserById(id)));
-    results.forEach((settled, index) => {
-      const id = batch[index];
-      const error = settled.status === "rejected" ? settled.reason : settled.value.error;
-      const user = settled.status === "fulfilled" ? settled.value.data?.user : null;
-      if (error || !user) {
-        console.warn("Staff registry: no Auth user for profile", id, errorText(error));
-        return;
-      }
-      emails.set(id, user.email || "");
-    });
-  }
-  return emails;
-}
-
 function isDepartment(value: unknown): value is Department {
   return typeof value === "string" && value in DEPARTMENTS;
 }
 
-// GET: list all staff members (non-patients) with merged email from Auth
+// GET: list all staff members (non-patients) with their Auth email (#229, #236).
+// One database call; the registry's shape and fallback live in staff-registry.ts.
 export async function GET() {
   try {
     await requirePermission("staff.manage");
     const supabase = await createClient();
-    const adminClient = createAdminClient();
+    const registry = await loadStaffRegistry(supabase, createAdminClient());
 
-    const profilesResult = await supabase
-      .from("profiles")
-      .select("*")
-      .neq("role", "patient")
-      .order("created_at", { ascending: false });
+    if (registry.kind === "failed") {
+      // The database refusing the caller is the same 403 requirePermission gives.
+      // Any other failure is a failed read: never an empty registry.
+      if (isStaffRegistryPermissionDenied(registry.error)) {
+        throw new AuthError(403, "FORBIDDEN: Missing permission 'staff.manage'");
+      }
+      throw new Error(errorText(registry.error));
+    }
 
-    if (profilesResult.error) throw profilesResult.error;
-    const profiles = profilesResult.data ?? [];
-
-    // Resolve emails only for the staff ids on screen (#229): the auth-user
-    // count is dominated by patients and grows independently of this list.
-    const emailMap = await fetchStaffEmails(
-      adminClient,
-      profiles.map((profile) => profile.id)
-    );
-
-    const staffWithEmails = profiles.map((profile) => ({
-      ...profile,
-      email: emailMap.get(profile.id) || "",
-    }));
-
-    return successResponse(staffWithEmails);
+    return successResponse(registry.data);
   } catch (error: unknown) {
     return handleRouteError(error, "Failed to list staff");
   }
