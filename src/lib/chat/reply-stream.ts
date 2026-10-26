@@ -69,6 +69,9 @@ export function streamModelReply(source: ReplySource): {
   });
 
   const reply = (async (): Promise<CompletedReply | null> => {
+    // The SDK tees its stream, so a mid-stream failure rejects this promise as well.
+    // It is only awaited on success, so mark it handled here; the await below still throws.
+    source.response.catch(() => undefined);
     try {
       for await (const chunk of source.stream) {
         const piece = chunk.text();

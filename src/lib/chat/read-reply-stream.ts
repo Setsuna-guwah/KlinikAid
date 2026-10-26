@@ -35,21 +35,27 @@ export async function readReplyStream(
     }
   };
 
-  let chunk = await reader.read();
-  while (!chunk.done) {
-    buffered += decoder.decode(chunk.value, { stream: true });
-    let newline = buffered.indexOf("\n");
-    while (newline !== -1) {
-      handle(buffered.slice(0, newline));
-      buffered = buffered.slice(newline + 1);
-      newline = buffered.indexOf("\n");
+  try {
+    let chunk = await reader.read();
+    while (!chunk.done) {
+      buffered += decoder.decode(chunk.value, { stream: true });
+      let newline = buffered.indexOf("\n");
+      while (newline !== -1) {
+        handle(buffered.slice(0, newline));
+        buffered = buffered.slice(newline + 1);
+        newline = buffered.indexOf("\n");
+      }
+      chunk = await reader.read();
     }
-    chunk = await reader.read();
-  }
-  buffered += decoder.decode();
-  handle(buffered);
+    buffered += decoder.decode();
+    handle(buffered);
 
-  if (!completed) {
-    throw new Error(REPLY_INTERRUPTED_MESSAGE);
+    if (!completed) {
+      throw new Error(REPLY_INTERRUPTED_MESSAGE);
+    }
+  } finally {
+    // Leaves the body unread only when we exit early (an error frame or a malformed
+    // line). The server keeps generating on its own side regardless.
+    await reader.cancel().catch(() => {});
   }
 }

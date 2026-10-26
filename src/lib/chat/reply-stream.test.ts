@@ -16,9 +16,9 @@ function sourceOf(pieces: string[], options: { failAfter?: Error; tokens?: numbe
   const full = pieces.join("");
   return {
     stream: stream(),
-    // A failing stream never reaches its final response, so that promise stays pending.
+    // The SDK tees its stream, so a failing stream rejects the final response too.
     response: options.failAfter
-      ? new Promise<never>(() => {})
+      ? Promise.reject(options.failAfter)
       : Promise.resolve({ text: () => full, usageMetadata: { totalTokenCount: options.tokens ?? 42 } }),
   };
 }
@@ -63,6 +63,39 @@ describe("streamModelReply", () => {
 
     expect(frames.map((frame) => frame.type)).toEqual(["text", "text", "error"]);
     expect(frames.some((frame) => frame.type === "done")).toBe(false);
+    await expect(reply).resolves.toBeNull();
+  });
+
+  it("handles a rejected response promise without an unhandled rejection when the stream fails", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const { body, reply } = streamModelReply(sourceOf(["Partial"], { failAfter: new Error("reset") }));
+      await collect(body);
+      await expect(reply).resolves.toBeNull();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+    expect(unhandled).toEqual([]);
+  });
+
+  it("resolves to null when the stream completes but the final response rejects", async () => {
+    const source: ReplySource = {
+      stream: (async function* () {
+        yield piece("Hello");
+      })(),
+      response: Promise.reject(new Error("aggregate failed")),
+    };
+    const { body, reply } = streamModelReply(source);
+
+    const frames = await collect(body);
+
+    expect(frames).toEqual([
+      { type: "text", text: "Hello" },
+      { type: "error", message: REPLY_FAILED_MESSAGE },
+    ]);
     await expect(reply).resolves.toBeNull();
   });
 
@@ -129,6 +162,22 @@ describe("readReplyStream", () => {
 
   it("treats a malformed frame as an interrupted reply", async () => {
     await expect(readReplyStream(bodyOf("not json\n"), () => {})).rejects.toThrow(REPLY_INTERRUPTED_MESSAGE);
+  });
+
+  it("cancels the response body when it exits early on an error frame", async () => {
+    let cancelled = false;
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('{"type":"error","message":"model failed"}\n{"type":"text","text":"late"}\n'));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+
+    await expect(readReplyStream(body, () => {})).rejects.toThrow("model failed");
+    expect(cancelled).toBe(true);
   });
 
   it("does not resolve for an empty body", async () => {
