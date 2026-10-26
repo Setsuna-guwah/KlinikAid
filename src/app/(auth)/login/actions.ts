@@ -300,12 +300,17 @@ export async function loginAction(
       return { error: "That code has already been used. Wait for the next code and try again." };
     }
 
-    // 6. Return success and route destination
-    const redirectUrl = await landingPath;
+    // 6. Return success and route destination. The counter reset finishes before
+    // the reply, overlapping the landing lookup: deferred, it could run after a
+    // later submission was counted and delete that count too.
+    const [redirectUrl] = await Promise.all([
+      landingPath,
+      clearLoginAttempts(email, ipAddress).catch((err) => {
+        console.error("Login: clearing login attempts failed:", err);
+      }),
+    ]);
 
-    // Neither the counter reset nor the success audit row is in the reply, so
-    // both are written after it is sent.
-    runAfterResponse("clearing login attempts", () => clearLoginAttempts(email, ipAddress));
+    // The success audit row is not in the reply, so it is written after it is sent.
     runAfterResponse("the login audit row", () =>
       logEvent(
         supabase,

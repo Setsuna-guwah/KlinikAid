@@ -204,16 +204,16 @@ describe("loginAction", () => {
       expect(await pending).toMatchObject({ success: true });
     });
 
-    it("writes the counter reset and the success audit row after the reply, with the same content", async () => {
+    it("resets the counter before the reply and writes the success audit row after it", async () => {
       await loginAction(null, form("123456"));
 
-      expect(mocks.after).toHaveBeenCalledTimes(2);
-      expect(mocks.clearLoginAttempts).not.toHaveBeenCalled();
+      // A deferred reset could delete a later submission's count, so it is not deferred.
+      expect(mocks.clearLoginAttempts).toHaveBeenCalledWith(EMAIL, IP);
+      expect(mocks.after).toHaveBeenCalledTimes(1);
       expect(loggedTypes()).not.toContain(SYSTEM_EVENT_TYPES.LOGIN_SUCCESS);
 
       await runScheduled();
 
-      expect(mocks.clearLoginAttempts).toHaveBeenCalledWith(EMAIL, IP);
       expect(mocks.logEvent).toHaveBeenCalledWith(
         supabase,
         "user-1",
@@ -412,13 +412,9 @@ describe("loginAction", () => {
       const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       mocks.clearLoginAttempts.mockRejectedValue(new Error("rpc down"));
 
-      await loginAction(null, form("123456"));
-      await runScheduled();
+      await expect(loginAction(null, form("123456"))).resolves.toMatchObject({ success: true });
 
-      expect(errorSpy).toHaveBeenCalledWith(
-        "Login: clearing login attempts failed after the response:",
-        expect.any(Error)
-      );
+      expect(errorSpy).toHaveBeenCalledWith("Login: clearing login attempts failed:", expect.any(Error));
     });
   });
 });
