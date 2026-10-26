@@ -214,6 +214,106 @@ describe("getRequestUser", () => {
     await expect(getRequestUser()).resolves.toBeNull();
   });
 
+  it("refuses an expired token even though its signature is valid", async () => {
+    const key = await signingKey("kid-1");
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signToken(key, claims({ iat: now - 7200, exp: now - 3600 }));
+    mocks.client = clientWithToken(token);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string) => {
+        if (String(input).includes("jwks.json")) {
+          return new Response(JSON.stringify({ keys: [key.jwk] }), { status: 200 });
+        }
+        throw new Error(`unexpected fetch: ${input}`);
+      })
+    );
+
+    const { getRequestUser } = await freshSession();
+    await expect(getRequestUser()).resolves.toBeNull();
+  });
+
+  it("refuses an unsigned token", async () => {
+    const key = await signingKey("kid-1");
+    const header = base64url(JSON.stringify({ alg: "ES256", kid: "kid-1", typ: "JWT" }));
+    const token = `${header}.${base64url(JSON.stringify(claims()))}.`;
+    mocks.client = clientWithToken(token);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string) => {
+        if (String(input).includes("jwks.json")) {
+          return new Response(JSON.stringify({ keys: [key.jwk] }), { status: 200 });
+        }
+        throw new Error(`unexpected fetch: ${input}`);
+      })
+    );
+
+    const { getRequestUser } = await freshSession();
+    await expect(getRequestUser()).resolves.toBeNull();
+  });
+
+  it("refuses a token whose claims were edited after it was signed", async () => {
+    // An aal1 token re-labelled as aal2 must not pass the staff MFA gate.
+    const key = await signingKey("kid-1");
+    const signed = await signToken(key, claims({ aal: "aal1" }));
+    const [header, , signature] = signed.split(".");
+    const forged = base64url(JSON.stringify(claims({ aal: "aal2" })));
+    mocks.client = clientWithToken(`${header}.${forged}.${signature}`);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string) => {
+        if (String(input).includes("jwks.json")) {
+          return new Response(JSON.stringify({ keys: [key.jwk] }), { status: 200 });
+        }
+        throw new Error(`unexpected fetch: ${input}`);
+      })
+    );
+
+    const { getRequestSession } = await freshSession();
+    await expect(getRequestSession()).resolves.toBeNull();
+  });
+
+  it("reports the aal the verified token was issued at", async () => {
+    const key = await signingKey("kid-1");
+    mocks.client = clientWithToken(await signToken(key, claims({ aal: "aal2" })));
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string) => {
+        if (String(input).includes("jwks.json")) {
+          return new Response(JSON.stringify({ keys: [key.jwk] }), { status: 200 });
+        }
+        throw new Error(`unexpected fetch: ${input}`);
+      })
+    );
+
+    const { getRequestSession } = await freshSession();
+    const session = await getRequestSession();
+    expect(session?.aal).toBe("aal2");
+    expect(session?.user.id).toBe("user-123");
+  });
+
+  it("reports no aal when the token carries none", async () => {
+    const key = await signingKey("kid-1");
+    mocks.client = clientWithToken(await signToken(key, claims()));
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string) => {
+        if (String(input).includes("jwks.json")) {
+          return new Response(JSON.stringify({ keys: [key.jwk] }), { status: 200 });
+        }
+        throw new Error(`unexpected fetch: ${input}`);
+      })
+    );
+
+    const { getRequestSession } = await freshSession();
+    await expect(getRequestSession()).resolves.toMatchObject({ aal: null });
+  });
+
   it("fetches the signing keys once and reuses them", async () => {
     const key = await signingKey("kid-1");
     const token = await signToken(key, claims());

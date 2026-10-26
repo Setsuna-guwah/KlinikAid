@@ -122,6 +122,74 @@ export const hasAnyPermission = cache(
   }
 );
 
+/**
+ * The role name and permission names of the signed-in user, read in one call
+ * to `dashboard_access_context` (migration 44, issue #238).
+ */
+export type DashboardAccess = {
+  roleName: string | null;
+  permissions: ReadonlySet<string>;
+};
+
+function isDashboardAccessPayload(
+  value: unknown
+): value is { role_name?: string | null; permissions: string[] } {
+  if (typeof value !== "object" || value === null) return false;
+  const { role_name, permissions } = value as { role_name?: unknown; permissions?: unknown };
+  return (
+    (role_name === undefined || role_name === null || typeof role_name === "string") &&
+    Array.isArray(permissions) &&
+    permissions.every((permission) => typeof permission === "string")
+  );
+}
+
+/**
+ * The caller's role name and permissions from one database call.
+ *
+ * The call answers for the session user (`auth.uid()`), and it applies the same
+ * active-account and MFA rules as `user_has_permission`. Returns null when the
+ * call fails or is not installed yet: the caller then checks each permission
+ * with `hasPermission`, so a failed call is never read as "holds nothing" and
+ * the code can ship before the migration is applied.
+ */
+export const getDashboardAccess = cache(async (): Promise<DashboardAccess | null> => {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await timed("auth.rpc.dashboard_access_context", () =>
+      supabase.rpc("dashboard_access_context")
+    );
+
+    if (error) {
+      console.error("Dashboard access call failed; checking permissions one by one:", error.message);
+      return null;
+    }
+
+    if (!isDashboardAccessPayload(data)) {
+      console.error("Dashboard access call returned an unexpected shape; checking permissions one by one.");
+      return null;
+    }
+
+    return { roleName: data.role_name ?? null, permissions: new Set(data.permissions) };
+  } catch (error) {
+    console.error("Error in getDashboardAccess:", error);
+    return null;
+  }
+});
+
+/**
+ * Answers "does the user hold this permission?" from the dashboard access call
+ * when it succeeded, and from `hasPermission` when it did not.
+ */
+export function permissionHolder(
+  userId: string,
+  access: DashboardAccess | null
+): (permissionName: string) => Promise<boolean> {
+  if (access) {
+    return async (permissionName) => access.permissions.has(permissionName);
+  }
+  return (permissionName) => hasPermission(userId, permissionName);
+}
+
 export async function getDefaultLandingPath(userId: string, profile: Pick<Profile, "role">): Promise<string> {
   const [
     canManageProfiles,
