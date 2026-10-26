@@ -2,6 +2,7 @@ import { cache } from "react";
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { AUTH_USER_HEADER } from "@/lib/auth/auth-header";
+import { timed } from "@/lib/perf/timing";
 import type { User } from "@supabase/supabase-js";
 
 /**
@@ -117,13 +118,29 @@ export async function getSigningKeys(): Promise<SigningKey[]> {
 }
 
 /**
- * The signed-in user of the current request, or null when there is no valid
+ * The verified session of the current request: its user, and the assurance
+ * level (`aal`) the access token was issued at.
+ *
+ * The `aal` claim is read from the same token whose signature was just
+ * verified, so it is as trustworthy as the identity. It is what the dashboard
+ * layout uses to tell an MFA-verified session (`aal2`) from one that still
+ * needs its second factor, without asking the Auth server for the factor list
+ * on every navigation.
+ */
+export type RequestSession = {
+  user: User;
+  /** `aal1`, `aal2`, or null when the token carries no assurance claim. */
+  aal: string | null;
+};
+
+/**
+ * The signed-in session of the current request, or null when there is no valid
  * session.
  *
  * `cache()` collapses the calls made by the layout, the page and the auth
  * helpers into one verification per request.
  */
-export const getRequestUser = cache(async (): Promise<User | null> => {
+export const getRequestSession = cache(async (): Promise<RequestSession | null> => {
   try {
     const supabase = await createClient();
 
@@ -145,9 +162,9 @@ export const getRequestUser = cache(async (): Promise<User | null> => {
     }
 
     const keys = await getSigningKeys();
-    const { data, error } = await supabase.auth.getClaims(sessionData.session.access_token, {
-      keys,
-    });
+    const { data, error } = await timed("auth.session.getClaims", () =>
+      supabase.auth.getClaims(sessionData.session.access_token, { keys })
+    );
 
     if (error || !data?.claims?.sub) {
       console.error("Could not verify the session token:", error?.message ?? "no subject claim");
@@ -162,7 +179,7 @@ export const getRequestUser = cache(async (): Promise<User | null> => {
       return null;
     }
 
-    return {
+    const user = {
       id: claims.sub,
       aud: claims.aud ?? "",
       email: claims.email ?? "",
@@ -170,8 +187,19 @@ export const getRequestUser = cache(async (): Promise<User | null> => {
       user_metadata: (claims.user_metadata as Record<string, unknown>) ?? {},
       created_at: claims.iat ? new Date(claims.iat * 1000).toISOString() : new Date().toISOString(),
     } as User;
+
+    return { user, aal: typeof claims.aal === "string" ? claims.aal : null };
   } catch (error) {
-    console.error("Error in getRequestUser:", error);
+    console.error("Error in getRequestSession:", error);
     return null;
   }
+});
+
+/**
+ * The signed-in user of the current request, or null when there is no valid
+ * session.
+ */
+export const getRequestUser = cache(async (): Promise<User | null> => {
+  const session = await getRequestSession();
+  return session?.user ?? null;
 });
