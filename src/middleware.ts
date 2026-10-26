@@ -70,17 +70,17 @@ export async function middleware(request: NextRequest) {
   // put a name in it.
   request.headers.delete(AUTH_USER_HEADER);
 
-  // The session was already read - and refreshed - by updateSession() above.
-  // Asking the Auth server again for the same user cost a second round trip
-  // on every request (issue #165); the answer is the one it returned.
+  // The session was already read - and refreshed - by updateSession() above,
+  // from the access token's signature. This is a routing decision only: the
+  // server code behind every page and route asks the Auth server whether the
+  // session is still live before it returns anything (src/lib/auth/session.ts).
   const { supabaseResponse, supabase, user } = await updateSession(request);
   const path = request.nextUrl.pathname;
 
-  // The identity of the session, for the server code that verifies the
-  // access token locally instead of asking the Auth server who the user is
-  // (src/lib/auth/session.ts). The header is only written when the Auth
-  // server confirmed the session in the call above, so server code can tell
-  // "the session is valid" from "the token still has a valid signature".
+  // The identity the signature of this request's token proved, for the server
+  // code in src/lib/auth/session.ts. That code binds the token to this value
+  // and then asks the Auth server whether the session is still live, so a
+  // signed-out session is refused there, not here.
   if (user) {
     request.headers.set(AUTH_USER_HEADER, user.id);
   }
@@ -128,7 +128,7 @@ export async function middleware(request: NextRequest) {
       const role = profile?.role;
       if (role === "admin") return withCsp(NextResponse.redirect(new URL("/admin/dashboard", request.url)));
       if (role === "receptionist") return withCsp(NextResponse.redirect(new URL("/reception/dashboard", request.url)));
-      if (role === "department_staff") return withCsp(NextResponse.redirect(new URL("/department/dashboard", request.url)));
+      if (role === "department_staff") return withCsp(NextResponse.redirect(new URL("/department/records", request.url)));
       if (role === "medical_specialist") return withCsp(NextResponse.redirect(new URL("/specialist/dashboard", request.url)));
       if (role === "patient") return withCsp(NextResponse.redirect(new URL("/patient/dashboard", request.url)));
     }
