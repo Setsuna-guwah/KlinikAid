@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useTransition } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -26,9 +26,15 @@ import { SYSTEM_EVENT_TYPES, GEMINI_BLENDED_USD_PER_1M_TOKENS, CHART_COLORS } fr
 import LogEventBadge from "@/components/LogEventBadge";
 import DataLoadError from "@/components/DataLoadError";
 import { CHART_DATA_LOAD_ERROR_DESCRIPTION } from "@/components/data-load-error-copy";
-import { fetchJson, type ApiError } from "@/lib/fetch-json";
+import { ApiError, fetchJson } from "@/lib/fetch-json";
 import { formatPhTime } from "@/lib/utils";
-import { isInvertedRange, phtDayEnd, phtDayStart } from "@/lib/logs/system-log-query";
+import {
+  SYSTEM_LOG_PAGE_SIZE,
+  isInvertedRange,
+  phtDayEnd,
+  phtDayStart,
+  type InitialSystemLogs,
+} from "@/lib/logs/system-log-query";
 import { 
   Loader2, 
   Download, 
@@ -58,6 +64,31 @@ interface LogsDashboardClientProps {
   /** Set when the actor list failed to load, so an empty dropdown is not "no actors". */
   profilesError?: { message: string } | null;
   freeTierTokenLimit: number;
+  /** The first System Events page, rendered by the server so the first view needs no fetch. */
+  initialSystem: InitialSystemLogs;
+}
+
+/**
+ * Starts a request for one panel and cancels the panel's previous one. Only the
+ * newest request may write its panel: `isCurrent` is how a superseded response
+ * is recognised and dropped, and the abort stops it using the network.
+ */
+function useSupersedingRequest() {
+  const sequence = useRef(0);
+  const controller = useRef<AbortController | null>(null);
+
+  useEffect(() => () => controller.current?.abort(), []);
+
+  return () => {
+    controller.current?.abort();
+    const next = new AbortController();
+    controller.current = next;
+    const ticket = ++sequence.current;
+    return {
+      signal: next.signal,
+      isCurrent: () => ticket === sequence.current,
+    };
+  };
 }
 
 interface SystemLog {
@@ -131,23 +162,33 @@ const CustomChartTooltip = ({ active, payload, label }: CustomChartTooltipProps)
   return null;
 };
 
-export default function LogsDashboardClient({ profiles, profilesError = null, freeTierTokenLimit }: LogsDashboardClientProps) {
-  const router = useRouter();
+export default function LogsDashboardClient({
+  profiles,
+  profilesError = null,
+  freeTierTokenLimit,
+  initialSystem,
+}: LogsDashboardClientProps) {
   const searchParams = useSearchParams();
   
   // Tab Management (Query Param persistence - Suspense protected)
   const activeTab = searchParams.get("tab") || "system";
+  // A tab is a query param, but changing it with the router re-renders the page
+  // on the server, which re-runs its queries before the tab can change. The
+  // history entry alone is enough: the panels already read the URL through
+  // useSearchParams.
   const setActiveTab = (tab: string) => {
-    const params = new URLSearchParams(searchParams);
+    const params = new URLSearchParams(searchParams.toString());
     params.set("tab", tab);
-    router.push(`?${params.toString()}`);
+    window.history.pushState(null, "", `?${params.toString()}`);
   };
 
   // ----------------------------------------------------
   // TAB 1: SYSTEM LOGS STATE
   // ----------------------------------------------------
-  const [systemLogs, setSystemLogs] = useState<SystemLog[]>([]);
-  const [systemTotal, setSystemTotal] = useState(0);
+  const [systemLogs, setSystemLogs] = useState<SystemLog[]>(
+    initialSystem.kind === "ok" ? initialSystem.logs : []
+  );
+  const [systemTotal, setSystemTotal] = useState(initialSystem.kind === "ok" ? initialSystem.total : 0);
   const [systemPage, setSystemPage] = useState(1);
   const [systemLoading, setSystemLoading] = useState(false);
   const [isExporting, startExport] = useTransition();
@@ -158,7 +199,9 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
   // trail that reads as "nothing happened") and a failed cost fetch rendered 30
   // hard zero-filled days with an "Under Budget" badge. Empty and failed are
   // different claims and each panel now states which one it is making.
-  const [systemError, setSystemError] = useState<ApiError | null>(null);
+  const [systemError, setSystemError] = useState<ApiError | null>(
+    initialSystem.kind === "failed" ? new ApiError(initialSystem.message, 500) : null
+  );
 
   // Filters
   const [filterEventType, setFilterEventType] = useState<string>("all");
@@ -169,11 +212,18 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
   // The search box is applied on submit, not per keystroke. Keeping the applied
   // term separate means paging uses the search the table is actually showing.
   const [appliedSearch, setAppliedSearch] = useState<string>("");
-  // Each system-log fetch takes a ticket; only the newest may write the table.
-  // Without this, a slow unfiltered load that resolves after a search request
-  // overwrites the search results, and the table shows rows that do not match
-  // the filters on screen.
-  const systemRequestSeq = useRef(0);
+  // Each system-log fetch supersedes the one before it: only the newest may
+  // write the table. Without this, a slow unfiltered load that resolves after a
+  // search request overwrites the search results, and the table shows rows that
+  // do not match the filters on screen.
+  const startSystemRequest = useSupersedingRequest();
+  // The request key the table currently shows or is loading ("<filters>|<page>").
+  // The server's first page already matches the default key, so the first view
+  // does not fetch it again.
+  const systemRequested = useRef<string | null>(initialSystem.kind === "ok" ? "|1" : null);
+  // The filter key the known total was counted for. Paging reuses that total
+  // while the filters stay the same; any filter change recounts.
+  const systemCountedFor = useRef<string | null>(initialSystem.kind === "ok" ? "" : null);
 
   // ----------------------------------------------------
   // TAB 2: CHATBOT AUDIT STATE
@@ -184,6 +234,10 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState<ApiError | null>(null);
   const [todayStats, setTodayStats] = useState<{ queries: number; tokens: number } | null>(null);
+  const startChatRequest = useSupersedingRequest();
+  // The page the chatbot table shows or is loading. Null until requested, and
+  // again after a failure so re-entering the tab retries.
+  const chatRequested = useRef<number | null>(null);
 
   // Conversation Drawer
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -202,6 +256,8 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
   // weekly table then reports every week as "Under Budget".
   const [costError, setCostError] = useState<ApiError | null>(null);
   const [costLoaded, setCostLoaded] = useState(false);
+  const startCostRequest = useSupersedingRequest();
+  const costRequested = useRef(false);
 
   // ----------------------------------------------------
   // FETCH LOGICS
@@ -229,9 +285,15 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
     return params;
   };
 
-  // Fetch System Logs (Paginated & Filtered)
-  const fetchSystemLogs = async () => {
-    const ticket = ++systemRequestSeq.current;
+  // Identifies what the table would show: the filters, then the page.
+  const systemFilterKey = systemFilterParams().toString();
+  const systemRequestKey = `${systemFilterKey}|${systemPage}`;
+
+  // Fetch System Logs (Paginated & Filtered). `recount: false` reuses the total
+  // from the last count when only the page changed, so paging skips the scan.
+  const fetchSystemLogs = async ({ recount = true }: { recount?: boolean } = {}) => {
+    const request = startSystemRequest();
+    systemRequested.current = systemRequestKey;
     if (systemRangeInverted) {
       setSystemLogs([]);
       setSystemTotal(0);
@@ -243,19 +305,22 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
     setSystemLoading(true);
     setSystemError(null);
 
+    const knownTotal = !recount && systemCountedFor.current === systemFilterKey;
     const params = systemFilterParams();
     params.set("page", systemPage.toString());
-    params.set("limit", "15");
+    params.set("limit", String(SYSTEM_LOG_PAGE_SIZE));
+    if (knownTotal) params.set("knownTotal", systemTotal.toString());
 
     const outcome = await fetchJson<{
       logs?: SystemLog[];
       total?: number;
-    }>(`/api/admin/logs/system?${params.toString()}`);
+    }>(`/api/admin/logs/system?${params.toString()}`, { signal: request.signal });
 
-    if (ticket !== systemRequestSeq.current) return;
+    if (!request.isCurrent()) return;
     setSystemLoading(false);
 
     if (outcome.kind === "failed") {
+      systemRequested.current = null;
       // Clear the rows. Leaving the previous page visible under the new filters
       // is the same defect: the operator reads an audit trail that was never
       // retrieved as though it were the filtered result.
@@ -265,6 +330,7 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
       return;
     }
 
+    if (!knownTotal) systemCountedFor.current = systemFilterKey;
     setSystemLogs(outcome.data?.logs || []);
     setSystemTotal(outcome.data?.total || 0);
   };
@@ -282,6 +348,8 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
 
   // Fetch Chatbot Logs
   const fetchChatbotLogs = async (forceStats = false) => {
+    const request = startChatRequest();
+    chatRequested.current = chatPage;
     setChatLoading(true);
     setChatError(null);
 
@@ -298,11 +366,13 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
       logs?: ChatbotLog[];
       total?: number;
       todayStats?: { queries: number; tokens: number } | null;
-    }>(`/api/admin/logs/chatbot?${params.toString()}`);
+    }>(`/api/admin/logs/chatbot?${params.toString()}`, { signal: request.signal });
 
+    if (!request.isCurrent()) return;
     setChatLoading(false);
 
     if (outcome.kind === "failed") {
+      chatRequested.current = null;
       setChatLogs([]);
       setChatTotal(0);
       setChatError(outcome.error);
@@ -318,14 +388,18 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
 
   // Fetch API Cost Tracker Data
   const fetchCostTracker = async () => {
+    const request = startCostRequest();
+    costRequested.current = true;
     setCostLoading(true);
     setCostError(null);
 
-    const outcome = await fetchJson<DailyCost[]>("/api/admin/logs/api-costs");
+    const outcome = await fetchJson<DailyCost[]>("/api/admin/logs/api-costs", { signal: request.signal });
 
+    if (!request.isCurrent()) return;
     setCostLoading(false);
 
     if (outcome.kind === "failed") {
+      costRequested.current = false;
       setDailyCosts([]);
       setCostLoaded(false);
       setCostError(outcome.error);
@@ -358,17 +432,46 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
     setSessionTruncated(Boolean(outcome.data?.truncated));
   };
 
-  // Trigger data load based on tab
+  // Load a tab's data when the tab shows something it does not have yet. A tab
+  // that already shows its current page (from the server, an earlier visit, or
+  // the idle warm-up below) makes no request.
   useEffect(() => {
-    if (activeTab === "system") {
-      fetchSystemLogs();
-    } else if (activeTab === "chatbot") {
+    if (activeTab === "system" && systemRequested.current !== systemRequestKey) {
+      fetchSystemLogs({ recount: false });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, systemRequestKey]);
+
+  useEffect(() => {
+    if (activeTab === "chatbot" && chatRequested.current !== chatPage) {
       fetchChatbotLogs();
-    } else if (activeTab === "costs") {
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, chatPage]);
+
+  useEffect(() => {
+    if (activeTab === "costs" && !costRequested.current) {
       fetchCostTracker();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, systemPage, chatPage, filterEventType, filterUserId, filterStartDate, filterEndDate, appliedSearch]);
+  }, [activeTab]);
+
+  // Once the first view is on screen, load the other two tabs in the
+  // background, so opening them makes no wait. Idle time only: a warm-up never
+  // delays the page the admin is looking at.
+  useEffect(() => {
+    const warm = () => {
+      if (chatRequested.current === null) fetchChatbotLogs();
+      if (!costRequested.current) fetchCostTracker();
+    };
+    if (!window.requestIdleCallback) {
+      const timer = window.setTimeout(warm, 1000);
+      return () => window.clearTimeout(timer);
+    }
+    const idle = window.requestIdleCallback(warm, { timeout: 2000 });
+    return () => window.cancelIdleCallback(idle);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Apply the search term; the effect above refetches when it changes.
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -706,7 +809,7 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
           {/* System Events Table Card */}
           <Card className="border border-slate-200/80 dark:border-slate-800 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
-              <Table>
+              <Table aria-busy={systemLoading}>
                 <TableHeader>
                   <TableRow className="bg-slate-50/50 dark:bg-slate-900/30 border-b border-slate-200 dark:border-slate-800">
                     <TableHead className="w-[180px] font-semibold">Timestamp (PHT)</TableHead>
@@ -869,7 +972,7 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
           {/* Chat Audit Table Card */}
           <Card className="border border-slate-200/80 dark:border-slate-800 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
-              <Table>
+              <Table aria-busy={chatLoading}>
                 <TableHeader>
                   <TableRow className="bg-slate-50/50 dark:bg-slate-900/30 border-b border-slate-200 dark:border-slate-800">
                     <TableHead className="w-[180px] font-semibold">Timestamp (PHT)</TableHead>
@@ -1108,7 +1211,7 @@ export default function LogsDashboardClient({ profiles, profilesError = null, fr
               </CardDescription>
             </CardHeader>
             <div className="overflow-x-auto">
-              <Table>
+              <Table aria-busy={costLoading}>
                 <TableHeader>
                   <TableRow className="bg-slate-50/50 dark:bg-slate-900/30 border-b border-slate-200 dark:border-slate-800">
                     <TableHead className="font-semibold">ISO Week (Monday Start)</TableHead>

@@ -5,50 +5,18 @@ import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 import { requirePermission } from "@/lib/auth/helpers";
 import {
   MAX_EXPORT_ROWS,
-  containsPattern,
   parseSystemLogQuery,
   type SystemLogQuery,
 } from "@/lib/logs/system-log-query";
+import {
+  LOG_COLUMNS,
+  filteredSystemLogQuery,
+  readSystemLogPage,
+} from "@/lib/logs/system-log-read";
 
 export const dynamic = "force-dynamic";
 
-const LOG_COLUMNS = `
-  id,
-  user_id,
-  event_type,
-  description,
-  ip_address,
-  metadata,
-  created_at,
-  profiles (
-    full_name,
-    role
-  )
-`;
-
-// PostgREST answers 416 / PGRST103 when the requested offset is past the last
-// row. That is an empty page, not a server fault.
-const RANGE_NOT_SATISFIABLE = "PGRST103";
-
-function filteredQuery(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  q: SystemLogQuery,
-  columns: string,
-  head = false
-) {
-  let query = supabase
-    .from("system_logs")
-    .select(columns, { count: "exact", head });
-
-  if (q.eventType) query = query.eq("event_type", q.eventType);
-  if (q.userId) query = query.eq("user_id", q.userId);
-  if (q.startDate) query = query.gte("created_at", q.startDate);
-  if (q.endDate) query = query.lte("created_at", q.endDate);
-  if (q.search) query = query.ilike("description", containsPattern(q.search));
-  return query;
-}
-
-type FilteredQuery = ReturnType<typeof filteredQuery>;
+type FilteredQuery = ReturnType<typeof filteredSystemLogQuery>;
 
 export async function GET(request: Request) {
   // 1. Authenticate session & check role (Standing Rule #1 & #2)
@@ -68,7 +36,8 @@ export async function GET(request: Request) {
     }
     const q = parsed.query;
 
-    const baseQuery = (columns: string, head = false) => filteredQuery(supabase, q, columns, head);
+    const baseQuery = (columns: string, head = false) =>
+      filteredSystemLogQuery(supabase, q, columns, { head });
 
     if (q.download) {
       return await exportLogs(q, baseQuery, async (exported, total) => {
@@ -93,24 +62,11 @@ export async function GET(request: Request) {
     }
 
     // Normal paginated request
-    const from = (q.page - 1) * q.limit;
-    const to = from + q.limit - 1;
-    const { data, count, error } = await baseQuery(LOG_COLUMNS)
-      .order("created_at", { ascending: false })
-      .order("id", { ascending: false })
-      .range(from, to);
-
-    if (error?.code === RANGE_NOT_SATISFIABLE) {
-      // Past the end: still report the true total so the pager stays honest.
-      const { count: total, error: countError } = await baseQuery("id", true);
-      if (countError) throw countError;
-      return successResponse({ logs: [], total: total ?? 0, page: q.page, limit: q.limit, truncated: false });
-    }
-    if (error) throw error;
+    const page = await readSystemLogPage(supabase, q);
 
     return successResponse({
-      logs: data ?? [],
-      total: count ?? 0,
+      logs: page.logs,
+      total: page.total,
       page: q.page,
       limit: q.limit,
       truncated: false,
