@@ -68,6 +68,9 @@ export async function loginAction(
   prevState: LoginResult | null,
   formData: FormData
 ): Promise<LoginResult> {
+  // Set once mfa.verify has accepted the code: from then on the session is AAL2,
+  // so any failure must sign it out before the error is returned.
+  let verifiedSession: Awaited<ReturnType<typeof createClient>> | null = null;
   try {
     const email = formData.get("email") as string;
     const password = formData.get("password") as string;
@@ -201,8 +204,10 @@ export async function loginAction(
       // If we didn't receive a TOTP code, prompt the user for it
       if (!totpCode) {
         // Reaching the code prompt proved the password; don't let it use up
-        // one of the user's code attempts. The reply does not wait for the refund.
-        runAfterResponse("refunding the login attempt", () => refundLoginAttempt(email, ipAddress));
+        // one of the user's code attempts. This is awaited, not deferred: a
+        // deferred refund can land after the code submit has counted its own
+        // attempt, and the row then locks and skips the refund.
+        await refundLoginAttempt(email, ipAddress);
         return {
           status: "mfa_required",
         };
@@ -265,17 +270,19 @@ export async function loginAction(
 
       // GoTrue accepts a code for as long as its window lasts, however many
       // times it is presented. Record it so it completes one sign-in only.
+      verifiedSession = supabase;
       totpClaim = claimTotpCode(totpFactor.id, totpCode);
     }
 
-    // The replay claim decides whether this sign-in is accepted; the landing
-    // path only says where an accepted sign-in goes. Neither needs the other.
-    const [claim, redirectUrl] = await Promise.all([
-      totpClaim,
-      // 5. Return success and route destination
-      mustChangePassword(user) ? SET_PASSWORD_PATH : getDefaultLandingPath(user.id, profile),
-    ]);
+    // Start the landing lookup now so it overlaps the claim, but contain it: a
+    // rejection here must not pre-empt the claim decision below. It is awaited
+    // only once the claim has accepted the sign-in.
+    const landingPath = (async () =>
+      mustChangePassword(user) ? SET_PASSWORD_PATH : getDefaultLandingPath(user.id, profile))();
+    landingPath.catch(() => {});
 
+    // 5. Replay claim first, handled exactly as it was before this change.
+    const claim = totpClaim ? await totpClaim : null;
     if (claim && claim.kind !== "claimed") {
       await supabase.auth.signOut();
       if (claim.kind === "failed") {
@@ -293,6 +300,9 @@ export async function loginAction(
       return { error: "That code has already been used. Wait for the next code and try again." };
     }
 
+    // 6. Return success and route destination
+    const redirectUrl = await landingPath;
+
     // Neither the counter reset nor the success audit row is in the reply, so
     // both are written after it is sent.
     runAfterResponse("clearing login attempts", () => clearLoginAttempts(email, ipAddress));
@@ -309,6 +319,14 @@ export async function loginAction(
     return { success: true, redirectUrl };
   } catch (err) {
     console.error("Login action unexpected error:", err);
+    if (verifiedSession) {
+      // Never leave an AAL2 session behind an error response.
+      try {
+        await verifiedSession.auth.signOut();
+      } catch (signOutErr) {
+        console.error("Login: sign-out after a failed MFA sign-in failed:", signOutErr);
+      }
+    }
     return { error: "An unexpected sign-in error occurred. Please try again." };
   }
 }

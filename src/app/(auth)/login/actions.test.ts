@@ -151,14 +151,14 @@ describe("loginAction", () => {
   });
 
   describe("password step with MFA enrolled", () => {
-    it("asks for the code and hands the attempt refund to after(), not the reply", async () => {
+    it("asks for the code and refunds the attempt before replying, not after", async () => {
+      // A deferred refund can land after the code submit has counted its own
+      // attempt, locking the row so the refund is skipped.
       const result = await loginAction(null, form());
 
       expect(result).toEqual({ status: "mfa_required" });
-      expect(mocks.refundLoginAttempt).not.toHaveBeenCalled();
-      expect(mocks.after).toHaveBeenCalledTimes(1);
-      await runScheduled();
       expect(mocks.refundLoginAttempt).toHaveBeenCalledWith(EMAIL, IP);
+      expect(mocks.after).not.toHaveBeenCalled();
     });
 
     it("does not read the factor list before a code is submitted", async () => {
@@ -221,6 +221,37 @@ describe("loginAction", () => {
         "User Ada (admin) successfully logged in",
         IP
       );
+    });
+
+    it("a rejected landing lookup with a refused claim still signs out and records the replay", async () => {
+      mocks.getDefaultLandingPath.mockRejectedValue(new Error("rpc down"));
+      mocks.claimTotpCode.mockResolvedValue({ kind: "replayed" });
+
+      const result = await loginAction(null, form("123456"));
+
+      expect(result.error).toMatch(/already been used/);
+      expect(supabase.auth.signOut).toHaveBeenCalled();
+      expect(mocks.logEvent).toHaveBeenCalledWith(
+        supabase,
+        "user-1",
+        SYSTEM_EVENT_TYPES.LOGIN_FAILED,
+        "Reused MFA code rejected for user Ada",
+        IP,
+        { reason: "totp_replay" }
+      );
+      expect(mocks.after).not.toHaveBeenCalled();
+    });
+
+    it("a rejected landing lookup with an accepted claim signs out and returns the generic error", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      mocks.getDefaultLandingPath.mockRejectedValue(new Error("rpc down"));
+
+      const result = await loginAction(null, form("123456"));
+
+      expect(result).toEqual({ error: "An unexpected sign-in error occurred. Please try again." });
+      expect(supabase.auth.signOut).toHaveBeenCalled();
+      expect(mocks.after).not.toHaveBeenCalled();
+      expect(loggedTypes()).not.toContain(SYSTEM_EVENT_TYPES.LOGIN_SUCCESS);
     });
 
     it("does not accept the session when verify rejects the code", async () => {
