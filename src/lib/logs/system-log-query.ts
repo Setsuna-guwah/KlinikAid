@@ -12,11 +12,34 @@
  */
 
 export const DEFAULT_PAGE_SIZE = 20;
+/** Rows per page on the System Logs screen. The server and the client both use it. */
+export const SYSTEM_LOG_PAGE_SIZE = 15;
 /** Largest page the list view may request; larger values are clamped to this. */
 export const MAX_PAGE_SIZE = 100;
 /** Largest CSV export, in rows. Anything beyond is reported as truncated. */
 export const MAX_EXPORT_ROWS = 10_000;
 export const MAX_SEARCH_LENGTH = 200;
+
+/** One row of `system_logs` as the System Events table reads it. */
+export interface SystemLogRow {
+  id: string;
+  user_id: string | null;
+  event_type: string;
+  description: string;
+  ip_address: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  profiles: { full_name: string; role: string } | null;
+}
+
+/**
+ * The first System Events page as the server rendered it, or the reason it
+ * could not be read. Serializable, so the client can tell a loaded page from a
+ * failed one and never shows a failed read as an empty trail.
+ */
+export type InitialSystemLogs =
+  | { kind: "ok"; logs: SystemLogRow[]; total: number }
+  | { kind: "failed"; message: string };
 
 export interface SystemLogQuery {
   page: number;
@@ -28,6 +51,12 @@ export interface SystemLogQuery {
   /** Case-insensitive substring of `description`. */
   search: string | null;
   download: boolean;
+  /**
+   * The total the caller counted for these same filters on an earlier page.
+   * When set, the server skips the count scan and reports this value. Null
+   * means "count it". Only paging sends it; a changed filter always recounts.
+   */
+  knownTotal: number | null;
 }
 
 export type ParsedSystemLogQuery =
@@ -120,6 +149,15 @@ export function parseSystemLogQuery(params: URLSearchParams): ParsedSystemLogQue
     return { ok: false, error: "startDate is after endDate." };
   }
 
+  let knownTotal: number | null = null;
+  const rawKnownTotal = params.get("knownTotal");
+  if (rawKnownTotal !== null) {
+    if (!/^(0|[1-9]\d*)$/.test(rawKnownTotal) || !Number.isSafeInteger(Number(rawKnownTotal))) {
+      return { ok: false, error: "knownTotal must be a non-negative integer." };
+    }
+    knownTotal = Number(rawKnownTotal);
+  }
+
   const userId = params.get("userId") || null;
   if (userId && !UUID.test(userId)) {
     return { ok: false, error: "userId must be a UUID." };
@@ -141,6 +179,7 @@ export function parseSystemLogQuery(params: URLSearchParams): ParsedSystemLogQue
       endDate,
       search,
       download: params.get("download") === "true",
+      knownTotal,
     },
   };
 }
