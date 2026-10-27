@@ -26,9 +26,59 @@ export type SigningKey = {
  */
 const SIGNING_KEY_TTL_MS = 10 * 60 * 1000;
 
+/**
+ * How long a signing-key discovery request may take. Every request that needs
+ * the key set awaits it — the middleware on a cache refresh, the server code
+ * on a cold start — so a stalled discovery endpoint must not be able to hold
+ * those requests open. The request is aborted at this deadline instead, and
+ * `getSigningKeys()` keeps whatever keys it already knows, so verification
+ * either uses those, asks the Auth server itself (the SDK's own discovery
+ * request runs under the same deadline), or refuses the session. An
+ * unavailable key set never makes verification succeed.
+ */
+export const SIGNING_KEY_FETCH_TIMEOUT_MS = 5_000;
+
 let cachedSigningKeys: SigningKey[] = [];
 let cachedSigningKeysAt = 0;
 let signingKeysInFlight: Promise<SigningKey[]> | null = null;
+
+/** The URL a `fetch` call was given, whatever shape it arrived in. */
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  return input.url;
+}
+
+/**
+ * The `fetch` the Supabase clients are built with: the platform's own, except
+ * that a signing-key discovery request is aborted at
+ * `SIGNING_KEY_FETCH_TIMEOUT_MS`. Every other request the clients make is
+ * sent unchanged.
+ *
+ * The SDK fetches the key set itself when the keys passed to `getClaims()`
+ * do not contain the token's key id (a rotation, or a failed fetch above);
+ * without this deadline that request — and the verification waiting on it —
+ * could hang on a stalled endpoint. A timeout surfaces from `getClaims()` as
+ * a failed verification, so the session is refused rather than left hanging.
+ */
+export async function fetchWithSigningKeyDeadline(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<Response> {
+  if (!requestUrl(input).endsWith("/.well-known/jwks.json")) {
+    return fetch(input, init);
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SIGNING_KEY_FETCH_TIMEOUT_MS);
+  // A signal the caller already set still applies next to ours.
+  init?.signal?.addEventListener("abort", () => controller.abort(), { once: true });
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 async function fetchSigningKeys(): Promise<SigningKey[]> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -40,7 +90,7 @@ async function fetchSigningKeys(): Promise<SigningKey[]> {
     );
   }
 
-  const response = await fetch(`${url}/auth/v1/.well-known/jwks.json`, {
+  const response = await fetchWithSigningKeyDeadline(`${url}/auth/v1/.well-known/jwks.json`, {
     headers: { apikey: anonKey },
     cache: "no-store",
   });
@@ -81,7 +131,9 @@ export async function getSigningKeys(): Promise<SigningKey[]> {
       })
       .catch((error) => {
         // Keep whatever keys are already known rather than failing the request:
-        // `getClaims()` fetches the key set itself when it cannot use ours.
+        // `getClaims()` fetches the key set itself when it cannot use ours,
+        // under the same deadline. A failed fetch is never remembered as a
+        // fresh key set, so the next request tries the endpoint again.
         console.error("Could not fetch the Supabase signing keys:", error);
         return cachedSigningKeys;
       });

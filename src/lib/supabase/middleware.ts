@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import type { User } from "@supabase/supabase-js";
-import { getSigningKeys, userFromClaims } from "@/lib/supabase/signing-keys";
+import { fetchWithSigningKeyDeadline, getSigningKeys, userFromClaims } from "@/lib/supabase/signing-keys";
 
 /**
  * Refreshes the user's session on every request, updating the cookies appropriately.
@@ -36,6 +36,9 @@ export async function updateSession(request: NextRequest) {
   }
 
   const supabase = createServerClient(url, anonKey, {
+    // Only the signing-key discovery request gets a deadline; everything else
+    // the client sends goes out unchanged.
+    global: { fetch: fetchWithSigningKeyDeadline },
     cookies: {
       getAll() {
         return request.cookies.getAll();
