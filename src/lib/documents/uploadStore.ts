@@ -4,13 +4,20 @@ import {
   type StoredObjectEntry,
   type UploadStore,
 } from "@/lib/documents/uploadSubmission";
-import { timed } from "@/lib/perf/timing";
 
-export function uploadStore(admin: SupabaseClient): UploadStore {
+/**
+ * Wraps one store call, for latency labels. The web caller passes its `timed`
+ * helper; the Edge Function leaves the default, so this module never imports
+ * the Next.js-only timing code (#240).
+ */
+export type StoreTimer = <T>(name: string, fn: () => PromiseLike<T>) => Promise<T>;
+const untimed: StoreTimer = (_name, fn) => Promise.resolve(fn());
+
+export function uploadStore(admin: SupabaseClient, timer: StoreTimer = untimed): UploadStore {
   const bucket = () => admin.storage.from("patient-documents");
   return {
     async pending(userId, assessmentId) {
-      return timed("confirm: pending row", async () => {
+      return timer("confirm: pending row", async () => {
         const { data, error } = await admin.from("pending_document_ocr")
           .select("id,user_id,patient_id,file_name,file_type,file_path,ocr_text")
           .eq("id", assessmentId).eq("user_id", userId).maybeSingle();
@@ -20,7 +27,7 @@ export function uploadStore(admin: SupabaseClient): UploadStore {
     },
     async listing(userId, assessmentId) {
       // The assessment's folder holds only its source file, so no name search is needed.
-      return timed("confirm: storage listing", async () => {
+      return timer("confirm: storage listing", async () => {
         const { data, error } = await bucket().list(
           `${userId}/pending-submissions/${assessmentId}`,
           { limit: 100 },
@@ -36,7 +43,7 @@ export function uploadStore(admin: SupabaseClient): UploadStore {
       if (!Number.isFinite(size) || size < 1 || size > 5 * 1024 * 1024) {
         return null;
       }
-      const { data, error } = await timed("confirm: storage download", () =>
+      const { data, error } = await timer("confirm: storage download", () =>
         bucket().download(path)
       );
       if (error || !data) throw new UploadError("SERVER_ERROR");
