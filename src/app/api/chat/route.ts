@@ -1,7 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
-import { errorResponse, successResponse } from "@/lib/api-response";
+import { errorResponse } from "@/lib/api-response";
 import { validateChatMessages } from "@/lib/chat/validate-messages";
+import { streamModelReply } from "@/lib/chat/reply-stream";
 import { classifyRead, readErrors } from "@/lib/read-outcome";
+import { timed } from "@/lib/perf/timing";
 import {
   checkPrivacyConsent,
   PRIVACY_CONSENT_CHECK_FAILED_MESSAGE,
@@ -11,6 +13,7 @@ import {
   buildQueryAnalysisPrompt,
   buildSystemPrompt,
   parseQueryAnalysis,
+  QUERY_ANALYSIS_GENERATION_CONFIG,
   type QueryAnalysis,
 } from "@/lib/chat/query-language";
 import {
@@ -22,9 +25,23 @@ import {
   type RetrievalMatch,
 } from "@/lib/chat/retrieval";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { after } from "next/server";
 import crypto from "crypto";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+
+/**
+ * Messages this user sent in the last hour, for the 20-per-hour limit. Returns
+ * the query so the caller can run it alongside the consent check.
+ */
+function countRecentMessages(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  return supabase
+    .from("chatbot_logs")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .gte("created_at", oneHourAgo);
+}
 
 type EmbedContentFn = (req: {
   content: { role: string; parts: Array<{ text: string }> };
@@ -42,7 +59,10 @@ type EmbedContentFn = (req: {
  */
 async function analyseQuery(userQuery: string): Promise<QueryAnalysis> {
   try {
-    const analysisModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const analysisModel = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+      generationConfig: QUERY_ANALYSIS_GENERATION_CONFIG,
+    });
     const result = await analysisModel.generateContent(buildQueryAnalysisPrompt(userQuery));
     return parseQueryAnalysis(result.response.text(), userQuery);
   } catch (err) {
@@ -54,7 +74,8 @@ async function analyseQuery(userQuery: string): Promise<QueryAnalysis> {
 /**
  * One patient chat turn: session, consent, rate limit, multi-query
  * English-rendered retrieval, language-matched reply, and the `chatbot_logs`
- * audit row.
+ * audit row. The reply streams back as NDJSON frames (see `chat/reply-stream.ts`);
+ * the audit row is written after the reply completes.
  */
 export async function POST(request: Request) {
   // 1. Session first (Standing Rule #1)
@@ -66,7 +87,11 @@ export async function POST(request: Request) {
   }
 
   // Consent gate (RA 10173): before the message reaches Gemini or chatbot_logs.
-  const consent = await checkPrivacyConsent(supabase, user.id);
+  // The rate-limit count is an independent read, so it runs alongside the gate
+  // and is only acted on once the gate has passed and the body is valid.
+  const [consent, recentMessages] = await timed("chat: consent + rate-limit count", () =>
+    Promise.all([checkPrivacyConsent(supabase, user.id), countRecentMessages(supabase, user.id)])
+  );
   if (consent.kind === "failed") {
     return errorResponse(PRIVACY_CONSENT_CHECK_FAILED_MESSAGE, 503, consent.error);
   }
@@ -87,12 +112,7 @@ export async function POST(request: Request) {
     const activeSessionId = sessionId || crypto.randomUUID();
 
     // 2. Enforce Rate Limit: Max 20 requests per hour keyed off authenticated user.id (prevents sessionId bypasses)
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const { count, error: countError } = await supabase
-      .from("chatbot_logs")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", user.id)
-      .gte("created_at", oneHourAgo);
+    const { count, error: countError } = recentMessages;
 
     if (countError) {
       console.error("Failed to fetch message count for rate limiting:", countError);
@@ -100,10 +120,7 @@ export async function POST(request: Request) {
       return errorResponse("Rate limit exceeded. You can only send up to 20 messages per hour.", 429);
     }
 
-    // 3. Language analysis for the reply + English retrieval variants (#73 item 9, #150)
-    const analysis = await analyseQuery(userQuery);
-
-    // 4. Embed every retrieval variant via gemini-embedding-001 (768 dimensions)
+    // 3. Retrieval embeddings via gemini-embedding-001 (768 dimensions)
     //
     // One embedding is phrasing-dependent (#150): the literal question "What are
     // Bloodcare Medical Laboratory's operating hours?" renders correctly in
@@ -116,13 +133,27 @@ export async function POST(request: Request) {
     // Note: text-embedding-004 is requested by spec, but returned 404 in this environment's Gemini API.
     // We use gemini-embedding-001 with outputDimensionality: 768 to achieve the correct 768-dim vector size.
     const embeddingModel = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
-    const retrievalQueries = buildRetrievalQueries(userQuery, analysis);
-    const embedded = await Promise.allSettled(
-      retrievalQueries.map((query) =>
+    const embedVariant = (query: string) =>
+      Promise.allSettled([
         (embeddingModel.embedContent as unknown as EmbedContentFn)({
           content: { role: "user", parts: [{ text: query }] },
           outputDimensionality: 768,
-        })
+        }),
+      ]).then(([result]) => result);
+
+    // The patient's own words do not depend on the analysis, so their embedding
+    // starts now and overlaps the analysis call (#240). buildRetrievalQueries
+    // always keeps them as one variant; that variant reuses this promise.
+    const ownWords = userQuery.trim();
+    const ownWordsEmbedding = embedVariant(ownWords);
+
+    // Language analysis for the reply + English retrieval variants (#73 item 9, #150)
+    const analysis = await timed("chat: language analysis", () => analyseQuery(userQuery));
+
+    const retrievalQueries = buildRetrievalQueries(userQuery, analysis);
+    const embedded = await timed("chat: embed retrieval queries", () =>
+      Promise.all(
+        retrievalQueries.map((query) => (query === ownWords ? ownWordsEmbedding : embedVariant(query)))
       )
     );
     const queryEmbeddings = embedded
@@ -148,20 +179,22 @@ export async function POST(request: Request) {
     // 200 asserting the clinic has no information, indistinguishable from a
     // genuine gap in the documents. Absence of evidence and failure to look are
     // separated here, once, so no caller downstream has to.
-    const searches = await Promise.allSettled(
-      queryEmbeddings.map((queryEmbedding) =>
-        supabase.rpc("match_documents", {
-          query_embedding: queryEmbedding,
-          // Threshold and counts: see the tuning rationale in chat/retrieval.ts
-          // (#150). 0.45, not the pre-#150 0.6: several answering documents
-          // never reach 0.6 in any phrasing (measured 0.467-0.573), so the
-          // assistant declined questions it could answer. RETRIEVAL_MATCH_COUNT
-          // (15, the corpus's size) gives the union the full above-threshold
-          // set per query -- a document at rank 9 never reaches the merge at a
-          // lower count -- and the merge below cuts the union to RETRIEVAL_TOP_K.
-          match_threshold: RETRIEVAL_MATCH_THRESHOLD,
-          match_count: RETRIEVAL_MATCH_COUNT,
-        })
+    const searches = await timed("chat: match_documents", () =>
+      Promise.allSettled(
+        queryEmbeddings.map((queryEmbedding) =>
+          supabase.rpc("match_documents", {
+            query_embedding: queryEmbedding,
+            // Threshold and counts: see the tuning rationale in chat/retrieval.ts
+            // (#150). 0.45, not the pre-#150 0.6: several answering documents
+            // never reach 0.6 in any phrasing (measured 0.467-0.573), so the
+            // assistant declined questions it could answer. RETRIEVAL_MATCH_COUNT
+            // (15, the corpus's size) gives the union the full above-threshold
+            // set per query -- a document at rank 9 never reaches the merge at a
+            // lower count -- and the merge below cuts the union to RETRIEVAL_TOP_K.
+            match_threshold: RETRIEVAL_MATCH_THRESHOLD,
+            match_count: RETRIEVAL_MATCH_COUNT,
+          })
+        )
       )
     );
     const outcomes = searches.map((result) =>
@@ -221,32 +254,43 @@ export async function POST(request: Request) {
     const history = firstUserIndex >= 0 ? rawHistory.slice(firstUserIndex) : [];
 
     const chatSession = chatModel.startChat({ history });
-    const chatResult = await chatSession.sendMessage(userQuery);
-    const botResponse = chatResult.response.text();
-    const tokensUsed = chatResult.response.usageMetadata?.totalTokenCount || 0;
+    // Streamed so the first words reach the patient as soon as Gemini produces
+    // them. A failure before the stream starts still throws to the catch below
+    // and returns a JSON error; a failure after it is an error frame.
+    const chatResult = await timed("chat: start reply stream", () => chatSession.sendMessageStream(userQuery));
+    const { body: replyStream, reply } = streamModelReply(chatResult);
 
-    // 8. Log interaction in public.chatbot_logs (unchanged: the patient's own words, not the English rendering)
+    // 8. Log interaction in public.chatbot_logs (unchanged: the patient's own words, not the English rendering).
+    // Written after the response, once the reply is complete. A reply that failed
+    // part-way has no row, as before: only a completed answer is logged.
     // Note: Although guide mentions user_query, the active Supabase schema uses the user_message column.
-    const { error: logError } = await supabase.from("chatbot_logs").insert({
-      user_id: user.id,
-      session_id: activeSessionId,
-      user_message: userQuery,
-      bot_response: botResponse,
-      tokens_used: tokensUsed,
+    after(async () => {
+      const completed = await reply;
+      if (!completed) return;
+
+      const { error: logError } = await supabase.from("chatbot_logs").insert({
+        user_id: user.id,
+        session_id: activeSessionId,
+        user_message: userQuery,
+        bot_response: completed.text,
+        tokens_used: completed.tokensUsed,
+      });
+
+      if (logError) {
+        // The conversation is the audit record of what the assistant told a
+        // patient. Swallowing this means a clinically-relevant exchange can vanish
+        // from /admin/logs with nothing to indicate it happened. The answer to the
+        // patient is still returned -- the log write failing does not make the
+        // reply wrong -- but it is raised on the server so it is not silent.
+        console.error("Failed to log chatbot interaction:", logError);
+      }
     });
 
-    if (logError) {
-      // The conversation is the audit record of what the assistant told a
-      // patient. Swallowing this means a clinically-relevant exchange can vanish
-      // from /admin/logs with nothing to indicate it happened. The answer to the
-      // patient is still returned -- the log write failing does not make the
-      // reply wrong -- but it is raised on the server so it is not silent.
-      console.error("Failed to log chatbot interaction:", logError);
-    }
-
-    return successResponse({
-      response: botResponse,
-      tokensUsed,
+    return new Response(replyStream, {
+      headers: {
+        "Content-Type": "application/x-ndjson; charset=utf-8",
+        "Cache-Control": "no-store",
+      },
     });
   } catch (err) {
     console.error("Chat API error:", err);
