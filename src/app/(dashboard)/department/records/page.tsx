@@ -50,21 +50,24 @@ export default async function DepartmentRecordsPage(props: PageProps) {
     redirect("/login");
   }
 
-  // 1. Enforce RBAC for department queue/records surface
-  const canAccessDepartmentRecords = await hasAnyPermission(user.id, [
-    "queue.manage",
-    "queue.manage.own_dept",
-    "records.manage",
-    "records.manage.own_dept",
+  // 1. Enforce RBAC for department queue/records surface. The permission reads
+  //    are independent of each other, so they run together.
+  const [canAccessDepartmentRecords, canSelectDepartmentContext, canSwitchRecordsDepartment] = await Promise.all([
+    hasAnyPermission(user.id, [
+      "queue.manage",
+      "queue.manage.own_dept",
+      "records.manage",
+      "records.manage.own_dept",
+    ]),
+    hasAnyPermission(user.id, ["queue.manage", "records.manage"]),
+    // The switcher leads into results entry, so it follows the records rule used
+    // by POST /api/department/records: only records.manage may choose a
+    // department there. Viewing another queue by URL stays a queue.manage right.
+    hasAnyPermission(user.id, ["records.manage"]),
   ]);
   if (!canAccessDepartmentRecords) {
     redirect("/403");
   }
-  const canSelectDepartmentContext = await hasAnyPermission(user.id, ["queue.manage", "records.manage"]);
-  // The switcher leads into results entry, so it follows the records rule used
-  // by POST /api/department/records: only records.manage may choose a
-  // department there. Viewing another queue by URL stays a queue.manage right.
-  const canSwitchRecordsDepartment = await hasAnyPermission(user.id, ["records.manage"]);
 
   // 2. Resolve department context
   let dept = profile.department;
@@ -94,9 +97,14 @@ export default async function DepartmentRecordsPage(props: PageProps) {
   //
   // Invariant now: an entry blocks reception if and only if it is listed here and
   // closeable from here. Keep all three queries unfiltered by date together.
-  const { data: queueData, error: queueError } = await supabase
-    .from("patient_queue")
-    .select(`
+  //
+  // Both tabs' first views are read here, together, so switching tabs in the
+  // browser needs no request at all. The history list is the larger of the two
+  // and is not paged; it is returned whole, as before.
+  const [queueResult, historyResult] = await Promise.all([
+    supabase
+      .from("patient_queue")
+      .select(`
       id,
       patient_id,
       department,
@@ -112,14 +120,13 @@ export default async function DepartmentRecordsPage(props: PageProps) {
         date_of_birth
       )
     `)
-    .eq("department", dept)
-    .in("status", ["waiting", "in_progress"])
-    .order("created_at", { ascending: true });
+      .eq("department", dept)
+      .in("status", ["waiting", "in_progress"])
+      .order("created_at", { ascending: true }),
 
-  // 5. Fetch historical records
-  const { data: historyData, error: historyError } = await supabase
-    .from("department_records")
-    .select(`
+    supabase
+      .from("department_records")
+      .select(`
       id,
       patient_id,
       recorder_id,
@@ -143,8 +150,11 @@ export default async function DepartmentRecordsPage(props: PageProps) {
         full_name
       )
     `)
-    .eq("department", dept)
-    .order("created_at", { ascending: false });
+      .eq("department", dept)
+      .order("created_at", { ascending: false }),
+  ]);
+  const { data: queueData, error: queueError } = queueResult;
+  const { data: historyData, error: historyError } = historyResult;
 
   // Normalize queue and history types
   const queue = ((queueData as unknown as DbQueueItem[]) || []).map((q) => {
