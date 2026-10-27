@@ -211,6 +211,46 @@ describe("getSigningKeys", () => {
     await expect(fresh.getSigningKeys()).resolves.toMatchObject([{ kid: "kid-2" }]);
     expect(answering).toHaveBeenCalledTimes(1);
   });
+
+  it("serves the known keys without a new fetch inside the retry backoff", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", fetchAnswering(keySet("kid-1")));
+
+    const fresh = await freshSigningKeys();
+    await expect(fresh.getSigningKeys()).resolves.toMatchObject([{ kid: "kid-1" }]);
+
+    // The cached set goes stale, and the refresh fails.
+    await vi.advanceTimersByTimeAsync(11 * 60 * 1000);
+    vi.stubGlobal("fetch", fetchAnswering("gone", 500));
+    await expect(fresh.getSigningKeys()).resolves.toMatchObject([{ kid: "kid-1" }]);
+
+    // A later request inside the backoff window is served the known keys
+    // without waiting on the failing endpoint again. The canary would answer
+    // with a different key id if a request were made.
+    const canary = fetchAnswering(keySet("kid-2"));
+    vi.stubGlobal("fetch", canary);
+    await expect(fresh.getSigningKeys()).resolves.toMatchObject([{ kid: "kid-1" }]);
+    expect(canary).not.toHaveBeenCalled();
+
+    // Once the window has passed, the endpoint is tried again.
+    await vi.advanceTimersByTimeAsync(fresh.SIGNING_KEY_RETRY_BACKOFF_MS);
+    await expect(fresh.getSigningKeys()).resolves.toMatchObject([{ kid: "kid-2" }]);
+    expect(canary).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps retrying while no keys are known, so a cold cache fails closed", async () => {
+    vi.useFakeTimers();
+    const failing = fetchAnswering("gone", 500);
+    vi.stubGlobal("fetch", failing);
+
+    const fresh = await freshSigningKeys();
+    await expect(fresh.getSigningKeys()).resolves.toEqual([]);
+
+    // No keys are cached to serve, so the backoff must not suppress the
+    // retry: every request still tries the endpoint and fails closed.
+    await expect(fresh.getSigningKeys()).resolves.toEqual([]);
+    expect(failing).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("the Supabase client's own key discovery", () => {

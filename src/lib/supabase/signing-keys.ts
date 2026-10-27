@@ -38,8 +38,18 @@ const SIGNING_KEY_TTL_MS = 10 * 60 * 1000;
  */
 export const SIGNING_KEY_FETCH_TIMEOUT_MS = 5_000;
 
+/**
+ * How long to wait after a failed refresh before trying the discovery
+ * endpoint again while keys from an earlier fetch are still in memory.
+ * Without it, every request during an outage would start a new discovery
+ * request and could wait out its deadline, although the keys already known
+ * still verify signatures.
+ */
+export const SIGNING_KEY_RETRY_BACKOFF_MS = 30_000;
+
 let cachedSigningKeys: SigningKey[] = [];
 let cachedSigningKeysAt = 0;
+let lastSigningKeyFailureAt = 0;
 let signingKeysInFlight: Promise<SigningKey[]> | null = null;
 
 /** The URL a `fetch` call was given, whatever shape it arrived in. */
@@ -146,18 +156,35 @@ export async function getSigningKeys(): Promise<SigningKey[]> {
     return cachedSigningKeys;
   }
 
+  // A refresh failed recently and keys from an earlier fetch are still in
+  // memory: serve those instead of making every request wait out a new
+  // discovery request against the same failing endpoint. They are used only
+  // to verify signatures, as always — a token they cannot verify falls back
+  // to the Auth server's own verification or is refused, never accepted.
+  // With no keys in memory nothing is served: the request retries the fetch,
+  // so a cold cache still fails closed rather than succeeding keylessly.
+  if (
+    cachedSigningKeys.length > 0 &&
+    now - lastSigningKeyFailureAt < SIGNING_KEY_RETRY_BACKOFF_MS
+  ) {
+    return cachedSigningKeys;
+  }
+
   if (!signingKeysInFlight) {
     signingKeysInFlight = fetchSigningKeys()
       .then((keys) => {
         cachedSigningKeys = keys;
         cachedSigningKeysAt = Date.now();
+        lastSigningKeyFailureAt = 0;
         return keys;
       })
       .catch((error) => {
         // Keep whatever keys are already known rather than failing the request:
         // `getClaims()` fetches the key set itself when it cannot use ours,
         // under the same deadline. A failed fetch is never remembered as a
-        // fresh key set, so the next request tries the endpoint again.
+        // fresh key set; the backoff above serves the known keys for a short
+        // window, and the next request after it tries the endpoint again.
+        lastSigningKeyFailureAt = Date.now();
         console.error("Could not fetch the Supabase signing keys:", error);
         return cachedSigningKeys;
       });
