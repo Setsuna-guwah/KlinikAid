@@ -32,6 +32,54 @@ export type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
 // row. That is an empty page, not a server fault.
 const RANGE_NOT_SATISFIABLE = "PGRST103";
 
+// PostgREST reports PGRST202 when the called function does not exist: the
+// database has not had migration 46 applied yet. The search then takes the
+// table query below, so the app deploys before the migration and the search
+// keeps working (slower) in either order.
+const SEARCH_FUNCTION_MISSING = "PGRST202";
+
+/** The RPC's log row: the table's columns with the profile flattened. */
+interface SearchedLogRow {
+  id: number | string;
+  user_id: string | null;
+  event_type: string;
+  description: string;
+  ip_address: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  profile_full_name: string | null;
+  profile_role: string | null;
+}
+
+export interface SystemLogPage {
+  logs: SystemLogRow[];
+  total: number;
+}
+
+function isSearchedPayload(value: unknown): value is { total: number; logs: SearchedLogRow[] } {
+  if (typeof value !== "object" || value === null) return false;
+  const { total, logs } = value as { total?: unknown; logs?: unknown };
+  return typeof total === "number" && Array.isArray(logs);
+}
+
+function toSystemLogRow(row: SearchedLogRow): SystemLogRow {
+  return {
+    id: String(row.id),
+    user_id: row.user_id,
+    event_type: row.event_type,
+    description: row.description,
+    ip_address: row.ip_address,
+    metadata: row.metadata,
+    created_at: row.created_at,
+    // The function only joins a profile the caller's own policies would
+    // show, so a missing profile stays null exactly as the embed does.
+    profiles:
+      row.profile_full_name === null
+        ? null
+        : { full_name: row.profile_full_name, role: row.profile_role ?? "" },
+  };
+}
+
 export function filteredSystemLogQuery(
   supabase: SupabaseServerClient,
   q: SystemLogQuery,
@@ -51,6 +99,46 @@ export function filteredSystemLogQuery(
 }
 
 /**
+ * One page of searched events through `search_system_logs` (migration 46).
+ *
+ * The RPC exists because the planner will not use the trigram index for
+ * ILIKE under the table's RLS policy: ILIKE is not leakproof, so Postgres
+ * never pushes it below the security quals into an index condition, and the
+ * search stayed a sequential scan over a growing table (#234). The function
+ * checks the same `system_logs.read` permission the policy checks and keeps
+ * the profiles embed's visibility, but runs as its owner, where the index is
+ * usable.
+ *
+ * Returns null when the function is not installed yet (PGRST202) so the
+ * caller can fall back to the table query. Every other failure is thrown: a
+ * failed search must never be read as an empty trail.
+ */
+async function readSearchedLogPage(
+  supabase: SupabaseServerClient,
+  q: SystemLogQuery
+): Promise<SystemLogPage | null> {
+  const { data, error } = await supabase.rpc("search_system_logs", {
+    p_event_type: q.eventType,
+    p_user_id: q.userId,
+    p_start_date: q.startDate,
+    p_end_date: q.endDate,
+    // The function applies the pattern as-is, so it receives the same
+    // escaped containsPattern the table query would send.
+    p_search: containsPattern(q.search ?? ""),
+    p_from: (q.page - 1) * q.limit,
+    p_limit: q.limit,
+  });
+
+  if (error?.code === SEARCH_FUNCTION_MISSING) return null;
+  if (error) throw error;
+  if (!isSearchedPayload(data)) {
+    throw new Error("search_system_logs returned an unexpected payload shape.");
+  }
+
+  return { logs: data.logs.map(toSystemLogRow), total: data.total };
+}
+
+/**
  * One page of system events, newest first.
  *
  * `total` is counted exactly unless the caller already knows it for these
@@ -62,7 +150,13 @@ export function filteredSystemLogQuery(
 export async function readSystemLogPage(
   supabase: SupabaseServerClient,
   q: SystemLogQuery
-): Promise<{ logs: SystemLogRow[]; total: number }> {
+): Promise<SystemLogPage> {
+  if (q.search) {
+    const searched = await readSearchedLogPage(supabase, q);
+    if (searched !== null) return searched;
+    // Not installed yet: the table query below still answers, just slower.
+  }
+
   const from = (q.page - 1) * q.limit;
   const to = from + q.limit - 1;
   const exactCount = q.knownTotal === null;
