@@ -52,8 +52,8 @@ function requestUrl(input: RequestInfo | URL): string {
 /**
  * The `fetch` the Supabase clients are built with: the platform's own, except
  * that a signing-key discovery request is aborted at
- * `SIGNING_KEY_FETCH_TIMEOUT_MS`. Every other request the clients make is
- * sent unchanged.
+ * `SIGNING_KEY_FETCH_TIMEOUT_MS` — headers and body alike. Every other
+ * request the clients make is sent unchanged.
  *
  * The SDK fetches the key set itself when the keys passed to `getClaims()`
  * do not contain the token's key id (a rotation, or a failed fetch above);
@@ -74,9 +74,33 @@ export async function fetchWithSigningKeyDeadline(
   // A signal the caller already set still applies next to ours.
   init?.signal?.addEventListener("abort", () => controller.abort(), { once: true });
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
-  } finally {
+    const response = await fetch(input, { ...init, signal: controller.signal });
+    if (!response.body) {
+      // Nothing can stall after the headers of a body-less response.
+      clearTimeout(timer);
+      return response;
+    }
+    // `fetch()` resolves when the headers arrive; the body is read after
+    // that (`response.json()` here and in the SDK), so the deadline must stay
+    // live until the body is consumed. The pipe below clears the timer when
+    // the body has been read through, and the signal stays attached to it,
+    // so a body that stalls after its headers is aborted at the deadline
+    // like the rest of the request.
+    const body = response.body.pipeThrough(
+      new TransformStream({
+        flush() {
+          clearTimeout(timer);
+        },
+      })
+    );
+    return new Response(body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  } catch (error) {
     clearTimeout(timer);
+    throw error;
   }
 }
 

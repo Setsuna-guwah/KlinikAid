@@ -32,6 +32,28 @@ function fetchThatStalls() {
   );
 }
 
+/**
+ * Headers at once, a JSON body that never finishes: the stall after the
+ * headers, where the response has arrived but `response.json()` would wait
+ * forever without the deadline.
+ */
+function fetchWhoseBodyStalls() {
+  return vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"keys":[{"kty":"EC",'));
+        init?.signal?.addEventListener("abort", () =>
+          controller.error(new DOMException("The request was aborted.", "AbortError"))
+        );
+        // never closed: the JSON body never completes
+      },
+    });
+    return Promise.resolve(
+      new Response(body, { status: 200, headers: { "content-type": "application/json" } })
+    );
+  });
+}
+
 function fetchAnswering(body: unknown, status = 200) {
   return vi.fn(
     async (_input: RequestInfo | URL, _init?: RequestInit) =>
@@ -142,6 +164,26 @@ describe("getSigningKeys", () => {
     expect(stalled.mock.calls[0][1]?.signal?.aborted).toBe(true);
   });
 
+  it("keeps the keys it already knows when a response body stalls past its deadline", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", fetchAnswering(keySet("kid-1")));
+
+    const fresh = await freshSigningKeys();
+    await expect(fresh.getSigningKeys()).resolves.toMatchObject([{ kid: "kid-1" }]);
+
+    await vi.advanceTimersByTimeAsync(11 * 60 * 1000);
+    const stallingBody = fetchWhoseBodyStalls();
+    vi.stubGlobal("fetch", stallingBody);
+
+    const pending = fresh.getSigningKeys();
+    await vi.advanceTimersByTimeAsync(fresh.SIGNING_KEY_FETCH_TIMEOUT_MS);
+
+    // The headers arrived, the body never did: the deadline aborted the read
+    // all the same, and the keys already known still serve the caller.
+    await expect(pending).resolves.toMatchObject([{ kid: "kid-1" }]);
+    expect(stallingBody.mock.calls[0][1]?.signal?.aborted).toBe(true);
+  });
+
   it("answers a cold start with no keys rather than hanging", async () => {
     vi.useFakeTimers();
     const stalled = fetchThatStalls();
@@ -199,6 +241,33 @@ describe("the Supabase client's own key discovery", () => {
     expect(stalled).toHaveBeenCalledTimes(1);
     expect(String(stalled.mock.calls[0][0])).toContain(".well-known/jwks.json");
     // An unavailable key set did not make verification succeed.
+    expect(data).toBeNull();
+    expect(error).toBeTruthy();
+  });
+
+  it("refuses the token when the SDK's own discovery response body stalls: fail closed", async () => {
+    vi.useFakeTimers();
+    const stallingBody = fetchWhoseBodyStalls();
+    vi.stubGlobal("fetch", stallingBody);
+
+    const { fetchWithSigningKeyDeadline, SIGNING_KEY_FETCH_TIMEOUT_MS } =
+      await freshSigningKeys();
+
+    (globalThis as { WebSocket?: unknown }).WebSocket = class NoopWebSocket {};
+    const client = createClient(PROJECT_URL, ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      global: { fetch: fetchWithSigningKeyDeadline },
+    });
+
+    const token = await signTokenWithKid("kid-body");
+    const result = client.auth.getClaims(token, { jwks: { keys: [] } });
+
+    await vi.advanceTimersByTimeAsync(SIGNING_KEY_FETCH_TIMEOUT_MS);
+    const { data, error } = await result;
+
+    // The headers arrived at once; the body read inside the SDK was aborted
+    // at the deadline, and verification failed closed.
+    expect(stallingBody).toHaveBeenCalledTimes(1);
     expect(data).toBeNull();
     expect(error).toBeTruthy();
   });
