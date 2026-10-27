@@ -244,10 +244,15 @@ export default function SpecialistPatientsClient({
       return;
     }
 
+    // Cancel whatever is in flight here, not when the debounce fires. A response
+    // to the previous filters can otherwise land inside the 250 ms window: it
+    // prints rows that answer the old filters and clears the loading state while
+    // the inputs already show the new ones.
+    requestAbort.current?.abort();
+
     const query = searchQuery.trim();
     const roster = fullRoster.current;
     if (roster && !deptFilter && !startDate && !endDate && isLocallySearchable(query)) {
-      requestAbort.current?.abort();
       const matches = roster.filter((patient) => rosterMatchesText(patient, query));
       setLoading(false);
       setSearchError(null);
@@ -265,6 +270,30 @@ export default function SpecialistPatientsClient({
 
     return () => clearTimeout(delayDebounceFn);
   }, [searchQuery, deptFilter, startDate, endDate, fetchFilteredPatients]);
+
+  // Another window can create or archive a patient while this one is open, and
+  // the cached roster would then answer a plain-name search from a list that no
+  // longer matches the server: the new patient missing, the archived one still
+  // listed. Coming back to this window drops the cache, so that search goes to
+  // the server instead. A focus without a preceding blur says nothing about the
+  // roster -- some browsers fire one on load -- so only a return counts.
+  useEffect(() => {
+    let leftWindow = false;
+    const onBlur = () => {
+      leftWindow = true;
+    };
+    const onFocus = () => {
+      if (!leftWindow) return;
+      leftWindow = false;
+      fullRoster.current = null;
+    };
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
 
   const handleReset = () => {
     setSearchQuery("");

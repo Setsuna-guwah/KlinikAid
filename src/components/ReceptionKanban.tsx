@@ -21,7 +21,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { fetchJson, type ApiError } from "@/lib/fetch-json";
-import { documentMatchesSearch } from "@/lib/reception-search";
+import { documentMatchesSearch, isSearchRefresh } from "@/lib/reception-search";
 import DataLoadError from "@/components/DataLoadError";
 import { focusRingClass, focusRingInsetClass } from "@/lib/focus-ring";
 
@@ -92,6 +92,11 @@ export default function ReceptionKanban({
   // move a document into or out of the current matches, not just edit a card.
   const [searchRefresh, setSearchRefresh] = useState(0);
   const lastSearchedQuery = useRef("");
+  // The query the loaded board answered in place, when it answered one. Those
+  // results never came from the server, so a later request for the same query is
+  // the first one: it must show the loading state rather than treat itself as a
+  // refresh of results the board itself produced (see isSearchRefresh).
+  const lastLocalQuery = useRef("");
   // True while the loaded list is provably the whole table: both server counts
   // matched what the page loaded. Then a search can run here, with no request.
   // A realtime event can change the table behind the counts, so it clears this
@@ -218,14 +223,17 @@ export default function ReceptionKanban({
   useEffect(() => {
     const q = searchQuery.trim();
     // A realtime refresh of the same query keeps the current results on screen
-    // until the new ones arrive; a new query shows the loading state.
-    const isRefresh = q === lastSearchedQuery.current;
+    // until the new ones arrive; a new query -- including one the board answered
+    // in place, whose results are about to go away -- shows the loading state.
+    const isRefresh = isSearchRefresh(q, lastSearchedQuery.current, lastLocalQuery.current);
     lastSearchedQuery.current = q;
     if (q.length === 0 || boardExact) {
+      lastLocalQuery.current = q;
       setSearchState({ kind: "idle" });
       return;
     }
 
+    lastLocalQuery.current = "";
     const ticket = ++searchSeq.current;
     if (!isRefresh) setSearchState({ kind: "loading" });
 

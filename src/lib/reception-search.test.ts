@@ -3,6 +3,7 @@ import {
   buildSearchPattern,
   documentMatchesSearch,
   escapeRegexLiteral,
+  isSearchRefresh,
   patientNameConditions,
   quotePostgrestValue,
 } from "./reception-search";
@@ -165,5 +166,27 @@ describe("documentMatchesSearch", () => {
   it("never matches an empty or blank term", () => {
     expect(documentMatchesSearch(doc, "")).toBe(false);
     expect(documentMatchesSearch(doc, "   ")).toBe(false);
+  });
+});
+
+describe("isSearchRefresh", () => {
+  it("treats an unchanged query as a refresh once the server has answered it", () => {
+    // The realtime bump re-runs the same query; the rows on screen stay put.
+    expect(isSearchRefresh("cruz", "cruz", "")).toBe(true);
+  });
+
+  it("treats a different query as a new search", () => {
+    expect(isSearchRefresh("cruz", "dela", "")).toBe(false);
+  });
+
+  it("treats the first server request for a locally answered query as a new search", () => {
+    // The board answered this query itself, so no server results exist to keep
+    // on screen; the request has to show the loading state instead.
+    expect(isSearchRefresh("cruz", "cruz", "cruz")).toBe(false);
+  });
+
+  it("treats an edited query as a new search after a local answer", () => {
+    // The board answered "cruz" in place; one more keystroke is a new query.
+    expect(isSearchRefresh("cruz d", "cruz", "cruz")).toBe(false);
   });
 });

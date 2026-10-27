@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { 
   Users, 
   AlertTriangle, 
@@ -57,6 +58,23 @@ export default function SpecialistDashboardClient({
   recentFlagged,
   recentPatients
 }: SpecialistDashboardClientProps) {
+  const router = useRouter();
+
+  // The analytics links warm their route on intent (hover or keyboard focus),
+  // not on render.
+  //
+  // `prefetch` on this page starts a full prefetch of every link in view --
+  // up to 10 flagged records plus 5 recent patients -- and each one runs that
+  // patient's whole analytics page on the server: the permission check, the
+  // patient lookup and every result row. The payload then sits in the client
+  // router cache for the default five minutes, while the analytics view reads
+  // the records it was given and does not fetch again on mount. So the cost is
+  // 15 page renders per dashboard view, and the answer one of those clicks
+  // returns can already be minutes old. One hover is enough for the latency
+  // win without either.
+  const prefetchAnalytics = (event: React.SyntheticEvent<HTMLAnchorElement>) => {
+    router.prefetch(event.currentTarget.pathname);
+  };
 
   const formatPhTime = (utcString: string) => {
     try {
@@ -216,7 +234,9 @@ export default function SpecialistDashboardClient({
                           {record.patient?.id ? (
                             <Link 
                               href={`/specialist/patients/${record.patient.id}/analytics`}
-                              prefetch
+                              prefetch={false}
+                              onMouseEnter={prefetchAnalytics}
+                              onFocus={prefetchAnalytics}
                               className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300"
                             >
                               Analyze
@@ -269,7 +289,9 @@ export default function SpecialistDashboardClient({
                   </div>
                   <Link 
                     href={`/specialist/patients/${p.id}/analytics`}
-                    prefetch
+                    prefetch={false}
+                    onMouseEnter={prefetchAnalytics}
+                    onFocus={prefetchAnalytics}
                     aria-label={`View analytics for ${p.first_name} ${p.last_name}`}
                     className={`p-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400 transition ${focusRingClass}`}
                   >

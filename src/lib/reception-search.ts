@@ -101,6 +101,23 @@ export function patientNameConditions(term: string): string[] {
 export const MAX_NAME_SPLITS = 6;
 
 /**
+ * Whether a server search for `query` re-runs the query whose results are
+ * already on screen, rather than asking a new one. A refresh keeps the current
+ * rows visible until the new ones arrive; a new search shows the loading state,
+ * because nothing on screen answers it.
+ *
+ * `lastLocalQuery` is the query the loaded board answered in place (it holds the
+ * whole table, so no request was made). Those results are not a server answer:
+ * when the board stops being exact -- a realtime event changed the table -- the
+ * same query has to go to the server, and its first request must show the
+ * loading state. Treating it as a refresh would empty the board behind a
+ * "Search unavailable" line for the length of a round trip.
+ */
+export function isSearchRefresh(query: string, lastServerQuery: string, lastLocalQuery: string): boolean {
+  return query === lastServerQuery && query !== lastLocalQuery;
+}
+
+/**
  * The client-side twin of `GET /api/reception/documents/search`: does a loaded
  * document match the term under the same rules the server applies to its
  * branches? Used only when the board holds every document, so the local answer

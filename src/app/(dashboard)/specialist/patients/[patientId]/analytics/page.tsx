@@ -5,7 +5,16 @@ import { createClient } from "@/lib/supabase/server";
 import SpecialistAnalyticsClient from "@/components/SpecialistAnalyticsClient";
 import SpecialistAnalyticsSkeleton from "@/components/SpecialistAnalyticsSkeleton";
 import DataLoadError from "@/components/DataLoadError";
-import { classifyRead } from "@/lib/read-outcome";
+import { classifyRead, hitRowCap } from "@/lib/read-outcome";
+
+/**
+ * The most rows one request can return. PostgREST caps every response at the
+ * project's `max_rows`, which is 1000 here (verified against the live API), so
+ * asking for exactly that is asking for "as many as this view can ever see".
+ * A full page is then indistinguishable from a cut one, which is why the read
+ * below reports `complete: false` at the cap instead of charting a guess.
+ */
+const PATIENT_RECORDS_LIMIT = 1000;
 
 export const dynamic = "force-dynamic";
 
@@ -100,12 +109,18 @@ export default async function PatientAnalyticsPage(props: PatientAnalyticsPagePr
  *
  * Called without awaiting, so the request is already in flight when the caller
  * reaches its own await.
+ *
+ * The read is explicitly bounded, and reports whether the bound was reached.
+ * Without a limit the response is cut at the deployment's row cap anyway (see
+ * PATIENT_RECORDS_LIMIT), and both things derived from these rows -- the metric
+ * list and the first series -- would then be computed from the oldest 1000
+ * results as if they were all of them: a metric recorded after that point is
+ * simply absent from the dropdown, with nothing on screen saying so.
  */
 async function readPatientRecords(supabase: Awaited<ReturnType<typeof createClient>>, patientId: string) {
-  return classifyRead(
-    await supabase
-      .from("specialist_records")
-      .select(`
+  const rows = await supabase
+    .from("specialist_records")
+    .select(`
         id,
         test_name,
         test_value,
@@ -121,9 +136,18 @@ async function readPatientRecords(supabase: Awaited<ReturnType<typeof createClie
           full_name
         )
       `)
-      .eq("specialist_patient_id", patientId)
-      .order("created_at", { ascending: true })
-  );
+    .eq("specialist_patient_id", patientId)
+    .order("created_at", { ascending: true })
+    .limit(PATIENT_RECORDS_LIMIT);
+
+  const read = classifyRead(rows);
+
+  return {
+    read,
+    // A failed read is not a complete one either, but it already has its own
+    // branch; this flag is about a read that succeeded and was cut short.
+    complete: read.kind !== "ok" || !hitRowCap(read.data?.length ?? 0, PATIENT_RECORDS_LIMIT),
+  };
 }
 
 interface SpecialistAnalyticsBodyProps {
@@ -141,7 +165,7 @@ async function SpecialistAnalyticsBody({
   gender,
   recordsRead: pendingRecordsRead,
 }: SpecialistAnalyticsBodyProps) {
-  const recordsRead = await pendingRecordsRead;
+  const { read: recordsRead, complete: recordsComplete } = await pendingRecordsRead;
 
   // A failed read yields an empty metric list, which the client renders as "No
   // records found for this metric" -- asserting that this patient has no results
@@ -153,6 +177,30 @@ async function SpecialistAnalyticsBody({
         <DataLoadError
           what={`analytics for ${patientName}`}
           error={recordsRead.error}
+          retryHref={`/specialist/patients/${patientId}/analytics`}
+        />
+      </div>
+    );
+  }
+
+  // A read that succeeded but came back full may have been cut at the row cap
+  // (readPatientRecords). Both things derived from these rows would then be
+  // subtly wrong in the same silent way: a metric first recorded after the cut
+  // is missing from the dropdown, and the first series is the oldest of however
+  // many results fitted. Say that instead of charting a partial history.
+  if (!recordsComplete) {
+    console.error(
+      `Patient ${patientId} has at least ${PATIENT_RECORDS_LIMIT} results: too many for the analytics view to read at once`
+    );
+    return (
+      <div className="space-y-6">
+        <DataLoadError
+          what={`analytics for ${patientName}`}
+          kind="page"
+          error={{
+            message: `the results read returned a full page of ${PATIENT_RECORDS_LIMIT}, so more may exist`,
+          }}
+          description="This patient has more results than this view can load at once, so the metric list and the chart would both come from an incomplete set. Nothing is missing from the record itself; this view cannot show a history this long yet."
           retryHref={`/specialist/patients/${patientId}/analytics`}
         />
       </div>
