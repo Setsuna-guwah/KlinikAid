@@ -19,7 +19,7 @@ export default async function ForbiddenPage() {
   if (profile) {
     if (profile.role === "admin") dashboardHref = "/admin/dashboard";
     else if (profile.role === "receptionist") dashboardHref = "/reception/dashboard";
-    else if (profile.role === "department_staff") dashboardHref = "/department/dashboard";
+    else if (profile.role === "department_staff") dashboardHref = "/department/records";
     else if (profile.role === "medical_specialist") dashboardHref = "/specialist/dashboard";
     else if (profile.role === "patient") dashboardHref = "/patient/dashboard";
   }

@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { fetchWithSigningKeyDeadline } from "@/lib/supabase/signing-keys";
 
 /**
  * Creates a server-side Supabase client for Server Components, Server Actions, or Route Handlers.
@@ -18,6 +19,9 @@ export async function createClient() {
   }
 
   return createServerClient(url, anonKey, {
+    // Only the signing-key discovery request gets a deadline; everything else
+    // the client sends goes out unchanged.
+    global: { fetch: fetchWithSigningKeyDeadline },
     cookies: {
       getAll() {
         return cookieStore.getAll();
