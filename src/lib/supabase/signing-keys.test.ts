@@ -140,6 +140,43 @@ describe("fetchWithSigningKeyDeadline", () => {
     caller.abort();
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
   });
+
+  it("stops at once when the caller already cancelled", async () => {
+    // The way the platform behaves: a request whose signal is already
+    // aborted is rejected immediately, without waiting for any deadline.
+    const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.signal?.aborted) {
+        return Promise.reject(new DOMException("The request was aborted.", "AbortError"));
+      }
+      return new Promise<Response>(() => {});
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { fetchWithSigningKeyDeadline } = await freshSigningKeys();
+    const caller = new AbortController();
+    caller.abort();
+    const pending = fetchWithSigningKeyDeadline(JWKS_URL, { signal: caller.signal });
+    const failure = pending.catch((error: unknown) => error);
+
+    await expect(failure).resolves.toMatchObject({ name: "AbortError" });
+    // The caller's own signal reached the request untouched.
+    expect(fetchMock.mock.calls[0][1]?.signal).toBe(caller.signal);
+  });
+
+  it("removes the caller's abort listener when the request is over", async () => {
+    vi.stubGlobal("fetch", fetchAnswering(keySet("kid-listener")));
+    const caller = new AbortController();
+    const addSpy = vi.spyOn(caller.signal, "addEventListener");
+    const removeSpy = vi.spyOn(caller.signal, "removeEventListener");
+
+    const { fetchWithSigningKeyDeadline } = await freshSigningKeys();
+    const response = await fetchWithSigningKeyDeadline(JWKS_URL, { signal: caller.signal });
+    // Consume the body: the pipe's flush is what ends the request.
+    await response.json();
+
+    expect(addSpy).toHaveBeenCalledTimes(1);
+    expect(removeSpy).toHaveBeenCalledWith("abort", expect.any(Function));
+  });
 });
 
 describe("getSigningKeys", () => {
@@ -250,6 +287,28 @@ describe("getSigningKeys", () => {
     // retry: every request still tries the endpoint and fails closed.
     await expect(fresh.getSigningKeys()).resolves.toEqual([]);
     expect(failing).toHaveBeenCalledTimes(2);
+  });
+
+  it("remembers a successful empty key set for the TTL instead of refetching it", async () => {
+    vi.useFakeTimers();
+    // A project on legacy symmetric signing answers with no keys.
+    vi.stubGlobal("fetch", fetchAnswering({ keys: [] }));
+
+    const fresh = await freshSigningKeys();
+    await expect(fresh.getSigningKeys()).resolves.toEqual([]);
+
+    // The next request inside the TTL must not fetch again: the canary
+    // would answer with keys if a request were made. An empty set verifies
+    // nothing, so serving it changes no answer, only the request count.
+    const canary = fetchAnswering(keySet("kid-2"));
+    vi.stubGlobal("fetch", canary);
+    await expect(fresh.getSigningKeys()).resolves.toEqual([]);
+    expect(canary).not.toHaveBeenCalled();
+
+    // Once the TTL passes, the endpoint is asked again.
+    await vi.advanceTimersByTimeAsync(11 * 60 * 1000);
+    await expect(fresh.getSigningKeys()).resolves.toMatchObject([{ kid: "kid-2" }]);
+    expect(canary).toHaveBeenCalledTimes(1);
   });
 });
 

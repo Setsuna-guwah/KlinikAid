@@ -79,15 +79,31 @@ export async function fetchWithSigningKeyDeadline(
     return fetch(input, init);
   }
 
+  // A caller that already cancelled is not made to wait for the deadline:
+  // the platform rejects the request at once on the caller's own signal.
+  if (init?.signal?.aborted) {
+    return fetch(input, init);
+  }
+
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), SIGNING_KEY_FETCH_TIMEOUT_MS);
-  // A signal the caller already set still applies next to ours.
-  init?.signal?.addEventListener("abort", () => controller.abort(), { once: true });
+  const onCallerAbort = () => controller.abort();
+  init?.signal?.addEventListener("abort", onCallerAbort, { once: true });
+  const timer = setTimeout(() => {
+    controller.abort();
+    init?.signal?.removeEventListener("abort", onCallerAbort);
+  }, SIGNING_KEY_FETCH_TIMEOUT_MS);
+  // The deadline and the caller's listener are released as soon as the
+  // request is over — headers-only, body read through, failed, or aborted
+  // at the deadline — so nothing is left attached behind a finished call.
+  const done = () => {
+    clearTimeout(timer);
+    init?.signal?.removeEventListener("abort", onCallerAbort);
+  };
   try {
     const response = await fetch(input, { ...init, signal: controller.signal });
     if (!response.body) {
       // Nothing can stall after the headers of a body-less response.
-      clearTimeout(timer);
+      done();
       return response;
     }
     // `fetch()` resolves when the headers arrive; the body is read after
@@ -99,7 +115,7 @@ export async function fetchWithSigningKeyDeadline(
     const body = response.body.pipeThrough(
       new TransformStream({
         flush() {
-          clearTimeout(timer);
+          done();
         },
       })
     );
@@ -109,7 +125,7 @@ export async function fetchWithSigningKeyDeadline(
       headers: response.headers,
     });
   } catch (error) {
-    clearTimeout(timer);
+    done();
     throw error;
   }
 }
@@ -152,7 +168,14 @@ async function fetchSigningKeys(): Promise<SigningKey[]> {
  */
 export async function getSigningKeys(): Promise<SigningKey[]> {
   const now = Date.now();
-  if (cachedSigningKeys.length > 0 && now - cachedSigningKeysAt < SIGNING_KEY_TTL_MS) {
+  // A successful fetch is remembered for the TTL even when it brought no
+  // keys: a project on legacy symmetric signing answers the discovery
+  // endpoint with an empty set, and re-fetching it on every request would
+  // cost a round trip the token check never needs (such tokens carry no key
+  // id, so `getClaims()` goes straight to the Auth server). An empty set
+  // verifies nothing either way — it is the absence of keys, not a trust
+  // decision — so serving it changes no answer, only the request count.
+  if (now - cachedSigningKeysAt < SIGNING_KEY_TTL_MS) {
     return cachedSigningKeys;
   }
 
