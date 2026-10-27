@@ -108,6 +108,25 @@ describe("parseSystemLogQuery", () => {
   });
 });
 
+describe("parseSystemLogQuery knownTotal", () => {
+  it("defaults to counting the total", () => {
+    const result = parse("page=2");
+    expect(result.ok && result.query.knownTotal).toBeNull();
+  });
+
+  it("accepts a known total of zero or more for paging", () => {
+    const result = parse("page=2&knownTotal=0");
+    expect(result.ok && result.query.knownTotal).toBe(0);
+    const big = parse("page=2&knownTotal=42");
+    expect(big.ok && big.query.knownTotal).toBe(42);
+  });
+
+  it.each(["-1", "1.5", "abc", "", "01", "9007199254740993"])("rejects %s as a total", (raw) => {
+    const result = parse(`knownTotal=${raw}`);
+    expect(result.ok).toBe(false);
+  });
+});
+
 describe("containsPattern", () => {
   it("wraps the term for a substring match", () => {
     expect(containsPattern("logged in")).toBe("%logged in%");
