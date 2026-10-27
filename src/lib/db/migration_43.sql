@@ -28,6 +28,9 @@
 -- Access results do not change, so no data is affected either way.
 
 begin;
+-- Fail fast instead of queueing app traffic behind a long-running transaction:
+-- each DROP/CREATE POLICY takes an AccessExclusiveLock held until commit.
+set local lock_timeout = '5s';
 
 DROP POLICY IF EXISTS "Admins can view chatbot logs" ON public.chatbot_logs;
 CREATE POLICY "Admins can view chatbot logs" ON public.chatbot_logs
