@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { fetchJson, type ApiError } from "@/lib/fetch-json";
+import { documentMatchesSearch, isSearchRefresh } from "@/lib/reception-search";
 import DataLoadError from "@/components/DataLoadError";
 import { focusRingClass, focusRingInsetClass } from "@/lib/focus-ring";
 
@@ -70,8 +71,8 @@ type SearchState =
   | { readonly kind: "ok"; readonly documents: Document[]; readonly truncated: boolean }
   | { readonly kind: "failed"; readonly error: ApiError };
 
-/** Delay before a search query is sent, to avoid a request per keystroke. */
-const SEARCH_DEBOUNCE_MS = 300;
+/** Delay before a server search is sent, to avoid a request per keystroke. */
+const SEARCH_DEBOUNCE_MS = 250;
 
 export default function ReceptionKanban({
   initialDocuments,
@@ -91,6 +92,22 @@ export default function ReceptionKanban({
   // move a document into or out of the current matches, not just edit a card.
   const [searchRefresh, setSearchRefresh] = useState(0);
   const lastSearchedQuery = useRef("");
+  // The query the loaded board answered in place, when it answered one. Those
+  // results never came from the server, so a later request for the same query is
+  // the first one: it must show the loading state rather than treat itself as a
+  // refresh of results the board itself produced (see isSearchRefresh).
+  const lastLocalQuery = useRef("");
+  // True while the loaded list is provably the whole table: both server counts
+  // matched what the page loaded. Then a search can run here, with no request.
+  // A realtime event can change the table behind the counts, so it clears this
+  // for the rest of the page's life and searches go to the server again.
+  const [boardExact, setBoardExact] = useState(
+    () =>
+      actionableTotal !== null &&
+      completedTotal !== null &&
+      actionableTotal === initialDocuments.filter((doc) => doc.status === "pending").length &&
+      completedTotal === initialDocuments.filter((doc) => doc.status !== "pending").length,
+  );
   const [showCompleted, setShowCompleted] = useState(false);
   const [visible, setVisible] = useState<Record<ColumnId, number>>({
     pending: PAGE_SIZE,
@@ -124,6 +141,7 @@ export default function ReceptionKanban({
         async (payload) => {
           const { eventType, new: newRecord, old: oldRecord } = payload;
           setSearchRefresh((n) => n + 1);
+          setBoardExact(false);
 
           if (eventType === "DELETE") {
             setDocuments((prev) => prev.filter((doc) => doc.id !== oldRecord.id));
@@ -194,31 +212,40 @@ export default function ReceptionKanban({
   const trimmedQuery = searchQuery.trim();
   const searching = trimmedQuery.length > 0;
 
-  // Server search, debounced, with the sequence-ticket stale-response guard from
-  // LogsDashboardClient. Only the empty query keeps the local list; a non-empty
-  // query must reach the server, because the local list is capped (#34) and an
-  // uncapped client filter would read "no match" for rows that were never loaded.
+  // Server search, for a board that is not the whole table. Only the empty query
+  // keeps the local list. A non-empty query on a complete board is answered from
+  // the loaded documents instead (see `localSearch`), so no request is made. On a
+  // truncated board the query must reach the server: the local list is capped
+  // (#34) and would read "no match" for rows that were never loaded.
+  //
+  // Debounced, and each new query aborts the one before it. The sequence ticket
+  // still guards the write, so only the newest query can set the result.
   useEffect(() => {
     const q = searchQuery.trim();
     // A realtime refresh of the same query keeps the current results on screen
-    // until the new ones arrive; a new query shows the loading state.
-    const isRefresh = q === lastSearchedQuery.current;
+    // until the new ones arrive; a new query -- including one the board answered
+    // in place, whose results are about to go away -- shows the loading state.
+    const isRefresh = isSearchRefresh(q, lastSearchedQuery.current, lastLocalQuery.current);
     lastSearchedQuery.current = q;
-    if (q.length === 0) {
+    if (q.length === 0 || boardExact) {
+      lastLocalQuery.current = q;
       setSearchState({ kind: "idle" });
       return;
     }
 
+    lastLocalQuery.current = "";
     const ticket = ++searchSeq.current;
     if (!isRefresh) setSearchState({ kind: "loading" });
 
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
       const outcome = await fetchJson<{ documents: Document[]; truncated: boolean }>(
-        `/api/reception/documents/search?q=${encodeURIComponent(q)}`
+        `/api/reception/documents/search?q=${encodeURIComponent(q)}`,
+        { signal: controller.signal }
       );
 
       // A response to an older query does not describe the query on screen.
-      if (ticket !== searchSeq.current) return;
+      if (controller.signal.aborted || ticket !== searchSeq.current) return;
 
       if (outcome.kind === "failed") {
         setSearchState({ kind: "failed", error: outcome.error });
@@ -232,14 +259,29 @@ export default function ReceptionKanban({
       });
     }, SEARCH_DEBOUNCE_MS);
 
-    return () => clearTimeout(timer);
-  }, [searchQuery, searchRefresh]);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [searchQuery, searchRefresh, boardExact]);
+
+  // A complete board is searched in place: the loaded documents are the whole
+  // table, so the local match is the complete answer, with nothing truncated.
+  const localSearch: SearchState | null =
+    searching && boardExact
+      ? {
+          kind: "ok",
+          documents: documents.filter((doc) => documentMatchesSearch(doc, trimmedQuery)),
+          truncated: false,
+        }
+      : null;
+  const search: SearchState = localSearch ?? searchState;
 
   // What the board renders: the server's full-table matches while a search is
   // active, otherwise the local list kept fresh by the realtime subscription.
   const displayDocuments = searching
-    ? searchState.kind === "ok"
-      ? searchState.documents
+    ? search.kind === "ok"
+      ? search.documents
       : []
     : documents;
 
@@ -441,9 +483,9 @@ export default function ReceptionKanban({
   // The one-line summary beside the search box. When searching, "loaded" would
   // be the wrong noun: the server searched the whole table, not the capped page.
   const statusText = searching
-    ? searchState.kind === "ok"
-      ? `${searchState.documents.length} match${searchState.documents.length === 1 ? "" : "es"} across all records`
-      : searchState.kind === "loading"
+    ? search.kind === "ok"
+      ? `${search.documents.length} match${search.documents.length === 1 ? "" : "es"} across all records`
+      : search.kind === "loading"
         ? "Searching all records…"
         : "Search unavailable"
     : `Showing ${documents.length} loaded`;
@@ -452,8 +494,8 @@ export default function ReceptionKanban({
   // that is still loading, failed, or returned nothing, a dedicated status
   // replaces the empty columns so "no results" is never confused with a
   // search that has not run or a search that did not complete.
-  const showBoard = !searching || (searchState.kind === "ok" && searchState.documents.length > 0);
-  const showMoreResults = searching && searchState.kind === "ok" && searchState.truncated;
+  const showBoard = !searching || (search.kind === "ok" && search.documents.length > 0);
+  const showMoreResults = searching && search.kind === "ok" && search.truncated;
 
   const completedCount = columnsData.approved.length + columnsData.rejected.length;
   // During a search the completed columns are always shown: the search spans the
@@ -553,16 +595,16 @@ export default function ReceptionKanban({
           "nothing matches" is stated only for a search the server reported as
           complete — a truncated search that lists nothing has not proven the
           absence of matches, so it falls through to the truncation notice. */}
-      {searching && searchState.kind === "loading" && (
+      {searching && search.kind === "loading" && (
         <div role="status" aria-live="polite" className="flex shrink-0 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
           <Loader2 className="h-4 w-4 shrink-0 animate-spin text-slate-400 dark:text-slate-500" />
           <p>Searching all records…</p>
         </div>
       )}
-      {searching && searchState.kind === "failed" && (
-        <DataLoadError what="the document search" error={searchState.error} />
+      {searching && search.kind === "failed" && (
+        <DataLoadError what="the document search" error={search.error} />
       )}
-      {searching && searchState.kind === "ok" && searchState.documents.length === 0 && !searchState.truncated && (
+      {searching && search.kind === "ok" && search.documents.length === 0 && !search.truncated && (
         <div role="status" aria-live="polite" className="flex shrink-0 items-start gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
           <Search className="mt-0.5 h-4 w-4 shrink-0 text-slate-400 dark:text-slate-500" />
           <p>

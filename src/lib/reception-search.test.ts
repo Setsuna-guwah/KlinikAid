@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   buildSearchPattern,
+  documentMatchesSearch,
   escapeRegexLiteral,
+  isSearchRefresh,
   patientNameConditions,
   quotePostgrestValue,
 } from "./reception-search";
@@ -116,5 +118,75 @@ describe("patientNameConditions", () => {
       expect(condition).not.toMatch(/\.i?like\./);
       expect(condition).toContain(buildSearchPattern("a*b"));
     }
+  });
+});
+
+describe("documentMatchesSearch", () => {
+  const doc = {
+    file_name: "Lab_Request.pdf",
+    file_type: "application/pdf",
+    patient: { first_name: "Ana", last_name: "Dela Cruz" },
+    uploader: { full_name: "Rosa Reyes" },
+  };
+
+  it("matches the file name, ignoring case", () => {
+    expect(documentMatchesSearch(doc, "lab_request")).toBe(true);
+  });
+
+  it("matches the file type", () => {
+    expect(documentMatchesSearch(doc, "PDF")).toBe(true);
+  });
+
+  it("matches a patient's first or last name", () => {
+    expect(documentMatchesSearch(doc, "ana")).toBe(true);
+    expect(documentMatchesSearch(doc, "cruz")).toBe(true);
+  });
+
+  it("matches a first/last split of a multi-word term, as the server does", () => {
+    expect(documentMatchesSearch(doc, "ana dela")).toBe(true);
+  });
+
+  it("matches the uploader's full name", () => {
+    expect(documentMatchesSearch(doc, "rosa rey")).toBe(true);
+  });
+
+  it("treats the term literally, not as a regular expression", () => {
+    expect(documentMatchesSearch({ ...doc, file_name: "axb.pdf" }, "a.b")).toBe(false);
+    expect(documentMatchesSearch({ ...doc, file_name: "a.b.pdf" }, "a.b")).toBe(true);
+  });
+
+  it("does not match a document with no patient on a name term", () => {
+    expect(documentMatchesSearch({ file_name: "scan.png", file_type: "image/png", patient: null }, "ana")).toBe(false);
+  });
+
+  it("does not match a name that is absent from every field", () => {
+    expect(documentMatchesSearch(doc, "bob")).toBe(false);
+  });
+
+  it("never matches an empty or blank term", () => {
+    expect(documentMatchesSearch(doc, "")).toBe(false);
+    expect(documentMatchesSearch(doc, "   ")).toBe(false);
+  });
+});
+
+describe("isSearchRefresh", () => {
+  it("treats an unchanged query as a refresh once the server has answered it", () => {
+    // The realtime bump re-runs the same query; the rows on screen stay put.
+    expect(isSearchRefresh("cruz", "cruz", "")).toBe(true);
+  });
+
+  it("treats a different query as a new search", () => {
+    expect(isSearchRefresh("cruz", "dela", "")).toBe(false);
+  });
+
+  it("treats the first server request for a locally answered query as a new search", () => {
+    // The board answered this query itself, so no server results exist to keep
+    // on screen; the request has to show the loading state instead.
+    expect(isSearchRefresh("cruz", "cruz", "cruz")).toBe(false);
+  });
+
+  it("treats an edited query as a new search after a local answer", () => {
+    // The board answered "cruz" in place; one more keystroke is a new query.
+    expect(isSearchRefresh("cruz d", "cruz", "cruz")).toBe(false);
   });
 });

@@ -13,6 +13,7 @@ import {
   buildQueryAnalysisPrompt,
   buildSystemPrompt,
   parseQueryAnalysis,
+  QUERY_ANALYSIS_GENERATION_CONFIG,
   type QueryAnalysis,
 } from "@/lib/chat/query-language";
 import {
@@ -58,7 +59,10 @@ type EmbedContentFn = (req: {
  */
 async function analyseQuery(userQuery: string): Promise<QueryAnalysis> {
   try {
-    const analysisModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const analysisModel = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+      generationConfig: QUERY_ANALYSIS_GENERATION_CONFIG,
+    });
     const result = await analysisModel.generateContent(buildQueryAnalysisPrompt(userQuery));
     return parseQueryAnalysis(result.response.text(), userQuery);
   } catch (err) {
@@ -116,10 +120,7 @@ export async function POST(request: Request) {
       return errorResponse("Rate limit exceeded. You can only send up to 20 messages per hour.", 429);
     }
 
-    // 3. Language analysis for the reply + English retrieval variants (#73 item 9, #150)
-    const analysis = await timed("chat: language analysis", () => analyseQuery(userQuery));
-
-    // 4. Embed every retrieval variant via gemini-embedding-001 (768 dimensions)
+    // 3. Retrieval embeddings via gemini-embedding-001 (768 dimensions)
     //
     // One embedding is phrasing-dependent (#150): the literal question "What are
     // Bloodcare Medical Laboratory's operating hours?" renders correctly in
@@ -132,15 +133,27 @@ export async function POST(request: Request) {
     // Note: text-embedding-004 is requested by spec, but returned 404 in this environment's Gemini API.
     // We use gemini-embedding-001 with outputDimensionality: 768 to achieve the correct 768-dim vector size.
     const embeddingModel = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
+    const embedVariant = (query: string) =>
+      Promise.allSettled([
+        (embeddingModel.embedContent as unknown as EmbedContentFn)({
+          content: { role: "user", parts: [{ text: query }] },
+          outputDimensionality: 768,
+        }),
+      ]).then(([result]) => result);
+
+    // The patient's own words do not depend on the analysis, so their embedding
+    // starts now and overlaps the analysis call (#240). buildRetrievalQueries
+    // always keeps them as one variant; that variant reuses this promise.
+    const ownWords = userQuery.trim();
+    const ownWordsEmbedding = embedVariant(ownWords);
+
+    // Language analysis for the reply + English retrieval variants (#73 item 9, #150)
+    const analysis = await timed("chat: language analysis", () => analyseQuery(userQuery));
+
     const retrievalQueries = buildRetrievalQueries(userQuery, analysis);
     const embedded = await timed("chat: embed retrieval queries", () =>
-      Promise.allSettled(
-        retrievalQueries.map((query) =>
-          (embeddingModel.embedContent as unknown as EmbedContentFn)({
-            content: { role: "user", parts: [{ text: query }] },
-            outputDimensionality: 768,
-          })
-        )
+      Promise.all(
+        retrievalQueries.map((query) => (query === ownWords ? ownWordsEmbedding : embedVariant(query)))
       )
     );
     const queryEmbeddings = embedded
