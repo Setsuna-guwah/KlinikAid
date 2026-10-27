@@ -176,3 +176,43 @@ export function assembleRagDocument(
     chunks,
   };
 }
+
+/** Largest document, in characters, whose text rides along with the list. */
+export const PRELOAD_DOCUMENT_CHARACTERS = 50_000;
+/** Most text, in characters, the list carries across all documents together. */
+export const PRELOAD_TOTAL_CHARACTERS = 250_000;
+
+/**
+ * The documents whose indexed text is sent with the knowledge-base list, so the
+ * viewer opens without a second request.
+ *
+ * The list already reads every chunk's text to count characters, so this adds
+ * no database work; it only decides how much of that text is serialised to the
+ * page. Small documents are included in full, and the caps keep the page
+ * bounded when the knowledge base is large. Anything left out is fetched when
+ * the viewer is opened.
+ *
+ * Nothing is included when the list's own read may be incomplete: a read that
+ * hit the row limit cannot be trusted to hold every chunk of a document, so
+ * such a document would read as complete when it is not.
+ */
+export function preloadRagDocuments(
+  rowsByDocument: ReadonlyMap<string, RagChunkRow[]>,
+  { complete }: { complete: boolean }
+): Map<string, RagDocumentContent> {
+  const preloaded = new Map<string, RagDocumentContent>();
+  if (!complete) return preloaded;
+
+  let remaining = PRELOAD_TOTAL_CHARACTERS;
+  for (const [documentId, rows] of rowsByDocument) {
+    const characters = rows.reduce((total, row) => total + (row.content?.length ?? 0), 0);
+    if (characters > PRELOAD_DOCUMENT_CHARACTERS || characters > remaining) continue;
+
+    const document = assembleRagDocument(rows, documentId);
+    if (!document) continue;
+
+    remaining -= characters;
+    preloaded.set(documentId, document);
+  }
+  return preloaded;
+}

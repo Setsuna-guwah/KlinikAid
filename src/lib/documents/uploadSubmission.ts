@@ -43,9 +43,17 @@ export type UploadLookup =
 export type StoredUploadFile = Blob & {
   objectSnapshot: { id: string; metadata: Record<string, unknown> };
 };
+export type StoredObjectEntry = {
+  name: string;
+  id?: string | null;
+  metadata?: Record<string, unknown> | null;
+};
 export interface UploadStore {
   pending(userId: string, assessmentId: string): Promise<PendingUpload | null>;
-  file(path: string): Promise<StoredUploadFile | null>;
+  // Objects in the assessment's own folder. Read alongside `pending` (#240): the
+  // folder is known from the request, so the file's path need not be read first.
+  listing(userId: string, assessmentId: string): Promise<StoredObjectEntry[]>;
+  file(path: string, entry: StoredObjectEntry | undefined): Promise<StoredUploadFile | null>;
   submit(
     input: {
       user_id: string;
@@ -155,7 +163,12 @@ export async function submitUpload(
   input: UploadInput,
   detectionSource: DetectionSource,
 ) {
-  const row = await store.pending(userId, input.assessment_id);
+  // The row and the folder listing are independent reads, so they run together.
+  // A listing failure only matters once a row exists (checked below), as before.
+  const [row, listing] = await Promise.all([
+    store.pending(userId, input.assessment_id),
+    store.listing(userId, input.assessment_id).catch(() => null),
+  ]);
   const metadata: Record<string, unknown> = {
     document_type: input.document_type,
   };
@@ -168,7 +181,10 @@ export async function submitUpload(
     if (!validPendingPath(row, userId)) {
       throw new UploadError("FIELD_INVALID", "file");
     }
-    const file = await store.file(row.file_path);
+    if (listing === null) throw new UploadError("SERVER_ERROR");
+    // validPendingPath pins the name to `source.<ext>` inside the assessment folder.
+    const name = row.file_path.slice(row.file_path.lastIndexOf("/") + 1);
+    const file = await store.file(row.file_path, listing.find((entry) => entry.name === name));
     if (
       !file || file.size < 1 || file.size > 5 * 1024 * 1024 ||
       file.type.split(";")[0] !== row.file_type

@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { logEvent } from "@/lib/logger";
 import { headers } from "next/headers";
+import { after } from "next/server";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 import { getTotpFactors } from "@/lib/auth/mfa";
 import { getDefaultLandingPath } from "@/lib/auth/helpers";
@@ -14,6 +15,7 @@ import {
   clearLoginAttempts,
   lockedOutMessage,
   refundLoginAttempt,
+  type TotpClaim,
 } from "@/lib/auth/login-attempts";
 
 const LIMITER_UNAVAILABLE = "Sign-in is temporarily unavailable. Please try again shortly.";
@@ -45,12 +47,30 @@ function getSafeAuthErrorMessage(message: string): string {
 }
 
 /**
+ * Runs a write the sign-in reply does not wait for, once the reply has been sent.
+ * The helpers it calls already log their own failures; this is the backstop for
+ * anything that still throws, so the failure is logged rather than dropped.
+ */
+function runAfterResponse(description: string, write: () => Promise<unknown>): void {
+  after(async () => {
+    try {
+      await write();
+    } catch (err) {
+      console.error(`Login: ${description} failed after the response:`, err);
+    }
+  });
+}
+
+/**
  * Handles the login process including password verification, MFA verification, and profile validation.
  */
 export async function loginAction(
   prevState: LoginResult | null,
   formData: FormData
 ): Promise<LoginResult> {
+  // Set once mfa.verify has accepted the code: from then on the session is AAL2,
+  // so any failure must sign it out before the error is returned.
+  let verifiedSession: Awaited<ReturnType<typeof createClient>> | null = null;
   try {
     const email = formData.get("email") as string;
     const password = formData.get("password") as string;
@@ -119,12 +139,22 @@ export async function loginAction(
       return { error: "Authentication failed. No user record found." };
     }
 
+    // 2-4. The profile, the assurance level and, when a code was submitted, the
+    // factor list all read the user the password just signed in. None of them
+    // needs another's answer, so they run together. Each result is still checked
+    // below in the original order before anything is decided.
+    const [profileRead, mfaRead, factorsRead] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("is_active, role, department, full_name")
+        .eq("id", user.id)
+        .single(),
+      supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+      totpCode ? supabase.auth.mfa.listFactors() : null,
+    ]);
+
     // 2. Fetch the profile details
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("is_active, role, department, full_name")
-      .eq("id", user.id)
-      .single();
+    const { data: profile, error: profileError } = profileRead;
 
     if (profileError || !profile) {
       await supabase.auth.signOut();
@@ -155,7 +185,7 @@ export async function loginAction(
     }
 
     // 4. Check if Multi-Factor Authentication (MFA) is required
-    const { data: mfaData, error: mfaError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    const { data: mfaData, error: mfaError } = mfaRead;
 
     if (mfaError || !mfaData) {
       await supabase.auth.signOut();
@@ -166,20 +196,26 @@ export async function loginAction(
       };
     }
 
+    // The replay claim is started only once GoTrue has accepted the code.
+    let totpClaim: Promise<TotpClaim> | null = null;
+
     // If MFA is enrolled (nextLevel is aal2) and the user has not completed the second factor (currentLevel is aal1)
     if (mfaData.nextLevel === "aal2" && mfaData.currentLevel === "aal1") {
       // If we didn't receive a TOTP code, prompt the user for it
       if (!totpCode) {
         // Reaching the code prompt proved the password; don't let it use up
-        // one of the user's code attempts.
+        // one of the user's code attempts. This is awaited, not deferred: a
+        // deferred refund can land after the code submit has counted its own
+        // attempt, and the row then locks and skips the refund.
         await refundLoginAttempt(email, ipAddress);
         return {
           status: "mfa_required",
         };
       }
 
-      // List user factors to find TOTP factor ID
-      const { data: factors, error: factorsError } = await supabase.auth.mfa.listFactors();
+      // The factor list was requested because a code was submitted, so it is
+      // present here. A missing read takes the failure branch below.
+      const { data: factors, error: factorsError } = factorsRead ?? { data: null, error: null };
       if (factorsError || !factors) {
         await supabase.auth.signOut();
         return {
@@ -234,44 +270,68 @@ export async function loginAction(
 
       // GoTrue accepts a code for as long as its window lasts, however many
       // times it is presented. Record it so it completes one sign-in only.
-      const claim = await claimTotpCode(totpFactor.id, totpCode);
-      if (claim.kind !== "claimed") {
-        await supabase.auth.signOut();
-        if (claim.kind === "failed") {
-          console.error("TOTP replay check unavailable:", claim.error);
-          return { error: LIMITER_UNAVAILABLE };
-        }
-        await logEvent(
-          supabase,
-          user.id,
-          SYSTEM_EVENT_TYPES.LOGIN_FAILED,
-          `Reused MFA code rejected for user ${profile.full_name}`,
-          ipAddress,
-          { reason: "totp_replay" }
-        );
-        return { error: "That code has already been used. Wait for the next code and try again." };
-      }
+      verifiedSession = supabase;
+      totpClaim = claimTotpCode(totpFactor.id, totpCode);
     }
 
-    await clearLoginAttempts(email, ipAddress);
+    // Start the landing lookup now so it overlaps the claim, but contain it: a
+    // rejection here must not pre-empt the claim decision below. It is awaited
+    // only once the claim has accepted the sign-in.
+    const landingPath = (async () =>
+      mustChangePassword(user) ? SET_PASSWORD_PATH : getDefaultLandingPath(user.id, profile))();
+    landingPath.catch(() => {});
 
-    // 5. Successful login audit log
-    await logEvent(
-      supabase,
-      user.id,
-      SYSTEM_EVENT_TYPES.LOGIN_SUCCESS,
-      `User ${profile.full_name} (${profile.role}) successfully logged in`,
-      ipAddress
+    // 5. Replay claim first, handled exactly as it was before this change.
+    const claim = totpClaim ? await totpClaim : null;
+    if (claim && claim.kind !== "claimed") {
+      await supabase.auth.signOut();
+      if (claim.kind === "failed") {
+        console.error("TOTP replay check unavailable:", claim.error);
+        return { error: LIMITER_UNAVAILABLE };
+      }
+      await logEvent(
+        supabase,
+        user.id,
+        SYSTEM_EVENT_TYPES.LOGIN_FAILED,
+        `Reused MFA code rejected for user ${profile.full_name}`,
+        ipAddress,
+        { reason: "totp_replay" }
+      );
+      return { error: "That code has already been used. Wait for the next code and try again." };
+    }
+
+    // 6. Return success and route destination. The counter reset finishes before
+    // the reply, overlapping the landing lookup: deferred, it could run after a
+    // later submission was counted and delete that count too.
+    const [redirectUrl] = await Promise.all([
+      landingPath,
+      clearLoginAttempts(email, ipAddress).catch((err) => {
+        console.error("Login: clearing login attempts failed:", err);
+      }),
+    ]);
+
+    // The success audit row is not in the reply, so it is written after it is sent.
+    runAfterResponse("the login audit row", () =>
+      logEvent(
+        supabase,
+        user.id,
+        SYSTEM_EVENT_TYPES.LOGIN_SUCCESS,
+        `User ${profile.full_name} (${profile.role}) successfully logged in`,
+        ipAddress
+      )
     );
-
-    // 6. Return success and route destination
-    const redirectUrl = mustChangePassword(user)
-      ? SET_PASSWORD_PATH
-      : await getDefaultLandingPath(user.id, profile);
 
     return { success: true, redirectUrl };
   } catch (err) {
     console.error("Login action unexpected error:", err);
+    if (verifiedSession) {
+      // Never leave an AAL2 session behind an error response.
+      try {
+        await verifiedSession.auth.signOut();
+      } catch (signOutErr) {
+        console.error("Login: sign-out after a failed MFA sign-in failed:", signOutErr);
+      }
+    }
     return { error: "An unexpected sign-in error occurred. Please try again." };
   }
 }

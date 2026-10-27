@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Bot, Send, User, Loader2, ShieldAlert } from "lucide-react";
+import { readReplyStream } from "@/lib/chat/read-reply-stream";
 
 interface ChatMessage {
   role: "user" | "model";
@@ -21,6 +22,8 @@ export default function PatientChatClient() {
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  // True once the reply's first words are on screen; the "reading" indicator gives way to them.
+  const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isRateLimited, setIsRateLimited] = useState(false);
   const [rateLimitedUntil, setRateLimitedUntil] = useState<number | null>(null);
@@ -89,15 +92,23 @@ export default function PatientChatClient() {
         throw new Error(data.message || "Failed to fetch response from assistant.");
       }
 
-      const resData = await response.json();
-      if (resData.success && resData.data?.response) {
-        setMessages((prev) => [...prev, { role: "model", content: resData.data.response }]);
-      } else {
+      if (!response.body) {
         throw new Error("Invalid response format received from assistant.");
       }
+
+      let reply = "";
+      await readReplyStream(response.body, (text) => {
+        reply += text;
+        setIsStreaming(true);
+        setMessages([...updatedMessages, { role: "model", content: reply }]);
+      });
     } catch (err: unknown) {
+      // A reply that failed part-way is removed rather than left half-written;
+      // the patient gets the error instead.
+      setMessages(updatedMessages);
       setError(err instanceof Error ? err.message : "An unexpected error occurred. Please try again.");
     } finally {
+      setIsStreaming(false);
       setIsLoading(false);
     }
   };
@@ -145,7 +156,7 @@ export default function PatientChatClient() {
           </div>
         ))}
 
-        {isLoading && (
+        {isLoading && !isStreaming && (
           <div className="flex items-start gap-3">
             <div className="flex items-center justify-center w-8 h-8 rounded-full bg-accentBlue-100 text-accentBlue-600 dark:bg-accentBlue-950/40 dark:text-accentBlue-400 shrink-0">
               <Bot className="h-4 w-4" />

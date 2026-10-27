@@ -641,6 +641,7 @@ Deno.test("status keeps every submit gate and accepts only request_id", async ()
 // Upload coverage shares all account gates with the template routes.
 import type {
   PendingUpload,
+  StoredObjectEntry,
   StoredUploadFile,
   UploadLookup,
   UploadOutcome,
@@ -667,14 +668,23 @@ function uploadFixture() {
       objectSnapshot: { id: id2, metadata: { size: 8, mimetype: "image/png" } },
     },
   );
+  const entries: StoredObjectEntry[] = [{
+    id: id2,
+    name: "source.png",
+    metadata: { size: 8, mimetype: "image/png" },
+  }];
   const calls: unknown[] = [];
   const uploads: UploadStore = {
     async pending(owner, assessment) {
       calls.push(["pending", owner, assessment]);
       return row;
     },
-    async file(path) {
-      calls.push(["file", path]);
+    async listing(owner, assessment) {
+      calls.push(["listing", owner, assessment]);
+      return entries;
+    },
+    async file(path, entry) {
+      calls.push(["file", path, entry?.name]);
       return file;
     },
     async submit(input) {
@@ -744,16 +754,20 @@ Deno.test("upload derives owner/path/tests and sends no caller identity or final
 });
 Deno.test("uploadStore refuses an oversized object without downloading it", async () => {
   let downloads = 0;
+  let listedFolder = "";
   for (const size of [0, 5 * 1024 * 1024 + 1, "not-a-number"]) {
     const bucket = {
-      list: async () => ({
-        data: [{
-          id: "obj",
-          name: "source.png",
-          metadata: { size, mimetype: "image/png" },
-        }],
-        error: null,
-      }),
+      list: async (folder: string) => {
+        listedFolder = folder;
+        return {
+          data: [{
+            id: "obj",
+            name: "source.png",
+            metadata: { size, mimetype: "image/png" },
+          }],
+          error: null,
+        };
+      },
       download: async () => {
         downloads++;
         return { data: new Blob([new Uint8Array(1)]), error: null };
@@ -762,8 +776,14 @@ Deno.test("uploadStore refuses an oversized object without downloading it", asyn
     const admin = { storage: { from: () => bucket } } as unknown as Parameters<
       typeof uploadStore
     >[0];
+    const store = uploadStore(admin);
+    const listed = await store.listing("owner", "a");
+    equal(listedFolder, "owner/pending-submissions/a");
     equal(
-      await uploadStore(admin).file("owner/pending-submissions/a/source.png"),
+      await store.file(
+        "owner/pending-submissions/a/source.png",
+        listed.find((entry) => entry.name === "source.png"),
+      ),
       null,
     );
   }
@@ -821,7 +841,8 @@ Deno.test("upload replay with consumed assessment still reaches receipt check", 
     )).body.replayed,
     true,
   );
-  equal(u.calls.length, 2);
+  // Replay never reads the stored file: only the row, the folder listing and the submit.
+  equal(u.calls.map((call) => (call as unknown[])[0]), ["pending", "listing", "submit"]);
 });
 Deno.test("upload and upload/status enforce every account gate before assessment/file/store", async () => {
   for (
@@ -1009,6 +1030,7 @@ Deno.test("upload storage errors are uncertain and leak no backend details", asy
     identity: u.f.identity,
     uploads: {
       pending: () => Promise.reject(new Error("private detail")),
+      listing: () => Promise.resolve([]),
       file: () => Promise.resolve(null),
       submit: () => Promise.reject(new Error("unused")),
       lookup: () => Promise.reject(new Error("private detail")),

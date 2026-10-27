@@ -3,7 +3,14 @@ import {
   buildQueryAnalysisPrompt,
   buildSystemPrompt,
   parseQueryAnalysis,
+  QUERY_ANALYSIS_GENERATION_CONFIG,
 } from "./query-language";
+
+describe("QUERY_ANALYSIS_GENERATION_CONFIG", () => {
+  it("caps thinking at a small budget for the analysis call (#240)", () => {
+    expect(QUERY_ANALYSIS_GENERATION_CONFIG).toEqual({ thinkingConfig: { thinkingBudget: 256 } });
+  });
+});
 
 describe("buildQueryAnalysisPrompt", () => {
   it("asks for a JSON object and carries the patient's question verbatim", () => {

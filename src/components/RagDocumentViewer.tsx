@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import DataLoadError from "@/components/DataLoadError";
-import { fetchJson, type ApiError } from "@/lib/fetch-json";
+import { fetchJson, type ApiError, type FetchOutcome } from "@/lib/fetch-json";
 import { formatPhTimeFull } from "@/lib/utils";
 import type { RagDocumentContent } from "@/lib/rag/document-content";
 import { Eye, FileText, Loader2 } from "lucide-react";
@@ -19,6 +19,16 @@ import { Eye, FileText, Loader2 } from "lucide-react";
 interface RagDocumentViewerProps {
   documentId: string;
   title: string;
+  /** The text, when the list already carried it. Opening then makes no request. */
+  preloaded?: RagDocumentContent | null;
+}
+
+type DocumentOutcome = FetchOutcome<{ document: RagDocumentContent }>;
+
+function requestDocument(documentId: string): Promise<DocumentOutcome> {
+  return fetchJson<{ document: RagDocumentContent }>(
+    `/api/admin/rag/documents/${encodeURIComponent(documentId)}`
+  );
 }
 
 type ViewState =
@@ -38,6 +48,7 @@ type ViewState =
 export default function RagDocumentViewer({
   documentId,
   title,
+  preloaded = null,
 }: RagDocumentViewerProps) {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<ViewState | null>(null);
@@ -47,13 +58,27 @@ export default function RagDocumentViewer({
   // answer would be allowed to overwrite the newer one.
   const currentLoad = useRef(0);
 
+  // A request started on pointer-down or focus, before the click that opens the
+  // viewer. It is used once, by the next open; a failed one is dropped so that
+  // open asks again rather than showing an old failure.
+  const prefetched = useRef<Promise<DocumentOutcome> | null>(null);
+
+  const prefetch = () => {
+    if (preloaded || prefetched.current) return;
+    const request = requestDocument(documentId);
+    prefetched.current = request;
+    void request.then((outcome) => {
+      if (outcome.kind === "failed" && prefetched.current === request) prefetched.current = null;
+    });
+  };
+
   const load = useCallback(async () => {
     const loadId = ++currentLoad.current;
     setState({ kind: "loading" });
 
-    const outcome = await fetchJson<{ document: RagDocumentContent }>(
-      `/api/admin/rag/documents/${encodeURIComponent(documentId)}`
-    );
+    const request = prefetched.current ?? requestDocument(documentId);
+    prefetched.current = null;
+    const outcome = await request;
 
     if (loadId !== currentLoad.current) return;
 
@@ -67,6 +92,12 @@ export default function RagDocumentViewer({
 
   const openViewer = () => {
     setOpen(true);
+    if (preloaded) {
+      // The text came with the list. Any load still running is now out of date.
+      currentLoad.current += 1;
+      setState({ kind: "loaded", document: preloaded });
+      return;
+    }
     void load();
   };
 
@@ -76,6 +107,8 @@ export default function RagDocumentViewer({
         variant="ghost"
         size="icon"
         onClick={openViewer}
+        onPointerDown={prefetch}
+        onFocus={prefetch}
         aria-label={`View the indexed text of ${title}`}
         className="text-muted-foreground hover:text-foreground hover:bg-muted"
       >

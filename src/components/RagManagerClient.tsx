@@ -45,6 +45,7 @@ import {
   deleteRagDocumentAction,
 } from "@/app/(dashboard)/admin/rag/actions";
 import { focusRingClass } from "@/lib/focus-ring";
+import type { RagDocumentContent } from "@/lib/rag/document-content";
 
 interface GroupedDocument {
   documentId: string;
@@ -53,6 +54,8 @@ interface GroupedDocument {
   chunkCount: number;
   totalLength: number;
   createdAt: string;
+  /** The indexed text, when the page sent it with the list. Null when it must be fetched. */
+  preloaded: RagDocumentContent | null;
 }
 
 interface RagManagerClientProps {
@@ -258,7 +261,11 @@ export default function RagManagerClient({ initialDocuments, error = null }: Rag
                     </TableCell>
                     <TableCell className="text-right pr-6">
                       <div className="flex items-center justify-end gap-1">
-                        <RagDocumentViewer documentId={doc.documentId} title={doc.title} />
+                        <RagDocumentViewer
+                          documentId={doc.documentId}
+                          title={doc.title}
+                          preloaded={doc.preloaded}
+                        />
                         <Button
                           variant="ghost"
                           size="icon"
