@@ -7,7 +7,9 @@ import { logEvent } from "@/lib/logger";
 import { extractDocumentText } from "@/lib/documents/extractDocumentText";
 import { detectRequestedTests } from "@/lib/documents/detectRequestedTests";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
+import { timed } from "@/lib/perf/timing";
 
 import { parseUpload, submitUpload, UploadError } from "@/lib/documents/uploadSubmission";
 import { uploadStore } from "@/lib/documents/uploadStore";
@@ -44,6 +46,19 @@ function getFileExtension(fileName: string, fileType: string) {
   if (fileType === "application/pdf") return "pdf";
   if (fileType === "image/png") return "png";
   return "jpg";
+}
+
+/**
+ * Text extraction with failures reported as `null`. A Gemini error must not fail
+ * the upload; the caller then treats the file as unreadable, as it always has.
+ */
+async function extractOcr(fileBuffer: Buffer, mimeType: string) {
+  try {
+    return await extractDocumentText(fileBuffer, mimeType);
+  } catch (ocrError) {
+    console.error("[assessDocumentQualityAction] OCR error during quality assessment:", ocrError);
+    return null;
+  }
 }
 
 async function getPatientForCurrentUser(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
@@ -99,12 +114,14 @@ export async function assessDocumentQualityAction(formData: FormData) {
     return { success: false, error: "Unauthorized: Please log in." };
   }
 
-  const consentError = await privacyConsentError(supabase, user.id);
+  // The consent gate and the patient lookup are independent reads; run them together.
+  const [consentError, { patient, error: patientError }] = await timed("assess: consent + patient", () =>
+    Promise.all([privacyConsentError(supabase, user.id), getPatientForCurrentUser(supabase, user.id)])
+  );
   if (consentError) {
     return { success: false, error: consentError };
   }
 
-  const { patient, error: patientError } = await getPatientForCurrentUser(supabase, user.id);
   if (patientError || !patient) {
     return { success: false, error: patientError };
   }
@@ -120,12 +137,20 @@ export async function assessDocumentQualityAction(formData: FormData) {
   const pendingFilePath = `${user.id}/pending-submissions/${assessmentId}/source.${fileExtension}`;
   const fileBuffer = Buffer.from(await file.arrayBuffer());
 
-  const { error: uploadError } = await supabase.storage
-    .from(DOCUMENT_BUCKET)
-    .upload(pendingFilePath, fileBuffer, {
-      contentType: file.type,
-      upsert: false,
-    });
+  // The stored copy and the text extraction read the same bytes and do not
+  // depend on each other. Extraction resolves to null on failure, so only the
+  // upload can fail here.
+  const [{ error: uploadError }, extractionResult] = await timed("assess: storage upload + OCR", () =>
+    Promise.all([
+      supabase.storage
+        .from(DOCUMENT_BUCKET)
+        .upload(pendingFilePath, fileBuffer, {
+          contentType: file.type,
+          upsert: false,
+        }),
+      extractOcr(fileBuffer, file.type),
+    ])
+  );
 
   if (uploadError) {
     console.error("[assessDocumentQualityAction] Pending file upload error:", uploadError);
@@ -137,14 +162,15 @@ export async function assessDocumentQualityAction(formData: FormData) {
   let candidatesTokenCount: number | null = null;
   let totalTokenCount: number | null = null;
 
-  try {
-    const extractionResult = await extractDocumentText(fileBuffer, file.type);
-    if (extractionResult) {
-      ocrText = extractionResult.text || "";
-      promptTokenCount = extractionResult.promptTokenCount;
-      candidatesTokenCount = extractionResult.candidatesTokenCount;
-      totalTokenCount = extractionResult.totalTokenCount;
+  if (extractionResult) {
+    ocrText = extractionResult.text || "";
+    promptTokenCount = extractionResult.promptTokenCount;
+    candidatesTokenCount = extractionResult.candidatesTokenCount;
+    totalTokenCount = extractionResult.totalTokenCount;
 
+    // The audit row is not needed for the patient's next step, so it is written
+    // after the response. The guard stays so an unexpected error cannot escape the callback.
+    after(async () => {
       try {
         await logEvent(
           supabase,
@@ -162,29 +188,29 @@ export async function assessDocumentQualityAction(formData: FormData) {
       } catch (logError) {
         console.error("[assessDocumentQualityAction] Non-blocking OCR event logging error:", logError);
       }
-    }
-  } catch (ocrError) {
-    console.error("[assessDocumentQualityAction] OCR error during quality assessment:", ocrError);
+    });
   }
 
   const isPoorQualityOcr = isPoorQualityOcrText(ocrText);
   const storedOcrText = isPoorQualityOcr ? "" : ocrText;
   const detectedTests = isPoorQualityOcr ? [] : detectRequestedTests(storedOcrText);
 
-  const { error: pendingError } = await supabase
-    .from("pending_document_ocr")
-    .insert({
-      id: assessmentId,
-      user_id: user.id,
-      patient_id: patient.id,
-      file_name: file.name,
-      file_type: file.type,
-      file_path: pendingFilePath,
-      ocr_text: storedOcrText,
-      prompt_token_count: promptTokenCount,
-      candidates_token_count: candidatesTokenCount,
-      total_token_count: totalTokenCount,
-    });
+  const { error: pendingError } = await timed("assess: pending row insert", () =>
+    supabase
+      .from("pending_document_ocr")
+      .insert({
+        id: assessmentId,
+        user_id: user.id,
+        patient_id: patient.id,
+        file_name: file.name,
+        file_type: file.type,
+        file_path: pendingFilePath,
+        ocr_text: storedOcrText,
+        prompt_token_count: promptTokenCount,
+        candidates_token_count: candidatesTokenCount,
+        total_token_count: totalTokenCount,
+      })
+  );
 
   if (pendingError) {
     console.error("[assessDocumentQualityAction] Pending OCR insert error:", pendingError);
@@ -207,24 +233,34 @@ export async function confirmSubmitDocumentAction(assessmentId: string, selected
   const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) return { success: false, error: "Please sign in again." };
-  const consentError = await privacyConsentError(supabase, user.id);
-  if (consentError) return { success: false, error: consentError };
   const admin = createAdminClient();
-  const { data: profile, error: profileError } = await admin.from("profiles")
-    .select("is_active,roles:role_id(name,is_system,base_role)").eq("id", user.id)
-    .maybeSingle<{ is_active: boolean; roles: { name: string; is_system: boolean; base_role: string | null } | null }>();
+  // The consent gate, the profile and the patient lookup are independent reads.
+  // They run together and are still checked below in the same order.
+  const [consentError, profileRead, patientRead] = await timed("confirm: consent + profile + patient", () =>
+    Promise.all([
+      privacyConsentError(supabase, user.id),
+      admin.from("profiles")
+        .select("is_active,roles:role_id(name,is_system,base_role)").eq("id", user.id)
+        .maybeSingle<{ is_active: boolean; roles: { name: string; is_system: boolean; base_role: string | null } | null }>(),
+      getPatientForCurrentUser(supabase, user.id),
+    ])
+  );
+  if (consentError) return { success: false, error: consentError };
+  const { data: profile, error: profileError } = profileRead;
   if (profileError) return { success: false, error: "Submission could not be confirmed. Contact the clinic." };
   if (!profile?.is_active) return { success: false, error: "Account is inactive. Contact the clinic." };
   const role = profile.roles?.is_system ? profile.roles.name : profile.roles?.base_role;
   if (role !== "patient") return { success: false, error: "A patient account is required." };
   if (!user.email_confirmed_at) return { success: false, error: "Please verify your email." };
   if (user.app_metadata.must_change_password === true) return { success: false, error: "Please change your temporary password." };
-  const { patient, error: patientError } = await getPatientForCurrentUser(supabase, user.id);
+  const { patient, error: patientError } = patientRead;
   if (!patient) return { success: false, error: patientError ?? "Patient account is incomplete." };
   try {
     const input = parseUpload({ request_id: assessmentId, assessment_id: assessmentId, document_type: documentType,
       ...(selectedTestIds !== undefined ? { selected_test_ids: selectedTestIds } : {}) });
-    const result = await submitUpload(uploadStore(admin), user.id, patient.id, input, "ocr_text_catalog_match");
+    const result = await timed("confirm: submit upload", () =>
+      submitUpload(uploadStore(admin, timed), user.id, patient.id, input, "ocr_text_catalog_match")
+    );
     revalidatePath("/patient/submissions");
     revalidatePath("/patient/dashboard");
     return { success: true, documentId: result.document_id };

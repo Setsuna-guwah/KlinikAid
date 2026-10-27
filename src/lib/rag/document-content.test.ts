@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  PRELOAD_DOCUMENT_CHARACTERS,
+  PRELOAD_TOTAL_CHARACTERS,
   assembleRagDocument,
   isRagDocumentId,
+  preloadRagDocuments,
   type RagChunkRow,
 } from "./document-content";
 
@@ -217,5 +220,66 @@ describe("isRagDocumentId", () => {
     expect(isRagDocumentId(undefined)).toBe(false);
     expect(isRagDocumentId(null)).toBe(false);
     expect(isRagDocumentId(42)).toBe(false);
+  });
+});
+
+describe("preloadRagDocuments", () => {
+  const OTHER_ID = "1f0c3c8e-7a52-4d6e-9b1a-2f3e4d5c6b7a";
+
+  function grouped(entries: [string, RagChunkRow[]][]) {
+    return new Map(entries);
+  }
+
+  it("includes a small document in full, with the same text the viewer would fetch", () => {
+    const rows = [chunk(DOCUMENT_ID, "hello", { chunkIndex: 1 })];
+    const preloaded = preloadRagDocuments(grouped([[DOCUMENT_ID, rows]]), { complete: true });
+
+    expect(preloaded.get(DOCUMENT_ID)).toEqual(assembleRagDocument(rows, DOCUMENT_ID));
+  });
+
+  it("includes nothing when the list read may be incomplete, so a partial document never reads as whole", () => {
+    const rows = [chunk(DOCUMENT_ID, "hello", { chunkIndex: 1 })];
+    const preloaded = preloadRagDocuments(grouped([[DOCUMENT_ID, rows]]), { complete: false });
+
+    expect(preloaded.size).toBe(0);
+  });
+
+  it("leaves out a document over the per-document cap, to be fetched on open", () => {
+    const rows = [chunk(DOCUMENT_ID, "x".repeat(PRELOAD_DOCUMENT_CHARACTERS + 1), { chunkIndex: 1 })];
+    const preloaded = preloadRagDocuments(grouped([[DOCUMENT_ID, rows]]), { complete: true });
+
+    expect(preloaded.has(DOCUMENT_ID)).toBe(false);
+  });
+
+  it("skips a document that would overflow the page-wide cap, and keeps later ones that fit", () => {
+    // Four full documents use 200,000 of the 250,000 characters: 50,000 remain.
+    const entries: [string, RagChunkRow[]][] = [];
+    for (let i = 1; i <= 4; i += 1) {
+      const id = `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`;
+      entries.push([id, [chunk(id, "f".repeat(PRELOAD_DOCUMENT_CHARACTERS), { chunkIndex: 1 })]]);
+    }
+    const fits = [chunk(DOCUMENT_ID, "a".repeat(30_000), { chunkIndex: 1 })];
+    const overflows = [chunk(OTHER_ID, "b".repeat(30_000), { chunkIndex: 1 })];
+    const smallLater = "00000000-0000-4000-8000-0000000000aa";
+    entries.push([DOCUMENT_ID, fits], [OTHER_ID, overflows], [smallLater, [chunk(smallLater, "c".repeat(10_000), { chunkIndex: 1 })]]);
+
+    const preloaded = preloadRagDocuments(grouped(entries), { complete: true });
+
+    expect(preloaded.has(DOCUMENT_ID)).toBe(true);
+    expect(preloaded.has(OTHER_ID)).toBe(false);
+    expect(preloaded.has(smallLater)).toBe(true);
+  });
+
+  it("never ships more than the page-wide cap in total", () => {
+    const docs: [string, RagChunkRow[]][] = [];
+    for (let i = 0; i < 20; i += 1) {
+      const id = `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`;
+      docs.push([id, [chunk(id, "c".repeat(PRELOAD_DOCUMENT_CHARACTERS), { chunkIndex: 1 })]]);
+    }
+    const preloaded = preloadRagDocuments(grouped(docs), { complete: true });
+    const total = [...preloaded.values()].reduce((sum, doc) => sum + doc.characterCount, 0);
+
+    expect(total).toBeLessThanOrEqual(PRELOAD_TOTAL_CHARACTERS);
+    expect(preloaded.size).toBe(Math.floor(PRELOAD_TOTAL_CHARACTERS / PRELOAD_DOCUMENT_CHARACTERS));
   });
 });

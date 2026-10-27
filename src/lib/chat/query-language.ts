@@ -16,6 +16,8 @@
  * call that produces the raw analysis text.
  */
 
+import type { GenerationConfig } from "@google/generative-ai";
+
 export type QueryLanguage = "english" | "filipino" | "taglish" | "unknown";
 
 export interface QueryAnalysis {
@@ -32,6 +34,21 @@ export interface QueryAnalysis {
 
 /** Alternative search phrasings are capped so one reply cannot inflate retrieval cost. */
 export const MAX_SEARCH_QUERIES = 2;
+
+/**
+ * Generation settings for the analysis call (#240). Thinking is capped at a
+ * small budget, not left at the model default, because the default holds the
+ * first reply for about 2 s. The budget is not 0: with thinking off, the live
+ * eval labelled 6-7 of the 18 Taglish questions as Filipino in every run
+ * (Taglish 11-12 against 18-22 with the default), which changes the reply-language
+ * rule. 256 matched the default labels (18 Taglish, 14 Filipino) and kept
+ * retrieval at 48/48. The route and the live eval both use this object, so the
+ * eval measures the settings production runs. The SDK's typings have no
+ * `thinkingConfig`; the field is forwarded to the API unchanged.
+ */
+export const QUERY_ANALYSIS_GENERATION_CONFIG: GenerationConfig & {
+  thinkingConfig: { thinkingBudget: number };
+} = { thinkingConfig: { thinkingBudget: 256 } };
 
 /** Instruction for the one flash call that renders the question in English. */
 export const QUERY_ANALYSIS_INSTRUCTION = [
