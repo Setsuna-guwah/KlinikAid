@@ -434,3 +434,16 @@ Detected tests on mobile uploads come from OCR the client wrote into its own
 pending row, so they carry `test_detection_source: "client_ocr_catalog_match"`;
 web's server-side OCR keeps `"ocr_text_catalog_match"`. Reception sees the
 original file either way.
+
+### Migration 43 — RLS auth calls evaluated once per statement (#235, not yet applied)
+
+`src/lib/db/migration_43.sql` recreates all 51 policies (47 in `public`, 4 on
+`storage.objects`) under the same names, commands, roles and USING/WITH CHECK
+logic. The only change is that every `auth.uid()`, `user_has_permission(...)`,
+`get_auth_user_role()` and `get_auth_user_dept()` call is written as
+`(select ...)`, so Postgres runs it once per statement as an InitPlan instead of
+once per row. Left bare, `user_has_permission` made counting `system_logs` take
+820 ms for an admin. `tools/perf/rls-policy-diff.mjs` proves the policy set and
+expressions are unchanged apart from those wrappers, and that the plan has an
+InitPlan. Function volatility is unchanged. Apply after merge, then regenerate
+`schema.sql`.

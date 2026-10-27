@@ -1,39 +1,54 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   UploadError,
+  type StoredObjectEntry,
   type UploadStore,
 } from "@/lib/documents/uploadSubmission";
 
-export function uploadStore(admin: SupabaseClient): UploadStore {
+/**
+ * Wraps one store call, for latency labels. The web caller passes its `timed`
+ * helper; the Edge Function leaves the default, so this module never imports
+ * the Next.js-only timing code (#240).
+ */
+export type StoreTimer = <T>(name: string, fn: () => PromiseLike<T>) => Promise<T>;
+const untimed: StoreTimer = (_name, fn) => Promise.resolve(fn());
+
+export function uploadStore(admin: SupabaseClient, timer: StoreTimer = untimed): UploadStore {
+  const bucket = () => admin.storage.from("patient-documents");
   return {
     async pending(userId, assessmentId) {
-      const { data, error } = await admin.from("pending_document_ocr")
-        .select("id,user_id,patient_id,file_name,file_type,file_path,ocr_text")
-        .eq("id", assessmentId).eq("user_id", userId).maybeSingle();
-      if (error) throw new UploadError("SERVER_ERROR");
-      return data;
+      return timer("confirm: pending row", async () => {
+        const { data, error } = await admin.from("pending_document_ocr")
+          .select("id,user_id,patient_id,file_name,file_type,file_path,ocr_text")
+          .eq("id", assessmentId).eq("user_id", userId).maybeSingle();
+        if (error) throw new UploadError("SERVER_ERROR");
+        return data;
+      });
     },
-    async file(path) {
-      const bucket = admin.storage.from("patient-documents");
-      const split = path.lastIndexOf("/");
-      const { data: entries, error: listError } = await bucket.list(
-        path.slice(0, split),
-        { search: path.slice(split + 1), limit: 100 },
-      );
-      if (listError) throw new UploadError("SERVER_ERROR");
-      const object = entries?.find((entry) =>
-        entry.name === path.slice(split + 1)
-      );
-      if (!object?.id || !object.metadata) return null;
+    async listing(userId, assessmentId) {
+      // The assessment's folder holds only its source file, so no name search is needed.
+      return timer("confirm: storage listing", async () => {
+        const { data, error } = await bucket().list(
+          `${userId}/pending-submissions/${assessmentId}`,
+          { limit: 100 },
+        );
+        if (error) throw new UploadError("SERVER_ERROR");
+        return data ?? [];
+      });
+    },
+    async file(path, entry: StoredObjectEntry | undefined) {
+      if (!entry?.id || !entry.metadata) return null;
       // Refuse an oversized object before pulling it into the function's memory.
-      const size = Number(object.metadata.size);
+      const size = Number(entry.metadata.size);
       if (!Number.isFinite(size) || size < 1 || size > 5 * 1024 * 1024) {
         return null;
       }
-      const { data, error } = await bucket.download(path);
+      const { data, error } = await timer("confirm: storage download", () =>
+        bucket().download(path)
+      );
       if (error || !data) throw new UploadError("SERVER_ERROR");
       return Object.assign(data, {
-        objectSnapshot: { id: object.id, metadata: object.metadata },
+        objectSnapshot: { id: entry.id, metadata: entry.metadata },
       });
     },
     async submit(input) {

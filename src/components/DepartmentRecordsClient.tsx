@@ -105,11 +105,22 @@ export default function DepartmentRecordsClient({
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
 
+  // Both tabs were rendered by the server, so the tab is only a client view.
+  // Updating the URL with window.history rather than router.replace keeps the
+  // switch local: a router navigation would re-request the page's server
+  // component for a query string that page does not read.
+  //
+  // A local switch shows the rows this page was rendered with, and the queue is
+  // the list reception keeps adding to while the page sits open. So the click
+  // also re-reads the page's data, in the background: the rows are already on
+  // screen, so the switch itself stays instant, and the queue a department is
+  // working from cannot be older than the last tab click.
   const handleTabChange = (tab: "queue" | "history") => {
-    const params = new URLSearchParams(searchParams);
+    const params = new URLSearchParams(window.location.search);
     params.set("tab", tab);
     setSearchTerm("");
-    router.replace(`${pathname}?${params.toString()}`);
+    window.history.replaceState(null, "", `${pathname}?${params.toString()}`);
+    router.refresh();
   };
 
   // How long a queue entry has been waiting. Entries are no longer hidden at PHT
