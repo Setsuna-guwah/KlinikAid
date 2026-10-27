@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyRead, isZeroRowsError, readErrors } from "./read-outcome";
+import { classifyRead, hitRowCap, isZeroRowsError, readErrors } from "./read-outcome";
 
 /**
  * The error bodies below are the literal shapes returned by the live Supabase
@@ -141,5 +141,35 @@ describe("readErrors", () => {
   it("does not treat absence as a failure", () => {
     // Absence is a legitimate answer; it must not raise an error banner.
     expect(readErrors([{ kind: "absent" }])).toEqual([]);
+  });
+});
+
+describe("hitRowCap", () => {
+  // The deployed project returns at most 1000 rows for any request, so these
+  // are the sizes the analytics read can actually observe.
+  const DEPLOYED_CAP = 1000;
+
+  it("is false for a short page, which proves the result ended", () => {
+    expect(hitRowCap(0, DEPLOYED_CAP)).toBe(false);
+    expect(hitRowCap(1, DEPLOYED_CAP)).toBe(false);
+    expect(hitRowCap(999, DEPLOYED_CAP)).toBe(false);
+  });
+
+  it("is true for a full page, the only signal that truncation is possible", () => {
+    expect(hitRowCap(1000, DEPLOYED_CAP)).toBe(true);
+  });
+
+  it("is true if the cap is ever raised above the requested limit", () => {
+    // PostgREST applies max-rows on top of `limit`, but a deployment could raise
+    // its cap above this query's limit; a longer page is still a truncated one.
+    expect(hitRowCap(1001, DEPLOYED_CAP)).toBe(true);
+    expect(hitRowCap(5000, DEPLOYED_CAP)).toBe(true);
+  });
+
+  it("never reports a full page as complete, whatever the limit", () => {
+    // The false positive at exactly the cap is deliberate: at the cap the read
+    // cannot tell "all of it" from "the part that fits", and the caller must say
+    // "unknown" rather than draw a conclusion from a possibly cut set.
+    expect(hitRowCap(25, 25)).toBe(true);
   });
 });
