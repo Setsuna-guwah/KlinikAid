@@ -5,7 +5,16 @@ import { createClient } from "@/lib/supabase/server";
 import SpecialistAnalyticsClient from "@/components/SpecialistAnalyticsClient";
 import SpecialistAnalyticsSkeleton from "@/components/SpecialistAnalyticsSkeleton";
 import DataLoadError from "@/components/DataLoadError";
-import { classifyRead } from "@/lib/read-outcome";
+import { classifyRead, hitRowCap } from "@/lib/read-outcome";
+
+/**
+ * The most rows one request can return. PostgREST caps every response at the
+ * project's `max_rows`, which is 1000 here (verified against the live API), so
+ * asking for exactly that is asking for "as many as this view can ever see".
+ * A full page is then indistinguishable from a cut one, which is why the read
+ * below reports `complete: false` at the cap instead of charting a guess.
+ */
+const PATIENT_RECORDS_LIMIT = 1000;
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +49,10 @@ export default async function PatientAnalyticsPage(props: PatientAnalyticsPagePr
 
   const supabase = await createClient();
   const { patientId } = params;
+
+  // The results read starts now, beside the patient lookup rather than after it.
+  // Both are needed for the view and neither depends on the other's answer.
+  const recordsRead = readPatientRecords(supabase, patientId);
 
   // 1. Fetch patient details from specialist_patients
   const patientLookup = classifyRead(
@@ -83,48 +96,31 @@ export default async function PatientAnalyticsPage(props: PatientAnalyticsPagePr
         patientName={`${patient.first_name} ${patient.last_name}`}
         dob={patient.date_of_birth}
         gender={patient.gender}
+        recordsRead={recordsRead}
       />
     </Suspense>
   );
 }
 
-interface SpecialistAnalyticsBodyProps {
-  patientId: string;
-  patientName: string;
-  dob: string;
-  gender: string;
-}
-
-async function SpecialistAnalyticsBody({
-  patientId,
-  patientName,
-  dob,
-  gender
-}: SpecialistAnalyticsBodyProps) {
-  const supabase = await createClient();
-
-  // 2. Fetch distinct metrics (test names) recorded for this patient from specialist_records
-  const metricsRead = classifyRead(
-    await supabase
-      .from("specialist_records")
-      .select("test_name")
-      .eq("specialist_patient_id", patientId)
-  );
-
-  // 3. Fetch initial chronological records for the first metric (if available)
-  let initialRecords: RecordData[] = [];
-  let recordsErrorForView: unknown = null;
-
-  const distinctMetrics =
-    metricsRead.kind === "ok"
-      ? Array.from(new Set((metricsRead.data ?? []).map((r) => r.test_name).filter(Boolean)))
-      : [];
-
-  if (metricsRead.kind === "ok" && distinctMetrics.length > 0) {
-    const recordsRead = classifyRead(
-      await supabase
-        .from("specialist_records")
-        .select(`
+/**
+ * Every result this patient has, oldest first, in one query. The metric list and
+ * the first metric's series both come from these rows, so the page needs one
+ * round trip for them rather than a metric query followed by a records query.
+ *
+ * Called without awaiting, so the request is already in flight when the caller
+ * reaches its own await.
+ *
+ * The read is explicitly bounded, and reports whether the bound was reached.
+ * Without a limit the response is cut at the deployment's row cap anyway (see
+ * PATIENT_RECORDS_LIMIT), and both things derived from these rows -- the metric
+ * list and the first series -- would then be computed from the oldest 1000
+ * results as if they were all of them: a metric recorded after that point is
+ * simply absent from the dropdown, with nothing on screen saying so.
+ */
+async function readPatientRecords(supabase: Awaited<ReturnType<typeof createClient>>, patientId: string) {
+  const rows = await supabase
+    .from("specialist_records")
+    .select(`
         id,
         test_name,
         test_value,
@@ -140,68 +136,105 @@ async function SpecialistAnalyticsBody({
           full_name
         )
       `)
-        .eq("specialist_patient_id", patientId)
-        .eq("test_name", distinctMetrics[0])
-        .order("created_at", { ascending: true })
-    );
+    .eq("specialist_patient_id", patientId)
+    .order("created_at", { ascending: true })
+    .limit(PATIENT_RECORDS_LIMIT);
 
-    if (recordsRead.kind === "failed") {
-      console.error("Error fetching initial records for first metric:", recordsRead.error);
-      recordsErrorForView = recordsRead.error;
-    } else if (recordsRead.kind === "ok") {
-      initialRecords = (recordsRead.data ?? []).map((r) => {
-        const rec = r as unknown as RecordData;
-        const rawRecorder = r.recorder;
-        const recorderObj = Array.isArray(rawRecorder)
-          ? rawRecorder[0]
-          : (rawRecorder as unknown as { id: string; full_name: string } | null);
+  const read = classifyRead(rows);
 
-        return {
-          id: rec.id,
-          test_name: rec.test_name,
-          test_value: rec.test_value,
-          unit: rec.unit,
-          reference_range_min: rec.reference_range_min,
-          reference_range_max: rec.reference_range_max,
-          is_flagged: rec.is_flagged,
-          notes: rec.notes,
-          created_at: rec.created_at,
-          result_date: rec.created_at,
-          recorder: recorderObj ? { id: recorderObj.id, full_name: recorderObj.full_name } : null,
-          department: r.test_type
-        };
-      });
-    }
-  }
+  return {
+    read,
+    // A failed read is not a complete one either, but it already has its own
+    // branch; this flag is about a read that succeeded and was cut short.
+    complete: read.kind !== "ok" || !hitRowCap(read.data?.length ?? 0, PATIENT_RECORDS_LIMIT),
+  };
+}
 
-  // A failed metrics query yields an empty metric list, which the client renders
-  // as "No records found for this metric" -- asserting that this patient has no
-  // results when the results were simply unreachable. Withhold the view.
-  if (metricsRead.kind === "failed") {
+interface SpecialistAnalyticsBodyProps {
+  patientId: string;
+  patientName: string;
+  dob: string;
+  gender: string;
+  recordsRead: ReturnType<typeof readPatientRecords>;
+}
+
+async function SpecialistAnalyticsBody({
+  patientId,
+  patientName,
+  dob,
+  gender,
+  recordsRead: pendingRecordsRead,
+}: SpecialistAnalyticsBodyProps) {
+  const { read: recordsRead, complete: recordsComplete } = await pendingRecordsRead;
+
+  // A failed read yields an empty metric list, which the client renders as "No
+  // records found for this metric" -- asserting that this patient has no results
+  // when the results were simply unreachable. Withhold the view.
+  if (recordsRead.kind === "failed") {
+    console.error("Error fetching patient results for analytics:", recordsRead.error);
     return (
       <div className="space-y-6">
         <DataLoadError
           what={`analytics for ${patientName}`}
-          error={metricsRead.error}
+          error={recordsRead.error}
           retryHref={`/specialist/patients/${patientId}/analytics`}
         />
       </div>
     );
   }
 
-  // A failed records query yields an empty chart, which reads as "no results
-  // recorded" rather than "could not load". Same reasoning: withhold the view.
-  if (recordsErrorForView) {
+  // A read that succeeded but came back full may have been cut at the row cap
+  // (readPatientRecords). Both things derived from these rows would then be
+  // subtly wrong in the same silent way: a metric first recorded after the cut
+  // is missing from the dropdown, and the first series is the oldest of however
+  // many results fitted. Say that instead of charting a partial history.
+  if (!recordsComplete) {
+    console.error(
+      `Patient ${patientId} has at least ${PATIENT_RECORDS_LIMIT} results: too many for the analytics view to read at once`
+    );
     return (
       <div className="space-y-6">
         <DataLoadError
-          what={`results for ${patientName}`}
-          error={recordsErrorForView}
+          what={`analytics for ${patientName}`}
+          kind="page"
+          error={{
+            message: `the results read returned a full page of ${PATIENT_RECORDS_LIMIT}, so more may exist`,
+          }}
+          description="This patient has more results than this view can load at once, so the metric list and the chart would both come from an incomplete set. Nothing is missing from the record itself; this view cannot show a history this long yet."
           retryHref={`/specialist/patients/${patientId}/analytics`}
         />
       </div>
     );
   }
+
+  // Only a list query reaches here, so zero rows is "ok" with an empty list.
+  const rows = recordsRead.kind === "ok" ? recordsRead.data ?? [] : [];
+  const distinctMetrics = Array.from(new Set(rows.map((r) => r.test_name).filter(Boolean)));
+
+  const initialRecords: RecordData[] = rows
+    .filter((r) => r.test_name === distinctMetrics[0])
+    .map((r) => {
+      const rec = r as unknown as RecordData;
+      const rawRecorder = r.recorder;
+      const recorderObj = Array.isArray(rawRecorder)
+        ? rawRecorder[0]
+        : (rawRecorder as unknown as { id: string; full_name: string } | null);
+
+      return {
+        id: rec.id,
+        test_name: rec.test_name,
+        test_value: rec.test_value,
+        unit: rec.unit,
+        reference_range_min: rec.reference_range_min,
+        reference_range_max: rec.reference_range_max,
+        is_flagged: rec.is_flagged,
+        notes: rec.notes,
+        created_at: rec.created_at,
+        result_date: rec.created_at,
+        recorder: recorderObj ? { id: recorderObj.id, full_name: recorderObj.full_name } : null,
+        department: r.test_type
+      };
+    });
 
   return (
     <SpecialistAnalyticsClient
