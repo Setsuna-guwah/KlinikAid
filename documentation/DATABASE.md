@@ -17,7 +17,7 @@ psql "$FRESH_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f src/lib/db/schema.sql
 Use a database administrator connection with permission to create the app's auth
 triggers and storage policies. Supabase must already supply its `auth`, `storage`,
 `extensions` schemas and platform roles; this is not a standalone Postgres installer.
-The snapshot includes the current state **through migration_41**, system role and
+The snapshot includes the current state **through migration_48**, system role and
 permission reference data, a private `patient-documents` bucket, auth triggers,
 Realtime membership, and migration coverage records. It contains no application data.
 It runs in a transaction and refuses an existing public table before changing anything.
@@ -32,7 +32,9 @@ history need their actual schema checked before choosing a migration starting po
 The snapshot assigns coverage markers `20261017000007`–`20261017000026` to previously
 untracked migrations 07–26, retains the two July versions from `applied/`, and uses
 `20261017000027`–`20261017000029` and `20261018000030`–`20261018000036` for 27–36,
-`20261020000037` for 37, `20261021000038` for 38, `20261022000039` for 39, `20261023000040` for 40, and `20261023000041` for 41.
+`20261020000037` for 37, `20261021000038` for 38, `20261022000039` for 39,
+`20261023000040` for 40, `20261023000041` for 41, `20261023000042` for 42, and
+`20261027000043`–`20261027000048` for 43–48.
 Those markers describe snapshot coverage, not individual historical executions.
 
 ### Regenerating the snapshot
@@ -45,7 +47,7 @@ pg_dump "$SOURCE_DATABASE_URL" --schema-only --schema=public --no-owner > public
 ```
 
 1. Keep the header, transaction and empty-schema guard. Enable `vector` in `public`,
-   and `pgcrypto` and `uuid-ossp` in `extensions`, before the dumped DDL.
+   and `pgcrypto`, `uuid-ossp` and `pg_trgm` in `extensions`, before the dumped DDL.
 2. Insert the dumped public DDL and ACLs. Remove `CREATE SCHEMA public`, owner
    statements, psql `\restrict`/`\unrestrict` commands (for SQL-editor compatibility),
    and Supabase-managed `ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin` statements
@@ -214,12 +216,12 @@ migration 38 adds no index for it.
 
 ## Migration History
 
-Historical migrations are retained under `src/lib/db/` through migration 42.
+Historical migrations are retained under `src/lib/db/` through migration 48.
 Migration 39 (one patient row per profile) was applied to production on
-2026-10-22. Migration 40 (lab plausibility guard) and migration 41 (patient
+2026-10-22. Migration 40 (lab plausibility guard), migration 41 (patient
 template submission) and migration 42 (patient upload submission) were applied
-on 2026-10-23. All four are in the
-`schema.sql` snapshot.
+on 2026-10-23. Migrations 43–48 were applied on 2026-10-27. All of them are in
+the `schema.sql` snapshot.
 
 The following are early milestones, not a fresh-project execution sequence:
 
@@ -435,7 +437,7 @@ pending row, so they carry `test_detection_source: "client_ocr_catalog_match"`;
 web's server-side OCR keeps `"ocr_text_catalog_match"`. Reception sees the
 original file either way.
 
-### Migration 43 — RLS auth calls evaluated once per statement (#235, not yet applied)
+### Migration 43 — RLS auth calls evaluated once per statement (#235, applied 2026-10-27)
 
 `src/lib/db/migration_43.sql` recreates all 51 policies (47 in `public`, 4 on
 `storage.objects`) under the same names, commands, roles and USING/WITH CHECK
@@ -445,10 +447,10 @@ logic. The only change is that every `auth.uid()`, `user_has_permission(...)`,
 once per row. Left bare, `user_has_permission` made counting `system_logs` take
 820 ms for an admin. `tools/perf/rls-policy-diff.mjs` proves the policy set and
 expressions are unchanged apart from those wrappers, and that the plan has an
-InitPlan. Function volatility is unchanged. Apply after merge, then regenerate
-`schema.sql`.
+InitPlan. Function volatility is unchanged. It was applied to production on
+2026-10-27 and is in the `schema.sql` snapshot.
 
-### Migration 47 — profiles self-update recursion (#256, not yet applied)
+### Migration 47 — profiles self-update recursion (#256, applied 2026-10-27)
 
 `src/lib/db/migration_47.sql` fixes the failure any patient hit saving privacy
 consent: updating their own `public.profiles` row raised
@@ -484,5 +486,5 @@ path can still change the protected columns.
 **Ordering:** 43 is already applied, and its re-created "Users can update own
 profile details" is the recursive policy this migration replaces, so 47 must be
 applied after 43. 47 does not depend on 44, 45 or 46. If 43 is ever re-run,
-re-run 47 afterwards. `SNAPSHOT`: written but not applied; do not regenerate
-`schema.sql` until applied.
+re-run 47 afterwards. It was applied to production on 2026-10-27 and is in the
+`schema.sql` snapshot.
