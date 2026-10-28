@@ -1,0 +1,7 @@
+{
+  "imports": {
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.106.1",
+    "@/lib/auth/password-sign-in": "../../../src/lib/auth/password-sign-in.ts",
+    "@/lib/auth/mfa": "../../../src/lib/auth/mfa.ts"
+  }
+}
