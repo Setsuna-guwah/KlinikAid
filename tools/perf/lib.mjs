@@ -163,7 +163,21 @@ export function createMeasurer(page, samples, { scenario, iteration }) {
     let readyAt = null;
     const start = performance.now();
     const feedbackWatch = page
-      .waitForSelector(FEEDBACK_SELECTORS.join(", "), { state: "visible", timeout })
+      // Any visible match of any selector counts. A joined selector list in
+      // waitForSelector tracks the first element that matches it, so a hidden
+      // match earlier in the document (an idle progress bar) hid a visible one.
+      .waitForFunction(
+        (selectors) =>
+          selectors.some((selector) =>
+            [...document.querySelectorAll(selector)].some((el) => {
+              const rect = el.getBoundingClientRect();
+              const style = getComputedStyle(el);
+              return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none" && style.opacity !== "0";
+            }),
+          ),
+        FEEDBACK_SELECTORS,
+        { timeout, polling: "raf" },
+      )
       .then(() => {
         feedbackAt ??= performance.now();
       })
