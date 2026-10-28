@@ -196,3 +196,22 @@ export function parseSystemLogQuery(params: URLSearchParams): ParsedSystemLogQue
 export function containsPattern(term: string): string {
   return `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 }
+
+/**
+ * The ILIKE pattern the `search_system_logs` RPC sends for the same search
+ * term the table query receives.
+ *
+ * Both paths must match the same rows for the same user input. The table path
+ * sends containsPattern(term) to PostgREST, which additionally reads `*` in a
+ * like pattern as `%`; the RPC sends its pattern straight to ILIKE, where `*`
+ * would match only a literal asterisk. Applying PostgREST's `*` -> `%`
+ * translation here keeps both paths on one effective pattern, so a search
+ * cannot return different rows depending on which path served it.
+ *
+ * The escaping has already happened: containsPattern never produces a `*`
+ * (it escapes only `\`, `%` and `_`), so this replace cannot corrupt an
+ * escaped character.
+ */
+export function rpcContainsPattern(term: string): string {
+  return containsPattern(term).replace(/\*/g, "%");
+}

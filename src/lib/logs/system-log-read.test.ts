@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SystemLogQuery } from "./system-log-query";
-import { containsPattern } from "./system-log-query";
+import { containsPattern, rpcContainsPattern } from "./system-log-query";
 import { readSystemLogPage, type SupabaseServerClient } from "./system-log-read";
 
 const BASE: SystemLogQuery = {
@@ -26,13 +26,15 @@ interface RpcCall {
   args: Record<string, unknown>;
 }
 
+interface RpcResult {
+  data?: unknown;
+  error?: { code: string; message?: string } | null;
+}
+
 /** A stand-in for the query builder: records the select options and answers `range`. */
 function fakeClient(
   answer: { data?: unknown; count?: number | null; error?: unknown },
-  rpcAnswer: {
-    data?: unknown;
-    error?: { code: string; message?: string } | null;
-  } = { data: null, error: null }
+  rpcAnswers: RpcResult[] = [{ data: null, error: null }]
 ) {
   const calls: Call[] = [];
   const rpcCalls: RpcCall[] = [];
@@ -57,7 +59,8 @@ function fakeClient(
     }),
     rpc: (fn: string, args: Record<string, unknown>) => {
       rpcCalls.push({ fn, args });
-      return Promise.resolve({ data: rpcAnswer.data ?? null, error: rpcAnswer.error ?? null });
+      const r = rpcAnswers[Math.min(rpcCalls.length - 1, rpcAnswers.length - 1)];
+      return Promise.resolve({ data: r.data ?? null, error: r.error ?? null });
     },
   } as unknown as SupabaseServerClient;
   return { client, calls, rpcCalls };
@@ -136,7 +139,7 @@ describe("readSystemLogPage: searched pages", () => {
   it("reads a searched page through search_system_logs and maps the payload", async () => {
     const { client, rpcCalls, calls } = fakeClient(
       { data: [], count: 0 },
-      { data: PAYLOAD, error: null }
+      [{ data: PAYLOAD, error: null }]
     );
     const page = await readSystemLogPage(client, {
       ...BASE,
@@ -157,21 +160,27 @@ describe("readSystemLogPage: searched pages", () => {
     expect(page.logs[1].profiles).toBeNull();
   });
 
-  it("sends the same escaped ilike pattern the table query would send", async () => {
-    const { client, rpcCalls } = fakeClient({ data: [], count: 0 }, { data: PAYLOAD, error: null });
-    const term = "Maria 100% of_us \\ cut";
+  it("sends the effective pattern the table path would evaluate, `*` included", async () => {
+    const { client, rpcCalls } = fakeClient({ data: [], count: 0 }, [{ data: PAYLOAD, error: null }]);
+    const term = "Maria 100% of_us \\ *4* cut";
 
     await readSystemLogPage(client, { ...BASE, search: term });
 
-    expect(rpcCalls[0].args.p_search).toBe(containsPattern(term));
+    // PostgREST would turn each `*` into `%` on the table path; the RPC
+    // pattern must evaluate to the same ILIKE, so it applies the same
+    // translation before sending. rpcContainsPattern's own tests compare
+    // the two paths' patterns for each special character.
+    expect(rpcCalls[0].args.p_search).toBe(rpcContainsPattern(term));
+    expect(rpcCalls[0].args.p_search).toBe(containsPattern(term).replace(/\*/g, "%"));
     expect(rpcCalls[0].args.p_from).toBe(15); // page 2 * limit 15
     expect(rpcCalls[0].args.p_limit).toBe(15);
     expect(rpcCalls[0].args.p_event_type).toBeNull();
     expect(rpcCalls[0].args.p_start_date).toBeNull();
+    expect(rpcCalls[0].args).not.toHaveProperty("p_known_total");
   });
 
   it("forwards the filters with the search", async () => {
-    const { client, rpcCalls } = fakeClient({ data: [], count: 0 }, { data: PAYLOAD, error: null });
+    const { client, rpcCalls } = fakeClient({ data: [], count: 0 }, [{ data: PAYLOAD, error: null }]);
     const q = {
       ...BASE,
       eventType: "LOGIN_SUCCESS",
@@ -195,7 +204,7 @@ describe("readSystemLogPage: searched pages", () => {
   it("reports the searched total for a past-the-end page", async () => {
     const { client } = fakeClient(
       { data: [], count: 0 },
-      { data: { total: 81, logs: [] }, error: null }
+      [{ data: { total: 81, logs: [] }, error: null }]
     );
     const page = await readSystemLogPage(client, { ...BASE, search: "Maria", page: 99 });
 
@@ -205,7 +214,7 @@ describe("readSystemLogPage: searched pages", () => {
   it("falls back to the table query while migration 46 is not applied (PGRST202)", async () => {
     const { client, rpcCalls, calls } = fakeClient(
       { data: [], count: 12 },
-      { data: null, error: { code: "PGRST202", message: "Could not find the function" } }
+      [{ data: null, error: { code: "PGRST202", message: "Could not find the function" } }]
     );
     const page = await readSystemLogPage(client, { ...BASE, search: "Maria" });
 
@@ -218,7 +227,7 @@ describe("readSystemLogPage: searched pages", () => {
   it("throws on a failed search rather than reporting an empty page", async () => {
     const { client } = fakeClient(
       { data: [], count: 0 },
-      { data: null, error: { code: "42501", message: "FORBIDDEN" } }
+      [{ data: null, error: { code: "42501", message: "FORBIDDEN" } }]
     );
 
     await expect(readSystemLogPage(client, { ...BASE, search: "Maria" })).rejects.toMatchObject({
@@ -229,11 +238,35 @@ describe("readSystemLogPage: searched pages", () => {
   it("throws when the search function answers an unexpected shape", async () => {
     const { client } = fakeClient(
       { data: [], count: 0 },
-      { data: { logs: [{ id: 1 }] }, error: null } // missing total
+      [{ data: { logs: [{ id: 1 }] }, error: null }] // missing total
     );
 
     await expect(readSystemLogPage(client, { ...BASE, search: "Maria" })).rejects.toThrow(
       "unexpected payload shape"
     );
+  });
+
+  it("forwards a known total so a later page of the same search skips the count", async () => {
+    const { client, rpcCalls } = fakeClient({ data: [], count: 0 }, [{ data: PAYLOAD, error: null }]);
+
+    await readSystemLogPage(client, { ...BASE, search: "Maria", knownTotal: 81 });
+
+    expect(rpcCalls).toHaveLength(1);
+    expect(rpcCalls[0].args.p_known_total).toBe(81);
+  });
+
+  it("retries once without the known total while migration 48 is not applied", async () => {
+    const { client, rpcCalls, calls } = fakeClient({ data: [], count: 0 }, [
+      { data: null, error: { code: "PGRST202", message: "Could not find the function" } },
+      { data: PAYLOAD, error: null },
+    ]);
+
+    const page = await readSystemLogPage(client, { ...BASE, search: "Maria", knownTotal: 81 });
+
+    expect(rpcCalls).toHaveLength(2);
+    expect(rpcCalls[0].args.p_known_total).toBe(81);
+    expect(rpcCalls[1].args).not.toHaveProperty("p_known_total");
+    expect(calls).toHaveLength(0); // no table fallback: migration 46's function answered
+    expect(page.total).toBe(81);
   });
 });

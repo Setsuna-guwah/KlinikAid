@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import type { SystemLogQuery, SystemLogRow } from "@/lib/logs/system-log-query";
-import { containsPattern } from "@/lib/logs/system-log-query";
+import { containsPattern, rpcContainsPattern } from "@/lib/logs/system-log-query";
 
 /**
  * The one database read behind a page of system events. The System Logs page
@@ -99,7 +99,8 @@ export function filteredSystemLogQuery(
 }
 
 /**
- * One page of searched events through `search_system_logs` (migration 46).
+ * One page of searched events through `search_system_logs` (migration 46,
+ * extended with `p_known_total` in migration 48).
  *
  * The RPC exists because the planner will not use the trigram index for
  * ILIKE under the table's RLS policy: ILIKE is not leakproof, so Postgres
@@ -109,25 +110,38 @@ export function filteredSystemLogQuery(
  * the profiles embed's visibility, but runs as its owner, where the index is
  * usable.
  *
- * Returns null when the function is not installed yet (PGRST202) so the
- * caller can fall back to the table query. Every other failure is thrown: a
- * failed search must never be read as an empty trail.
+ * `p_known_total` skips the count on later pages of the same search, the
+ * contract the table path already has for `knownTotal`. While migration 48
+ * is not applied yet, no installed function takes that argument, so the call
+ * answers PGRST202 and one retry without it reuses migration 46's function,
+ * which counts. A PGRST202 on that retry means migration 46 is missing too,
+ * and the caller falls back to the table query. Every other failure is
+ * thrown: a failed search must never be read as an empty trail.
  */
 async function readSearchedLogPage(
   supabase: SupabaseServerClient,
   q: SystemLogQuery
 ): Promise<SystemLogPage | null> {
-  const { data, error } = await supabase.rpc("search_system_logs", {
+  const rpcArgs = (withKnownTotal: boolean) => ({
     p_event_type: q.eventType,
     p_user_id: q.userId,
     p_start_date: q.startDate,
     p_end_date: q.endDate,
-    // The function applies the pattern as-is, so it receives the same
-    // escaped containsPattern the table query would send.
-    p_search: containsPattern(q.search ?? ""),
+    // The function applies the pattern as-is. rpcContainsPattern sends the
+    // effective pattern the table path would evaluate for the same term,
+    // PostgREST's `*` -> `%` translation included, so both paths match the
+    // same rows.
+    p_search: rpcContainsPattern(q.search ?? ""),
     p_from: (q.page - 1) * q.limit,
     p_limit: q.limit,
+    ...(withKnownTotal ? { p_known_total: q.knownTotal } : {}),
   });
+
+  let { data, error } = await supabase.rpc("search_system_logs", rpcArgs(q.knownTotal !== null));
+
+  if (error?.code === SEARCH_FUNCTION_MISSING && q.knownTotal !== null) {
+    ({ data, error } = await supabase.rpc("search_system_logs", rpcArgs(false)));
+  }
 
   if (error?.code === SEARCH_FUNCTION_MISSING) return null;
   if (error) throw error;
