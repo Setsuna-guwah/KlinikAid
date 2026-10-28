@@ -32,6 +32,20 @@ const nextConfig = {
       },
     ];
   },
+  // Retired page URLs go straight to the page they forward to. Next applies
+  // these before the middleware, so no session work or page render happens
+  // first (issue #241). Role gating is on the target page, unchanged.
+  // `/department/dashboard` is not here: its role gate is a route handler
+  // (src/app/(dashboard)/department/dashboard/route.ts).
+  async redirects() {
+    return [
+      {
+        source: "/reception/documents",
+        destination: "/reception/queue",
+        permanent: false,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

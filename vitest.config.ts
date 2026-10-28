@@ -2,6 +2,9 @@ import { defineConfig } from "vitest/config";
 import path from "node:path";
 
 export default defineConfig({
+  // The app's tsconfig keeps JSX as `preserve` for Next.js. A test that imports
+  // a server component (for its gate, not its markup) needs it compiled.
+  oxc: { jsx: { runtime: "automatic" } },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

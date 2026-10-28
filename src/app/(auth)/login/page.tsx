@@ -102,8 +102,13 @@ function LoginForm() {
         }
 
         if (result.success && result.redirectUrl) {
-          router.push(redirectPath || result.redirectUrl);
-          router.refresh();
+          // One navigation, one landing render. The action's reply has already
+          // set the session cookies, so this RSC request carries them, and
+          // Next 15 never serves a dynamic route from the client router cache
+          // (staleTimes.dynamic defaults to 0), so a router.refresh() after it
+          // can only re-render the landing a second time (#237). replace()
+          // also keeps the login form out of the back history.
+          router.replace(redirectPath || result.redirectUrl);
         }
       } catch {
         setError("Sign-in could not be completed. Please check your connection and try again.");

@@ -1,93 +1,124 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { middleware } from "./middleware";
 
 /**
- * The middleware's session decision, with the Auth server's answer faked.
- *
- * The middleware asks the Auth server whether the session still exists
- * (`getUser`). That call is what refuses a signed-out or revoked session, so
- * these tests fake only that answer and run the real middleware and session
- * refresh around it.
+ * The edge middleware's session handling (issue #238): the identity comes from
+ * the locally verified token, the identity header cannot be forged, and an
+ * expired access token is refreshed through the cookies.
  */
 
+const AUTH_USER_HEADER = "x-klinikaid-auth-user";
+
 const mocks = vi.hoisted(() => ({
-  getUser: vi.fn(),
+  /** The claims `getClaims()` answers with, or null for no session. */
+  claims: null as { sub: string; app_metadata?: Record<string, unknown> } | null,
+  /** Cookies the client writes during `getClaims()`, as a token refresh does. */
+  refreshedCookies: [] as { name: string; value: string; options?: Record<string, unknown> }[],
+  /** Arguments `getClaims()` was called with. */
+  getClaimsArgs: [] as unknown[][],
+  cookieOptions: null as CookieOptions | null,
 }));
+
+type CookieOptions = { cookies: { setAll: (cookies: unknown[]) => void } };
 
 vi.mock("@supabase/ssr", () => ({
-  createServerClient: () => ({
-    auth: { getUser: mocks.getUser },
-    from: () => ({
-      select: () => ({ eq: () => ({ single: async () => ({ data: null, error: null }) }) }),
-    }),
-  }),
+  createServerClient: (_url: string, _key: string, options: CookieOptions) => {
+    mocks.cookieOptions = options;
+    return {
+      auth: {
+        getClaims: async (...args: unknown[]) => {
+          mocks.getClaimsArgs.push(args);
+          if (mocks.refreshedCookies.length > 0) {
+            // What `getClaims()` does with no token: read the session, refresh
+            // it if the access token expired, and hand the cookies to setAll.
+            options.cookies.setAll(mocks.refreshedCookies);
+          }
+          return mocks.claims
+            ? { data: { claims: { ...mocks.claims } }, error: null }
+            : { data: null, error: null };
+        },
+      },
+      from: () => ({
+        select: () => ({ eq: () => ({ single: async () => ({ data: { role: "patient" }, error: null }) }) }),
+      }),
+    };
+  },
 }));
 
-const { middleware } = await import("./middleware");
+vi.mock("@/lib/supabase/signing-keys", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/supabase/signing-keys")>()),
+  getSigningKeys: async () => [],
+}));
 
-const USER_ID = "3f2c1d7e-0000-4000-8000-000000000001";
+beforeEach(() => {
+  vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://project.supabase.co");
+  vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "anon-key");
+  mocks.claims = null;
+  mocks.refreshedCookies = [];
+  mocks.getClaimsArgs = [];
+});
 
 function request(path: string, headers: Record<string, string> = {}) {
   return new NextRequest(`https://klinikaid.test${path}`, { headers });
 }
 
-function confirmed(user: { id: string; app_metadata?: Record<string, unknown> } | null) {
-  mocks.getUser.mockResolvedValue(
-    user
-      ? { data: { user: { app_metadata: {}, user_metadata: {}, ...user } }, error: null }
-      : { data: { user: null }, error: { message: "Auth session missing!", status: 403 } }
-  );
-}
+describe("middleware identity header", () => {
+  it("replaces a forged identity header with the verified user's id", async () => {
+    mocks.claims = { sub: "real-user", app_metadata: {} };
 
-beforeEach(() => {
-  vi.clearAllMocks();
-  vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://project.supabase.co");
-  vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "anon-key");
+    const response = await middleware(
+      request("/patient/dashboard", { [AUTH_USER_HEADER]: "attacker-chosen-id" })
+    );
+
+    // The middleware forwards the header it wrote, and only that one.
+    expect(response.headers.get(`x-middleware-request-${AUTH_USER_HEADER}`)).toBe("real-user");
+  });
+
+  it("strips a forged identity header when there is no verified session", async () => {
+    mocks.claims = null;
+
+    const response = await middleware(
+      request("/api/department/records", { [AUTH_USER_HEADER]: "attacker-chosen-id" })
+    );
+
+    // Not redirected (the route answers itself), and no identity is forwarded:
+    // the forged value is gone, not passed on.
+    expect(response.headers.get(`x-middleware-request-${AUTH_USER_HEADER}`)).toBeNull();
+    expect(response.headers.get(`x-middleware-override-headers`) ?? "").not.toContain(AUTH_USER_HEADER);
+  });
+
+  it("sends an anonymous visitor to login whatever identity header they send", async () => {
+    mocks.claims = null;
+
+    const response = await middleware(
+      request("/patient/dashboard", { [AUTH_USER_HEADER]: "attacker-chosen-id" })
+    );
+
+    expect(response.status).toBe(307);
+    expect(new URL(response.headers.get("location") ?? "").pathname).toBe("/login");
+  });
 });
 
-describe("middleware session decision", () => {
-  it("sends a request with no session to sign-in from a protected route", async () => {
-    confirmed(null);
+describe("middleware session refresh", () => {
+  it("verifies the token without a token argument, so an expired access token is refreshed", async () => {
+    mocks.claims = { sub: "real-user", app_metadata: {} };
 
-    const response = await middleware(request("/admin/dashboard"));
+    await middleware(request("/patient/dashboard"));
 
-    expect(response.status).toBe(307);
-    expect(new URL(response.headers.get("location") ?? "", "https://klinikaid.test").pathname).toBe("/login");
+    // No token argument: the client reads the session from the cookies and
+    // refreshes it first, the same as the getUser() call it replaces.
+    expect(mocks.getClaimsArgs[0]?.[0]).toBeUndefined();
   });
 
-  it("refuses a signed-out or revoked session, however it is presented", async () => {
-    // The Auth server no longer knows the session (it was signed out or revoked),
-    // so getUser reports it missing. The cookies may still be replayed.
-    confirmed(null);
+  it("writes the refreshed session cookies on the response", async () => {
+    mocks.claims = { sub: "real-user", app_metadata: {} };
+    mocks.refreshedCookies = [
+      { name: "sb-project-auth-token", value: "refreshed-session", options: { path: "/" } },
+    ];
 
-    const response = await middleware(
-      request("/patient/dashboard", { cookie: "sb-project-auth-token=replayed" })
-    );
+    const response = await middleware(request("/patient/dashboard"));
 
-    expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toContain("/login");
-  });
-
-  it("does not let an identity header from the client stand in for a session", async () => {
-    confirmed(null);
-
-    const response = await middleware(
-      request("/admin/dashboard", { "x-klinikaid-auth-user": USER_ID })
-    );
-
-    expect(response.status).toBe(307);
-    expect(new URL(response.headers.get("location") ?? "", "https://klinikaid.test").pathname).toBe("/login");
-  });
-
-  it("writes the confirmed identity over any identity the client sent", async () => {
-    confirmed({ id: USER_ID });
-
-    const response = await middleware(
-      request("/patient/dashboard", { "x-klinikaid-auth-user": "someone-else" })
-    );
-
-    // Next forwards request headers changed by the middleware under this name.
-    expect(response.status).toBe(200);
-    expect(response.headers.get("x-middleware-request-x-klinikaid-auth-user")).toBe(USER_ID);
+    expect(response.headers.get("set-cookie")).toContain("sb-project-auth-token=refreshed-session");
   });
 });

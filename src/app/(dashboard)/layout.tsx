@@ -7,7 +7,7 @@ import { logEvent } from "@/lib/logger";
 import { SYSTEM_EVENT_TYPES } from "@/lib/constants";
 import { staffMfaStep } from "@/lib/auth/mfa";
 import { getDashboardAccess, getProfile, permissionHolder } from "@/lib/auth/helpers";
-import { getRequestSession } from "@/lib/auth/session";
+import { startRequestSession } from "@/lib/auth/session";
 import { timed } from "@/lib/perf/timing";
 import { NavItem } from "@/components/sidebar";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -55,14 +55,15 @@ export default async function DashboardLayout({ children }: DashboardLayoutProps
 
   // 1. Retrieve session and profile.
   //
-  // The session is verified from the access token's signature (no Auth round
-  // trip), and the profile is read once per request; the page and the auth
-  // helpers share both reads (issue #165).
-  const session = await getRequestSession();
-  if (!session) {
+  // The token's signature is verified locally and the Auth server's answer on
+  // whether the session is still live runs alongside it (issues #165, #238).
+  // The reads below need only the user id, so they start before that answer
+  // arrives; nothing they return is used until `live` confirms the session.
+  const pending = await startRequestSession();
+  if (!pending) {
     redirect("/login");
   }
-  const { user, aal } = session;
+  const { user, aal } = pending.session;
 
   // The role name and permissions need only the user id, so they are asked now
   // and run while the profile row is being read. One call answers both; if it
@@ -94,7 +95,15 @@ export default async function DashboardLayout({ children }: DashboardLayoutProps
   // keeps a failure from surfacing as an unhandled rejection.
   permissionsPromise.catch(() => {});
 
-  const profile = await getProfile(user.id);
+  const profilePromise = getProfile(user.id);
+
+  // A session the Auth server no longer recognises (signed out, revoked) is
+  // refused before any of the reads above is used.
+  if (!(await pending.live)) {
+    redirect("/login");
+  }
+
+  const profile = await profilePromise;
 
   if (!profile) {
     // Session exists but profile is missing
