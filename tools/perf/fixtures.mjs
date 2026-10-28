@@ -30,6 +30,7 @@ const ROLES = [
   ["patient", []],
 ];
 const SPECIALIST_LAST_NAME = "PerfThrowaway";
+const SPECIALIST_DECOY_LAST_NAME = "PerfDecoy";
 
 function helper(...args) {
   return execFileSync(process.execPath, [HELPER, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
@@ -71,6 +72,14 @@ async function create(file) {
   if (error) throw error;
   out.fixtures.specialistPatientId = patient.id;
   save();
+  // A second, non-matching directory entry, so the directory search is only
+  // ready once the filter has removed it (one matching row would already
+  // satisfy the search before any filtering ran). Also owned by the throwaway
+  // specialist, so `delete --purge-owned` removes it.
+  const { error: decoyError } = await supabase
+    .from("specialist_patients")
+    .insert({ specialist_id: specialistId, first_name: "Decoy", last_name: SPECIALIST_DECOY_LAST_NAME, date_of_birth: "1991-01-01", gender: "other" });
+  if (decoyError) throw decoyError;
   const records = Array.from({ length: 5 }, (_, index) => ({
     specialist_patient_id: patient.id,
     specialist_id: specialistId,

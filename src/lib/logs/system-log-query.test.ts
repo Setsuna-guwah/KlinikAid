@@ -3,6 +3,7 @@ import {
   DEFAULT_PAGE_SIZE,
   MAX_PAGE_SIZE,
   containsPattern,
+  rpcContainsPattern,
   isInvertedRange,
   parseSystemLogQuery,
   phtDayEnd,
@@ -136,6 +137,34 @@ describe("containsPattern", () => {
     expect(containsPattern("100%")).toBe("%100\\%%");
     expect(containsPattern("LOGIN_")).toBe("%LOGIN\\_%");
     expect(containsPattern("a\\b")).toBe("%a\\\\b%");
+  });
+});
+
+describe("rpcContainsPattern agrees with the table path", () => {
+  // What Postgres finally evaluates for the table path: containsPattern, then
+  // PostgREST's own `*` -> `%` translation of the like pattern it forwards.
+  const tablePathEffectivePattern = (term: string) => containsPattern(term).replace(/\*/g, "%");
+
+  it.each([
+    ["plain term", "logged in"],
+    ["asterisk widens the match", "clinic*policy"],
+    ["literal percent stays escaped", "100%"],
+    ["literal underscore stays escaped", "LOGIN_"],
+    ["literal backslash stays escaped", "a\\b"],
+    ["asterisk and percent together", "100*of 5%"],
+    ["every special at once", "*100%_a\\*b_"],
+    ["a lone star", "*"],
+  ])("%s: both paths evaluate one pattern", (_label, term) => {
+    expect(rpcContainsPattern(term)).toBe(tablePathEffectivePattern(term));
+  });
+
+  it("documents what each special contributes to the RPC pattern", () => {
+    expect(rpcContainsPattern("clinic*policy")).toBe("%clinic%policy%");
+    expect(rpcContainsPattern("100%")).toBe("%100\\%%");
+    expect(rpcContainsPattern("LOGIN_")).toBe("%LOGIN\\_%");
+    expect(rpcContainsPattern("a\\b")).toBe("%a\\\\b%");
+    // `*` widens the match in both paths; % _ \ stay literal in both.
+    expect(rpcContainsPattern("*100%_a\\*b_")).toBe("%%100\\%\\_a\\\\%b\\_%");
   });
 });
 
