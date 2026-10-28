@@ -90,12 +90,11 @@ export default {
       await measure("search directory for the throwaway patient", {
         kind: "interaction",
         action: () => search.fill(patientName),
-        // The search is debounced and fetched, so wait for its response. The
-        // roster can already hold a matching row, which would pass at once.
+        // Since #251 a plain-text query over a complete roster is filtered in
+        // the browser with no request, so the search is ready when every
+        // patient row left on screen matches. Waiting for a response here
+        // would time out on that path.
         ready: async () => {
-          await page.waitForResponse(
-            (response) => response.url().includes("/api/specialist/patients") && response.url().includes(encodeURIComponent(patientName)),
-          );
           await page.waitForFunction(
             (needle) => {
               // Rows that carry an Analytics link are patient rows. The loading
