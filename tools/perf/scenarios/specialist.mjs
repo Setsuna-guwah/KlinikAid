@@ -99,6 +99,10 @@ export default {
             (needle) => {
               // Rows that carry an Analytics link are patient rows. The loading
               // row has none.
+              // The fixtures add a non-matching "PerfDecoy" entry, so this only
+              // passes once the filter has actually run, and not while a
+              // network search still shows its spinner.
+              if (document.querySelector("tbody svg.animate-spin")) return false;
               const rows = [...document.querySelectorAll("tbody tr")].filter((row) => row.querySelector("a[href$='/analytics']"));
               return rows.length > 0 && rows.every((row) => row.textContent.includes(needle));
             },
