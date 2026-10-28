@@ -673,8 +673,29 @@ export default function LogsDashboardClient({
     };
   });
 
+  // What a screen reader is told while a panel waits. Derived from the panels'
+  // own loading flags rather than announced from their loading rows: a live
+  // region that mounts with its text already in it is not announced, and a row
+  // inside an aria-busy table has its announcement deferred until it is removed
+  // (issue #239 review). The region below is mounted from the start and only its
+  // text changes, which is the #182 pattern. Empty means "nothing waiting": an
+  // empty update is not announced.
+  const panelLoadingMessage = systemLoading
+    ? "Loading system events"
+    : chatLoading
+      ? "Loading chatbot audit logs"
+      : costLoading
+        ? "Loading API cost telemetry"
+        : "";
+
   return (
     <div className="space-y-6">
+      {/* The page's one polite status: the action the admin took is what is
+          announced, once, and the panels' visible loading rows stay visual. */}
+      <p role="status" aria-live="polite" data-testid="logs-status" className="sr-only">
+        {panelLoadingMessage}
+      </p>
+
       {/* Navigation Tabs Header */}
       <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-6">
         <button
@@ -843,7 +864,7 @@ export default function LogsDashboardClient({
                       <TableCell colSpan={5} className="h-48 text-center">
                         <div className="flex flex-col items-center justify-center space-y-2">
                           <Loader2 className="h-8 w-8 animate-spin text-slate-500 dark:text-slate-400" />
-                          <p role="status" aria-live="polite" className="text-sm text-slate-500 dark:text-slate-400">Loading audit logs...</p>
+                          <p className="text-sm text-slate-500 dark:text-slate-400">Loading audit logs...</p>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -1008,7 +1029,7 @@ export default function LogsDashboardClient({
                       <TableCell colSpan={7} className="h-48 text-center">
                         <div className="flex flex-col items-center justify-center space-y-2">
                           <Loader2 className="h-8 w-8 animate-spin text-slate-500 dark:text-slate-400" />
-                          <p role="status" aria-live="polite" className="text-sm text-slate-500 dark:text-slate-400">Loading chatbot logs...</p>
+                          <p className="text-sm text-slate-500 dark:text-slate-400">Loading chatbot logs...</p>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -1141,7 +1162,7 @@ export default function LogsDashboardClient({
                 <div className="h-72 flex items-center justify-center">
                   <div className="flex flex-col items-center justify-center space-y-2">
                     <Loader2 className="h-8 w-8 animate-spin text-slate-500 dark:text-slate-400" />
-                    <p role="status" aria-live="polite" className="text-sm text-slate-500 dark:text-slate-400">Loading cost telemetry...</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">Loading cost telemetry...</p>
                   </div>
                 </div>
               ) : costError ? (
