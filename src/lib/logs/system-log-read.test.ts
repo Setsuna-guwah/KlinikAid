@@ -269,4 +269,13 @@ describe("readSystemLogPage: searched pages", () => {
     expect(calls).toHaveLength(0); // no table fallback: migration 46's function answered
     expect(page.total).toBe(81);
   });
+
+  it("clamps an offset beyond the function's int4 range instead of failing", async () => {
+    const { client, rpcCalls } = fakeClient({ data: [], count: 0 }, [{ data: { total: 81, logs: [] }, error: null }]);
+
+    const page = await readSystemLogPage(client, { ...BASE, search: "Maria", page: 30_000_000, limit: 100 });
+
+    expect(rpcCalls[0].args.p_from).toBe(2147483647);
+    expect(page).toEqual({ logs: [], total: 81 });
+  });
 });

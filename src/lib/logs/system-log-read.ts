@@ -118,6 +118,8 @@ export function filteredSystemLogQuery(
  * and the caller falls back to the table query. Every other failure is
  * thrown: a failed search must never be read as an empty trail.
  */
+const MAX_INT4 = 2147483647;
+
 async function readSearchedLogPage(
   supabase: SupabaseServerClient,
   q: SystemLogQuery
@@ -132,7 +134,10 @@ async function readSearchedLogPage(
     // PostgREST's `*` -> `%` translation included, so both paths match the
     // same rows.
     p_search: rpcContainsPattern(q.search ?? ""),
-    p_from: (q.page - 1) * q.limit,
+    // The function takes an int4 offset. Any offset past it is past the end of
+    // the trail anyway, so it is clamped: the call answers an empty page with
+    // the real total instead of failing on an out-of-range integer.
+    p_from: Math.min((q.page - 1) * q.limit, MAX_INT4),
     p_limit: q.limit,
     ...(withKnownTotal ? { p_known_total: q.knownTotal } : {}),
   });
