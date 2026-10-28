@@ -177,6 +177,19 @@ export default function LogsDashboardClient({
   // history entry alone is enough: the panels already read the URL through
   // useSearchParams.
   const setActiveTab = (tab: string) => {
+    // Start a panel's load here, in the click, rather than in the effect that
+    // runs once the switch has committed (issue #239). The panel then paints its
+    // spinner on the frame the switch lands on -- instead of an empty "no logs
+    // yet" table first -- and the request is in flight a frame sooner. The
+    // condition is the one those effects use, so a panel that already has its
+    // data, or an idle warm-up already in flight, still makes no second request.
+    if (tab !== activeTab) {
+      if (tab === "system" && systemRequested.current !== systemRequestKey) {
+        fetchSystemLogs({ recount: false });
+      }
+      if (tab === "chatbot" && chatRequested.current !== chatPage) fetchChatbotLogs();
+      if (tab === "costs" && !costRequested.current) fetchCostTracker();
+    }
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", tab);
     window.history.pushState(null, "", `?${params.toString()}`);
@@ -830,7 +843,7 @@ export default function LogsDashboardClient({
                       <TableCell colSpan={5} className="h-48 text-center">
                         <div className="flex flex-col items-center justify-center space-y-2">
                           <Loader2 className="h-8 w-8 animate-spin text-slate-500 dark:text-slate-400" />
-                          <p className="text-sm text-slate-500 dark:text-slate-400">Loading audit logs...</p>
+                          <p role="status" aria-live="polite" className="text-sm text-slate-500 dark:text-slate-400">Loading audit logs...</p>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -995,7 +1008,7 @@ export default function LogsDashboardClient({
                       <TableCell colSpan={7} className="h-48 text-center">
                         <div className="flex flex-col items-center justify-center space-y-2">
                           <Loader2 className="h-8 w-8 animate-spin text-slate-500 dark:text-slate-400" />
-                          <p className="text-sm text-slate-500 dark:text-slate-400">Loading chatbot logs...</p>
+                          <p role="status" aria-live="polite" className="text-sm text-slate-500 dark:text-slate-400">Loading chatbot logs...</p>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -1128,7 +1141,7 @@ export default function LogsDashboardClient({
                 <div className="h-72 flex items-center justify-center">
                   <div className="flex flex-col items-center justify-center space-y-2">
                     <Loader2 className="h-8 w-8 animate-spin text-slate-500 dark:text-slate-400" />
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Loading cost telemetry...</p>
+                    <p role="status" aria-live="polite" className="text-sm text-slate-500 dark:text-slate-400">Loading cost telemetry...</p>
                   </div>
                 </div>
               ) : costError ? (

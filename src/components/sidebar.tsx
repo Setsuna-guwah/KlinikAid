@@ -10,6 +10,7 @@ import {
   NavigationPendingSignal,
   useNavigationPending,
 } from "@/components/NavigationPending";
+import { navigationClickFrom } from "@/lib/navigation-pending";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -112,14 +113,7 @@ export default function Sidebar({ user, navItems, onLinkClick, className }: Side
     event: React.MouseEvent<HTMLAnchorElement>,
     href: string
   ) => {
-    startNavigation(href, {
-      button: event.button,
-      metaKey: event.metaKey,
-      ctrlKey: event.ctrlKey,
-      shiftKey: event.shiftKey,
-      altKey: event.altKey,
-      defaultPrevented: event.defaultPrevented,
-    });
+    startNavigation(href, navigationClickFrom(event));
     onLinkClick?.();
   };
 

@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import Link from "next/link";
 import { formatDistanceToNowStrict } from "date-fns";
+import { PendingLink } from "@/components/NavigationPending";
 import { createClient } from "@/lib/supabase/client";
 import { Document } from "@/types";
 import type { DetectedClinicTest } from "@/lib/documents/detectRequestedTests";
@@ -404,7 +404,10 @@ export default function ReceptionKanban({
             column's scrollport, and the browser scrolls a focused card into
             view flush with an edge, so an indicator drawn outside the card
             is cut off by the column's clip (issue #192). */}
-        <Link
+        {/* PendingLink rather than Link: the detail route is a dynamic id whose
+            page calls notFound(), so it cannot have a loading.tsx (issue #213)
+            and the click is the only thing that can show the wait (issue #239). */}
+        <PendingLink
           href={`/reception/queue/${doc.id}`}
           className={cn(
             "group block rounded-md border border-slate-200 bg-white px-3 py-2 transition-colors hover:border-slate-400",
@@ -448,7 +451,7 @@ export default function ReceptionKanban({
               )}
             </div>
           )}
-        </Link>
+        </PendingLink>
       </li>
     );
   };
