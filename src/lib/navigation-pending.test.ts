@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isModifiedClick,
+  navigationClickFrom,
   shouldStartPendingNavigation,
   targetPath,
   type NavigationClick,
@@ -28,6 +29,36 @@ describe("isModifiedClick", () => {
     ["middle", { button: 1 }],
   ])("treats a %s click as modified", (_name, patch) => {
     expect(isModifiedClick({ ...plainClick, ...patch })).toBe(true);
+  });
+});
+
+describe("navigationClickFrom", () => {
+  it("reads every rule field off the event, so a modified click stays modified", () => {
+    expect(
+      navigationClickFrom({
+        button: 0,
+        metaKey: true,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+        defaultPrevented: false,
+      })
+    ).toEqual({ ...plainClick, metaKey: true });
+  });
+
+  it("carries a cancelled click through rather than reporting a plain one", () => {
+    // A link that cancelled its own click (a confirmation, an already-handled
+    // navigation) must not raise an indicator: it would never be put away.
+    expect(
+      navigationClickFrom({
+        button: 0,
+        metaKey: false,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+        defaultPrevented: true,
+      }).defaultPrevented
+    ).toBe(true);
   });
 });
 
