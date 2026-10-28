@@ -1,4 +1,4 @@
--- KlinikAid GENERATED current-state snapshot through migration_42 (2026-10-23).
+-- KlinikAid GENERATED current-state snapshot through migration_48 (2026-10-28).
 -- Fresh Supabase projects ONLY: run this file once in the SQL editor, or:
 --   psql "$FRESH_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f src/lib/db/schema.sql
 -- Requires a Supabase database with auth/storage schemas and platform roles.
@@ -23,6 +23,7 @@ $bootstrap$;
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA extensions;
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions;
 
 --
 -- PostgreSQL database dump
@@ -327,6 +328,34 @@ $$;
 
 
 --
+-- Name: dashboard_access_context(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.dashboard_access_context() RETURNS jsonb
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select jsonb_build_object(
+    'role_name', (
+      select r.name
+        from public.profiles p
+        join public.roles r on r.id = p.role_id
+       where p.id = auth.uid()
+    ),
+    'permissions', coalesce((
+      select jsonb_agg(pe.name order by pe.name)
+        from public.profiles pr
+        join public.role_permissions rp on pr.role_id = rp.role_id
+        join public.permissions pe on rp.permission_id = pe.id
+       where pr.id = auth.uid()
+         and pr.is_active
+         and public.auth_session_satisfies_mfa()
+    ), '[]'::jsonb)
+  );
+$$;
+
+
+--
 -- Name: enforce_lab_plausibility(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -551,6 +580,37 @@ $$;
 
 
 --
+-- Name: list_staff_registry(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.list_staff_registry() RETURNS TABLE(id uuid, full_name text, email text, role text, role_id uuid, department text, employee_type text, is_active boolean, created_at timestamp with time zone)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+begin
+  if not public.user_has_permission((select auth.uid()), 'staff.manage') then
+    raise exception 'FORBIDDEN: Missing permission staff.manage' using errcode = '42501';
+  end if;
+
+  return query
+    select p.id,
+           p.full_name,
+           u.email::text,
+           p.role,
+           p.role_id,
+           p.department,
+           p.employee_type,
+           p.is_active,
+           p.created_at
+      from public.profiles p
+      left join auth.users u on u.id = p.id
+     where p.role <> 'patient'
+     order by p.created_at desc;
+end;
+$$;
+
+
+--
 -- Name: match_documents(public.vector, double precision, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -587,6 +647,40 @@ BEGIN
   END IF;
   RETURN OLD;
 END;
+$$;
+
+
+--
+-- Name: protect_profile_columns(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_profile_columns() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO ''
+    AS $$
+begin
+  -- Nothing protected moved: every ordinary self-update (full_name,
+  -- accepted_privacy_at, contact details) passes untouched.
+  if (new.role, new.role_id, new.department, new.is_active, new.email_verified_at)
+     is not distinct from
+     (old.role, old.role_id, old.department, old.is_active, old.email_verified_at) then
+    return new;
+  end if;
+
+  -- service_role, and SECURITY DEFINER triggers/functions (which run as their
+  -- owner), are not end-user sessions. Only authenticated and anon are.
+  if current_user not in ('authenticated', 'anon') then
+    return new;
+  end if;
+
+  -- The admin path the "profiles.manage" update policies already allow.
+  if public.user_has_permission((select auth.uid()), 'profiles.manage') then
+    return new;
+  end if;
+
+  raise exception 'Role, department, account status and email verification can only be changed by an administrator.'
+    using errcode = '42501';
+end;
 $$;
 
 
@@ -637,6 +731,87 @@ CREATE FUNCTION public.refund_login_attempt(p_email text, p_ip text) RETURNS voi
      and ip = coalesce(p_ip, '')
      and (locked_until is null or locked_until <= now());
 $$;
+
+
+--
+-- Name: search_system_logs(text, uuid, timestamp with time zone, timestamp with time zone, text, integer, integer, bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.search_system_logs(p_event_type text DEFAULT NULL::text, p_user_id uuid DEFAULT NULL::uuid, p_start_date timestamp with time zone DEFAULT NULL::timestamp with time zone, p_end_date timestamp with time zone DEFAULT NULL::timestamp with time zone, p_search text DEFAULT NULL::text, p_from integer DEFAULT 0, p_limit integer DEFAULT 15, p_known_total bigint DEFAULT NULL::bigint) RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $_$
+declare
+  -- The API clamps these the same way; clamping again keeps a direct
+  -- PostgREST call inside one page.
+  v_limit integer := greatest(least(coalesce(p_limit, 15), 100), 1);
+  v_offset integer := greatest(coalesce(p_from, 0), 0);
+  v_where text := ' where true';
+  v_total bigint;
+  v_logs jsonb;
+begin
+  -- The same gate as the "Admins can view system logs" policy: the same
+  -- permission, the same is_active and MFA rules, once per call.
+  if not public.user_has_permission((select auth.uid()), 'system_logs.read') then
+    raise exception 'FORBIDDEN: Missing permission system_logs.read' using errcode = '42501';
+  end if;
+
+  -- Dynamic SQL is required for the index: pg_trgm extracts trigrams from
+  -- the ILIKE pattern at plan time, so the pattern must be a literal in the
+  -- statement text. Every caller value goes through format %L below; the
+  -- identifiers around them are fixed strings in this function.
+  if p_event_type is not null then
+    v_where := v_where || format(' and l.event_type = %L', p_event_type);
+  end if;
+  if p_user_id is not null then
+    v_where := v_where || format(' and l.user_id = %L', p_user_id::text);
+  end if;
+  if p_start_date is not null then
+    v_where := v_where || format(' and l.created_at >= %L', p_start_date::text);
+  end if;
+  if p_end_date is not null then
+    v_where := v_where || format(' and l.created_at <= %L', p_end_date::text);
+  end if;
+  if p_search is not null then
+    v_where := v_where || format(' and l.description ilike %L', p_search);
+  end if;
+
+  -- A caller that already counted these filters keeps its total: skip the
+  -- count, as the table path's knownTotal contract does. Only a null
+  -- p_known_total counts here.
+  if p_known_total is null then
+    execute format('select count(*) from public.system_logs l %s', v_where) into v_total;
+  else
+    v_total := p_known_total;
+  end if;
+
+  -- Two statements, like the two PostgREST issues today (exact count, then
+  -- the page). One statement that reads a materialized CTE twice was tried
+  -- and lost the index: the planner reorganizes the quals until the ILIKE
+  -- stops being an index condition, and it degrades to a sequential scan.
+  -- Single-reference statements keep the bitmap scan on the trigram index.
+  -- The count needs no profiles join: profiles.id is unique, so a log row
+  -- matches at most one profile and the LEFT JOIN cannot change the count.
+  -- The page join below keeps the profiles embed's own visibility.
+  execute format($q$
+    select coalesce(jsonb_agg(to_jsonb(f) order by f.created_at desc, f.id desc), '[]'::jsonb)
+      from (select l.id, l.user_id, l.event_type, l.description,
+                   l.ip_address, l.metadata, l.created_at,
+                   pr.full_name as profile_full_name, pr.role as profile_role
+              from public.system_logs l
+              left join public.profiles pr
+                on pr.id = l.user_id
+               and (    (select auth.uid()) = pr.id
+                     or (select public.user_has_permission((select auth.uid()), 'profiles.read_staff'))
+                     or (select public.user_has_permission((select auth.uid()), 'profiles.manage')))
+              %s
+             order by l.created_at desc, l.id desc
+             limit %s offset %s) f
+  $q$, v_where, v_limit, v_offset) into v_logs;
+
+  return jsonb_build_object('total', v_total, 'logs', v_logs);
+end;
+$_$;
 
 
 --
@@ -1911,17 +2086,17 @@ CREATE INDEX idx_system_logs_created_at_desc ON public.system_logs USING btree (
 
 
 --
+-- Name: idx_system_logs_description_trgm; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_system_logs_description_trgm ON public.system_logs USING gin (description extensions.gin_trgm_ops);
+
+
+--
 -- Name: login_attempts_window_start_idx; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX login_attempts_window_start_idx ON public.login_attempts USING btree (window_start);
-
-
---
--- Name: patients_profile_id_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX patients_profile_id_key ON public.patients USING btree (profile_id);
 
 
 --
@@ -1936,6 +2111,13 @@ CREATE UNIQUE INDEX patient_queue_department_day_number_key ON public.patient_qu
 --
 
 CREATE UNIQUE INDEX patient_queue_one_open_per_patient ON public.patient_queue USING btree (patient_id) WHERE (status = ANY (ARRAY['waiting'::text, 'in_progress'::text]));
+
+
+--
+-- Name: patients_profile_id_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX patients_profile_id_key ON public.patients USING btree (profile_id);
 
 
 --
@@ -1964,6 +2146,13 @@ CREATE TRIGGER department_records_lab_plausibility BEFORE INSERT OR UPDATE ON pu
 --
 
 CREATE TRIGGER profiles_sync_legacy_role BEFORE INSERT OR UPDATE OF role_id, role ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.sync_profile_legacy_role();
+
+
+--
+-- Name: profiles protect_profile_columns; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER protect_profile_columns BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.protect_profile_columns();
 
 
 --
@@ -2143,63 +2332,63 @@ ALTER TABLE ONLY public.system_logs
 -- Name: pending_document_ocr Admins can clean up pending OCR rows; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Admins can clean up pending OCR rows" ON public.pending_document_ocr FOR DELETE USING (public.user_has_permission(auth.uid(), 'ocr_rows.manage.all'::text));
+CREATE POLICY "Admins can clean up pending OCR rows" ON public.pending_document_ocr FOR DELETE USING (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'ocr_rows.manage.all'::text) AS user_has_permission));
 
 
 --
 -- Name: rag_documents Admins can manage RAG documents; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Admins can manage RAG documents" ON public.rag_documents USING (public.user_has_permission(auth.uid(), 'rag_documents.manage'::text)) WITH CHECK (public.user_has_permission(auth.uid(), 'rag_documents.manage'::text));
+CREATE POLICY "Admins can manage RAG documents" ON public.rag_documents USING (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'rag_documents.manage'::text) AS user_has_permission)) WITH CHECK (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'rag_documents.manage'::text) AS user_has_permission));
 
 
 --
 -- Name: chatbot_logs Admins can view chatbot logs; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Admins can view chatbot logs" ON public.chatbot_logs FOR SELECT USING (public.user_has_permission(auth.uid(), 'chatbot_logs.read'::text));
+CREATE POLICY "Admins can view chatbot logs" ON public.chatbot_logs FOR SELECT USING (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'chatbot_logs.read'::text) AS user_has_permission));
 
 
 --
 -- Name: system_logs Admins can view system logs; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Admins can view system logs" ON public.system_logs FOR SELECT USING (public.user_has_permission(auth.uid(), 'system_logs.read'::text));
+CREATE POLICY "Admins can view system logs" ON public.system_logs FOR SELECT USING (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'system_logs.read'::text) AS user_has_permission));
 
 
 --
 -- Name: department_records Admins have full access to department records; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Admins have full access to department records" ON public.department_records USING (public.user_has_permission(auth.uid(), 'records.manage'::text)) WITH CHECK (public.user_has_permission(auth.uid(), 'records.manage'::text));
+CREATE POLICY "Admins have full access to department records" ON public.department_records USING (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'records.manage'::text) AS user_has_permission)) WITH CHECK (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'records.manage'::text) AS user_has_permission));
 
 
 --
 -- Name: documents Admins have full access to documents; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Admins have full access to documents" ON public.documents USING (public.user_has_permission(auth.uid(), 'documents.manage'::text)) WITH CHECK (public.user_has_permission(auth.uid(), 'documents.manage'::text));
+CREATE POLICY "Admins have full access to documents" ON public.documents USING (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'documents.manage'::text) AS user_has_permission)) WITH CHECK (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'documents.manage'::text) AS user_has_permission));
 
 
 --
 -- Name: patients Admins have full access to patients; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Admins have full access to patients" ON public.patients USING (public.user_has_permission(auth.uid(), 'patients.manage'::text)) WITH CHECK (public.user_has_permission(auth.uid(), 'patients.manage'::text));
+CREATE POLICY "Admins have full access to patients" ON public.patients USING (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'patients.manage'::text) AS user_has_permission)) WITH CHECK (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'patients.manage'::text) AS user_has_permission));
 
 
 --
 -- Name: profiles Admins have full access to profiles; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Admins have full access to profiles" ON public.profiles USING (public.user_has_permission(auth.uid(), 'profiles.manage'::text)) WITH CHECK (public.user_has_permission(auth.uid(), 'profiles.manage'::text));
+CREATE POLICY "Admins have full access to profiles" ON public.profiles USING (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'profiles.manage'::text) AS user_has_permission)) WITH CHECK (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'profiles.manage'::text) AS user_has_permission));
 
 
 --
 -- Name: patient_queue Admins have full access to queue; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Admins have full access to queue" ON public.patient_queue USING (public.user_has_permission(auth.uid(), 'queue.manage'::text)) WITH CHECK (public.user_has_permission(auth.uid(), 'queue.manage'::text));
+CREATE POLICY "Admins have full access to queue" ON public.patient_queue USING (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'queue.manage'::text) AS user_has_permission)) WITH CHECK (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'queue.manage'::text) AS user_has_permission));
 
 
 --
@@ -2207,13 +2396,6 @@ CREATE POLICY "Admins have full access to queue" ON public.patient_queue USING (
 --
 
 CREATE POLICY "Anyone can read RAG documents" ON public.rag_documents FOR SELECT USING (true);
-
-
---
--- Name: POLICY "Anyone can read RAG documents" ON rag_documents; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY "Anyone can read RAG documents" ON public.rag_documents IS 'Deliberately public: the clinic-information corpus behind the patient chatbot. embedding is withheld by column privileges (migration_23), not by this policy.';
 
 
 --
@@ -2227,77 +2409,77 @@ CREATE POLICY "Authenticated users can read lab plausibility limits" ON public.l
 -- Name: profiles Clinic staff can view all profiles; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Clinic staff can view all profiles" ON public.profiles FOR SELECT USING (public.user_has_permission(auth.uid(), 'profiles.read_staff'::text));
+CREATE POLICY "Clinic staff can view all profiles" ON public.profiles FOR SELECT USING (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'profiles.read_staff'::text) AS user_has_permission));
 
 
 --
 -- Name: department_records Department staff can only view/insert/update within their own d; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Department staff can only view/insert/update within their own d" ON public.department_records USING ((public.user_has_permission(auth.uid(), 'records.manage.own_dept'::text) AND (department = public.get_auth_user_dept()))) WITH CHECK ((public.user_has_permission(auth.uid(), 'records.manage.own_dept'::text) AND (department = public.get_auth_user_dept())));
+CREATE POLICY "Department staff can only view/insert/update within their own d" ON public.department_records USING ((( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'records.manage.own_dept'::text) AS user_has_permission) AND (department = ( SELECT public.get_auth_user_dept() AS get_auth_user_dept)))) WITH CHECK ((( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'records.manage.own_dept'::text) AS user_has_permission) AND (department = ( SELECT public.get_auth_user_dept() AS get_auth_user_dept))));
 
 
 --
 -- Name: patient_queue Department staff can view and update queue for their department; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Department staff can view and update queue for their department" ON public.patient_queue USING ((public.user_has_permission(auth.uid(), 'queue.manage.own_dept'::text) AND (department = public.get_auth_user_dept()))) WITH CHECK ((public.user_has_permission(auth.uid(), 'queue.manage.own_dept'::text) AND (department = public.get_auth_user_dept())));
+CREATE POLICY "Department staff can view and update queue for their department" ON public.patient_queue USING ((( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'queue.manage.own_dept'::text) AS user_has_permission) AND (department = ( SELECT public.get_auth_user_dept() AS get_auth_user_dept)))) WITH CHECK ((( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'queue.manage.own_dept'::text) AS user_has_permission) AND (department = ( SELECT public.get_auth_user_dept() AS get_auth_user_dept))));
 
 
 --
 -- Name: department_records Medical specialists can read all department records; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Medical specialists can read all department records" ON public.department_records FOR SELECT USING ((public.get_auth_user_role() = 'medical_specialist'::text));
+CREATE POLICY "Medical specialists can read all department records" ON public.department_records FOR SELECT USING ((( SELECT public.get_auth_user_role() AS get_auth_user_role) = 'medical_specialist'::text));
 
 
 --
 -- Name: patient_queue Medical specialists can view queue; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Medical specialists can view queue" ON public.patient_queue FOR SELECT USING (public.user_has_permission(auth.uid(), 'queue.read'::text));
+CREATE POLICY "Medical specialists can view queue" ON public.patient_queue FOR SELECT USING (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'queue.read'::text) AS user_has_permission));
 
 
 --
 -- Name: pending_document_ocr Patients can delete own pending OCR rows; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Patients can delete own pending OCR rows" ON public.pending_document_ocr FOR DELETE USING (((public.get_auth_user_role() = 'patient'::text) AND (auth.uid() = user_id)));
+CREATE POLICY "Patients can delete own pending OCR rows" ON public.pending_document_ocr FOR DELETE USING (((( SELECT public.get_auth_user_role() AS get_auth_user_role) = 'patient'::text) AND (( SELECT auth.uid() AS uid) = user_id)));
 
 
 --
 -- Name: documents Patients can delete own pending documents; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Patients can delete own pending documents" ON public.documents FOR DELETE USING (((uploader_id = auth.uid()) AND (status = 'pending'::text)));
+CREATE POLICY "Patients can delete own pending documents" ON public.documents FOR DELETE USING (((uploader_id = ( SELECT auth.uid() AS uid)) AND (status = 'pending'::text)));
 
 
 --
 -- Name: patients Patients can insert own patient record; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Patients can insert own patient record" ON public.patients FOR INSERT WITH CHECK ((profile_id = auth.uid()));
+CREATE POLICY "Patients can insert own patient record" ON public.patients FOR INSERT WITH CHECK ((profile_id = ( SELECT auth.uid() AS uid)));
 
 
 --
 -- Name: pending_document_ocr Patients can insert own pending OCR rows; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Patients can insert own pending OCR rows" ON public.pending_document_ocr FOR INSERT WITH CHECK (((public.get_auth_user_role() = 'patient'::text) AND (auth.uid() = user_id)));
+CREATE POLICY "Patients can insert own pending OCR rows" ON public.pending_document_ocr FOR INSERT WITH CHECK (((( SELECT public.get_auth_user_role() AS get_auth_user_role) = 'patient'::text) AND (( SELECT auth.uid() AS uid) = user_id)));
 
 
 --
 -- Name: pending_document_ocr Patients can read own pending OCR rows; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Patients can read own pending OCR rows" ON public.pending_document_ocr FOR SELECT USING (((public.get_auth_user_role() = 'patient'::text) AND (auth.uid() = user_id)));
+CREATE POLICY "Patients can read own pending OCR rows" ON public.pending_document_ocr FOR SELECT USING (((( SELECT public.get_auth_user_role() AS get_auth_user_role) = 'patient'::text) AND (( SELECT auth.uid() AS uid) = user_id)));
 
 
 --
 -- Name: patients Patients can update own details; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Patients can update own details" ON public.patients FOR UPDATE USING ((profile_id = auth.uid())) WITH CHECK ((profile_id = auth.uid()));
+CREATE POLICY "Patients can update own details" ON public.patients FOR UPDATE USING ((profile_id = ( SELECT auth.uid() AS uid))) WITH CHECK ((profile_id = ( SELECT auth.uid() AS uid)));
 
 
 --
@@ -2306,23 +2488,23 @@ CREATE POLICY "Patients can update own details" ON public.patients FOR UPDATE US
 
 CREATE POLICY "Patients can view only their own department records" ON public.department_records FOR SELECT USING ((patient_id IN ( SELECT patients.id
    FROM public.patients
-  WHERE (patients.profile_id = auth.uid()))));
+  WHERE (patients.profile_id = ( SELECT auth.uid() AS uid)))));
 
 
 --
 -- Name: documents Patients can view own documents; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Patients can view own documents" ON public.documents FOR SELECT USING (((uploader_id = auth.uid()) OR (patient_id IN ( SELECT patients.id
+CREATE POLICY "Patients can view own documents" ON public.documents FOR SELECT USING (((uploader_id = ( SELECT auth.uid() AS uid)) OR (patient_id IN ( SELECT patients.id
    FROM public.patients
-  WHERE (patients.profile_id = auth.uid())))));
+  WHERE (patients.profile_id = ( SELECT auth.uid() AS uid))))));
 
 
 --
 -- Name: patients Patients can view own patient record; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Patients can view own patient record" ON public.patients FOR SELECT USING ((profile_id = auth.uid()));
+CREATE POLICY "Patients can view own patient record" ON public.patients FOR SELECT USING ((profile_id = ( SELECT auth.uid() AS uid)));
 
 
 --
@@ -2331,164 +2513,154 @@ CREATE POLICY "Patients can view own patient record" ON public.patients FOR SELE
 
 CREATE POLICY "Patients can view own queue entries" ON public.patient_queue FOR SELECT USING ((patient_id IN ( SELECT patients.id
    FROM public.patients
-  WHERE (patients.profile_id = auth.uid()))));
+  WHERE (patients.profile_id = ( SELECT auth.uid() AS uid)))));
 
 
 --
 -- Name: permissions Permitted staff can view permissions; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Permitted staff can view permissions" ON public.permissions FOR SELECT USING (public.user_has_permission(auth.uid(), 'roles.read'::text));
+CREATE POLICY "Permitted staff can view permissions" ON public.permissions FOR SELECT USING (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'roles.read'::text) AS user_has_permission));
 
 
 --
 -- Name: role_permissions Permitted staff can view role_permissions; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Permitted staff can view role_permissions" ON public.role_permissions FOR SELECT USING (public.user_has_permission(auth.uid(), 'roles.read'::text));
+CREATE POLICY "Permitted staff can view role_permissions" ON public.role_permissions FOR SELECT USING (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'roles.read'::text) AS user_has_permission));
 
 
 --
 -- Name: roles Permitted staff can view roles; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Permitted staff can view roles" ON public.roles FOR SELECT USING (public.user_has_permission(auth.uid(), 'roles.read'::text));
+CREATE POLICY "Permitted staff can view roles" ON public.roles FOR SELECT USING (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'roles.read'::text) AS user_has_permission));
 
 
 --
 -- Name: patients Receptionists can manage patients; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Receptionists can manage patients" ON public.patients USING (public.user_has_permission(auth.uid(), 'patients.manage'::text)) WITH CHECK (public.user_has_permission(auth.uid(), 'patients.manage'::text));
+CREATE POLICY "Receptionists can manage patients" ON public.patients USING (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'patients.manage'::text) AS user_has_permission)) WITH CHECK (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'patients.manage'::text) AS user_has_permission));
 
 
 --
 -- Name: patient_queue Receptionists can manage queue; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Receptionists can manage queue" ON public.patient_queue USING (public.user_has_permission(auth.uid(), 'queue.manage'::text)) WITH CHECK (public.user_has_permission(auth.uid(), 'queue.manage'::text));
+CREATE POLICY "Receptionists can manage queue" ON public.patient_queue USING (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'queue.manage'::text) AS user_has_permission)) WITH CHECK (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'queue.manage'::text) AS user_has_permission));
 
 
 --
 -- Name: documents Receptionists can view and update documents; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Receptionists can view and update documents" ON public.documents USING (public.user_has_permission(auth.uid(), 'documents.manage'::text)) WITH CHECK (public.user_has_permission(auth.uid(), 'documents.manage'::text));
+CREATE POLICY "Receptionists can view and update documents" ON public.documents USING (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'documents.manage'::text) AS user_has_permission)) WITH CHECK (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'documents.manage'::text) AS user_has_permission));
 
 
 --
 -- Name: permissions Role managers have full access to permissions; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Role managers have full access to permissions" ON public.permissions USING (public.user_has_permission(auth.uid(), 'roles.manage'::text)) WITH CHECK (public.user_has_permission(auth.uid(), 'roles.manage'::text));
+CREATE POLICY "Role managers have full access to permissions" ON public.permissions USING (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'roles.manage'::text) AS user_has_permission)) WITH CHECK (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'roles.manage'::text) AS user_has_permission));
 
 
 --
 -- Name: role_permissions Role managers have full access to role_permissions; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Role managers have full access to role_permissions" ON public.role_permissions USING (public.user_has_permission(auth.uid(), 'roles.manage'::text)) WITH CHECK (public.user_has_permission(auth.uid(), 'roles.manage'::text));
+CREATE POLICY "Role managers have full access to role_permissions" ON public.role_permissions USING (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'roles.manage'::text) AS user_has_permission)) WITH CHECK (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'roles.manage'::text) AS user_has_permission));
 
 
 --
 -- Name: roles Role managers have full access to roles; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Role managers have full access to roles" ON public.roles USING (public.user_has_permission(auth.uid(), 'roles.manage'::text)) WITH CHECK (public.user_has_permission(auth.uid(), 'roles.manage'::text));
+CREATE POLICY "Role managers have full access to roles" ON public.roles USING (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'roles.manage'::text) AS user_has_permission)) WITH CHECK (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'roles.manage'::text) AS user_has_permission));
 
 
 --
 -- Name: specialist_patients Specialist creates own patients; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Specialist creates own patients" ON public.specialist_patients FOR INSERT TO authenticated WITH CHECK ((public.user_has_permission(auth.uid(), 'specialist.patients'::text) AND (specialist_id = auth.uid()) AND (deleted_at IS NULL)));
+CREATE POLICY "Specialist creates own patients" ON public.specialist_patients FOR INSERT TO authenticated WITH CHECK ((( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'specialist.patients'::text) AS user_has_permission) AND (specialist_id = ( SELECT auth.uid() AS uid)) AND (deleted_at IS NULL)));
 
 
 --
 -- Name: specialist_records Specialist creates own records; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Specialist creates own records" ON public.specialist_records FOR INSERT TO authenticated WITH CHECK ((public.user_has_permission(auth.uid(), 'specialist.records'::text) AND (specialist_id = auth.uid()) AND (deleted_at IS NULL)));
+CREATE POLICY "Specialist creates own records" ON public.specialist_records FOR INSERT TO authenticated WITH CHECK ((( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'specialist.records'::text) AS user_has_permission) AND (specialist_id = ( SELECT auth.uid() AS uid)) AND (deleted_at IS NULL)));
 
 
 --
 -- Name: specialist_patients Specialist reads own active patients; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Specialist reads own active patients" ON public.specialist_patients FOR SELECT TO authenticated USING ((public.user_has_permission(auth.uid(), 'specialist.patients'::text) AND (specialist_id = auth.uid()) AND (deleted_at IS NULL)));
+CREATE POLICY "Specialist reads own active patients" ON public.specialist_patients FOR SELECT TO authenticated USING ((( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'specialist.patients'::text) AS user_has_permission) AND (specialist_id = ( SELECT auth.uid() AS uid)) AND (deleted_at IS NULL)));
 
 
 --
 -- Name: specialist_records Specialist reads own active records; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Specialist reads own active records" ON public.specialist_records FOR SELECT TO authenticated USING ((public.user_has_permission(auth.uid(), 'specialist.records'::text) AND (specialist_id = auth.uid()) AND (deleted_at IS NULL)));
+CREATE POLICY "Specialist reads own active records" ON public.specialist_records FOR SELECT TO authenticated USING ((( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'specialist.records'::text) AS user_has_permission) AND (specialist_id = ( SELECT auth.uid() AS uid)) AND (deleted_at IS NULL)));
 
 
 --
 -- Name: specialist_patients Specialist updates own patients; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Specialist updates own patients" ON public.specialist_patients FOR UPDATE TO authenticated USING ((public.user_has_permission(auth.uid(), 'specialist.patients'::text) AND (specialist_id = auth.uid()))) WITH CHECK ((public.user_has_permission(auth.uid(), 'specialist.patients'::text) AND (specialist_id = auth.uid())));
+CREATE POLICY "Specialist updates own patients" ON public.specialist_patients FOR UPDATE TO authenticated USING ((( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'specialist.patients'::text) AS user_has_permission) AND (specialist_id = ( SELECT auth.uid() AS uid)))) WITH CHECK ((( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'specialist.patients'::text) AS user_has_permission) AND (specialist_id = ( SELECT auth.uid() AS uid))));
 
 
 --
 -- Name: specialist_records Specialist updates own records; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Specialist updates own records" ON public.specialist_records FOR UPDATE TO authenticated USING ((public.user_has_permission(auth.uid(), 'specialist.records'::text) AND (specialist_id = auth.uid()))) WITH CHECK ((public.user_has_permission(auth.uid(), 'specialist.records'::text) AND (specialist_id = auth.uid())));
+CREATE POLICY "Specialist updates own records" ON public.specialist_records FOR UPDATE TO authenticated USING ((( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'specialist.records'::text) AS user_has_permission) AND (specialist_id = ( SELECT auth.uid() AS uid)))) WITH CHECK ((( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'specialist.records'::text) AS user_has_permission) AND (specialist_id = ( SELECT auth.uid() AS uid))));
 
 
 --
 -- Name: patients Staff and specialists can view all patients; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Staff and specialists can view all patients" ON public.patients FOR SELECT USING ((public.get_auth_user_role() = ANY (ARRAY['department_staff'::text, 'medical_specialist'::text])));
+CREATE POLICY "Staff and specialists can view all patients" ON public.patients FOR SELECT USING ((( SELECT public.get_auth_user_role() AS get_auth_user_role) = ANY (ARRAY['department_staff'::text, 'medical_specialist'::text])));
 
 
 --
 -- Name: patients Staff can view all patients; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Staff can view all patients" ON public.patients FOR SELECT USING (public.user_has_permission(auth.uid(), 'patients.read'::text));
+CREATE POLICY "Staff can view all patients" ON public.patients FOR SELECT USING (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'patients.read'::text) AS user_has_permission));
 
 
 --
 -- Name: profiles Users can read own profile; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Users can read own profile" ON public.profiles FOR SELECT USING ((auth.uid() = id));
+CREATE POLICY "Users can read own profile" ON public.profiles FOR SELECT USING ((( SELECT auth.uid() AS uid) = id));
 
 
 --
 -- Name: profiles Users can update own profile details; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Users can update own profile details" ON public.profiles FOR UPDATE TO authenticated USING (((auth.uid() = id) AND (is_active IS TRUE))) WITH CHECK (((auth.uid() = id) AND (NOT (role IS DISTINCT FROM ( SELECT p.role
-   FROM public.profiles p
-  WHERE (p.id = auth.uid())))) AND (NOT (role_id IS DISTINCT FROM ( SELECT p.role_id
-   FROM public.profiles p
-  WHERE (p.id = auth.uid())))) AND (NOT (department IS DISTINCT FROM ( SELECT p.department
-   FROM public.profiles p
-  WHERE (p.id = auth.uid())))) AND (NOT (is_active IS DISTINCT FROM ( SELECT p.is_active
-   FROM public.profiles p
-  WHERE (p.id = auth.uid())))) AND (NOT (email_verified_at IS DISTINCT FROM ( SELECT p.email_verified_at
-   FROM public.profiles p
-  WHERE (p.id = auth.uid()))))));
+CREATE POLICY "Users can update own profile details" ON public.profiles FOR UPDATE TO authenticated USING (((( SELECT auth.uid() AS uid) = id) AND (is_active IS TRUE))) WITH CHECK ((( SELECT auth.uid() AS uid) = id));
 
 
 --
 -- Name: chatbot_logs Users can view and insert own chatbot logs; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Users can view and insert own chatbot logs" ON public.chatbot_logs USING ((user_id = auth.uid())) WITH CHECK ((user_id = auth.uid()));
+CREATE POLICY "Users can view and insert own chatbot logs" ON public.chatbot_logs USING ((user_id = ( SELECT auth.uid() AS uid))) WITH CHECK ((user_id = ( SELECT auth.uid() AS uid)));
 
 
 --
 -- Name: profiles Users with profiles.manage can update any profile; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Users with profiles.manage can update any profile" ON public.profiles FOR UPDATE TO authenticated USING (public.user_has_permission(auth.uid(), 'profiles.manage'::text)) WITH CHECK (public.user_has_permission(auth.uid(), 'profiles.manage'::text));
+CREATE POLICY "Users with profiles.manage can update any profile" ON public.profiles FOR UPDATE TO authenticated USING (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'profiles.manage'::text) AS user_has_permission)) WITH CHECK (( SELECT public.user_has_permission(( SELECT auth.uid() AS uid), 'profiles.manage'::text) AS user_has_permission));
 
 
 --
@@ -2694,6 +2866,15 @@ GRANT ALL ON FUNCTION public.create_custom_role(p_name text, p_description text,
 
 
 --
+-- Name: FUNCTION dashboard_access_context(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.dashboard_access_context() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.dashboard_access_context() TO authenticated;
+GRANT ALL ON FUNCTION public.dashboard_access_context() TO service_role;
+
+
+--
 -- Name: FUNCTION enforce_lab_plausibility(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -2754,6 +2935,15 @@ GRANT ALL ON FUNCTION public.handle_new_user() TO service_role;
 
 
 --
+-- Name: FUNCTION list_staff_registry(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.list_staff_registry() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.list_staff_registry() TO authenticated;
+GRANT ALL ON FUNCTION public.list_staff_registry() TO service_role;
+
+
+--
 -- Name: FUNCTION match_documents(query_embedding public.vector, match_threshold double precision, match_count integer); Type: ACL; Schema: public; Owner: -
 --
 
@@ -2772,6 +2962,15 @@ GRANT ALL ON FUNCTION public.prevent_system_role_deletion() TO service_role;
 
 
 --
+-- Name: FUNCTION protect_profile_columns(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.protect_profile_columns() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.protect_profile_columns() TO authenticated;
+GRANT ALL ON FUNCTION public.protect_profile_columns() TO service_role;
+
+
+--
 -- Name: FUNCTION protect_submitted_upload_object(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -2785,6 +2984,15 @@ GRANT ALL ON FUNCTION public.protect_submitted_upload_object() TO service_role;
 
 REVOKE ALL ON FUNCTION public.refund_login_attempt(p_email text, p_ip text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.refund_login_attempt(p_email text, p_ip text) TO service_role;
+
+
+--
+-- Name: FUNCTION search_system_logs(p_event_type text, p_user_id uuid, p_start_date timestamp with time zone, p_end_date timestamp with time zone, p_search text, p_from integer, p_limit integer, p_known_total bigint); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.search_system_logs(p_event_type text, p_user_id uuid, p_start_date timestamp with time zone, p_end_date timestamp with time zone, p_search text, p_from integer, p_limit integer, p_known_total bigint) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.search_system_logs(p_event_type text, p_user_id uuid, p_start_date timestamp with time zone, p_end_date timestamp with time zone, p_search text, p_from integer, p_limit integer, p_known_total bigint) TO authenticated;
+GRANT ALL ON FUNCTION public.search_system_logs(p_event_type text, p_user_id uuid, p_start_date timestamp with time zone, p_end_date timestamp with time zone, p_search text, p_from integer, p_limit integer, p_known_total bigint) TO service_role;
 
 
 --
@@ -3276,11 +3484,12 @@ drop policy if exists "Allow patient delete own pending files" on storage.object
 
 -- Patients upload only their pending submissions: <uid>/pending-submissions/... (migration_36).
 -- Final files are written by the server with the service role.
+-- The auth calls are sub-selects (migration_43), so each runs once per statement.
 create policy "Allow patient upload own files"
   on storage.objects for insert
   with check (
     bucket_id = 'patient-documents' AND
-    (storage.foldername(name))[1] = auth.uid()::text AND
+    (storage.foldername(name))[1] = (select auth.uid())::text AND
     (storage.foldername(name))[2] = 'pending-submissions'
   );
 
@@ -3289,7 +3498,7 @@ create policy "Allow patient read own files"
   on storage.objects for select
   using (
     bucket_id = 'patient-documents' AND
-    (storage.foldername(name))[1] = auth.uid()::text
+    (storage.foldername(name))[1] = (select auth.uid())::text
   );
 
 -- Allow clinic staff and admins to read all patient document files
@@ -3297,7 +3506,7 @@ create policy "Allow staff and admin read all patient files"
   on storage.objects for select
   using (
     bucket_id = 'patient-documents' AND
-    public.user_has_permission(auth.uid(), 'storage.patient_documents.read')
+    (select public.user_has_permission((select auth.uid()), 'storage.patient_documents.read'))
   );
 
 -- Allow authenticated patients to delete their own pending uploads (migration_36).
@@ -3306,7 +3515,7 @@ create policy "Allow patient delete own pending files"
   on storage.objects for delete
   using (
     bucket_id = 'patient-documents' AND
-    (storage.foldername(name))[1] = auth.uid()::text AND
+    (storage.foldername(name))[1] = (select auth.uid())::text AND
     (storage.foldername(name))[2] = 'pending-submissions' AND
     metadata ->> 'klinikaid_document_id' is null AND
     not exists (select 1 from public.documents d where d.file_path = name)
@@ -3380,7 +3589,13 @@ INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES
   ('20261022000039', 'legacy_39'),
   ('20261023000040', 'legacy_40'),
   ('20261023000041', 'legacy_41'),
-  ('20261023000042', 'legacy_42')
+  ('20261023000042', 'legacy_42'),
+  ('20261027000043', 'legacy_43'),
+  ('20261027000044', 'legacy_44'),
+  ('20261027000045', 'legacy_45'),
+  ('20261027000046', 'legacy_46'),
+  ('20261027000047', 'legacy_47'),
+  ('20261027000048', 'legacy_48')
 ON CONFLICT (version) DO NOTHING;
 
 COMMIT;
