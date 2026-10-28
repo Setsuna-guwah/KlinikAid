@@ -44,6 +44,7 @@ import {
   buildQueryAnalysisPrompt,
   buildSystemPrompt,
   parseQueryAnalysis,
+  QUERY_ANALYSIS_GENERATION_CONFIG,
   QUERY_ANALYSIS_INSTRUCTION,
   type QueryAnalysis,
 } from "./query-language";
@@ -258,7 +259,12 @@ describe.skipIf(!LIVE)("live knowledge-base retrieval eval (#150)", () => {
         env("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
         { auth: { persistSession: false } }
       );
-      const flash = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+      // Multi mode runs the production analysis settings (QUERY_ANALYSIS_GENERATION_CONFIG);
+      // single mode keeps the pre-#150 defaults so its baseline stays reproducible.
+      const flash = genAI.getGenerativeModel({
+        model: "gemini-2.5-flash",
+        ...(MODE === "single" ? {} : { generationConfig: QUERY_ANALYSIS_GENERATION_CONFIG }),
+      });
       const embeddingModel = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
 
       const embed = (text: string): Promise<number[]> =>

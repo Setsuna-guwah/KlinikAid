@@ -259,7 +259,7 @@ export async function confirmSubmitDocumentAction(assessmentId: string, selected
     const input = parseUpload({ request_id: assessmentId, assessment_id: assessmentId, document_type: documentType,
       ...(selectedTestIds !== undefined ? { selected_test_ids: selectedTestIds } : {}) });
     const result = await timed("confirm: submit upload", () =>
-      submitUpload(uploadStore(admin), user.id, patient.id, input, "ocr_text_catalog_match")
+      submitUpload(uploadStore(admin, timed), user.id, patient.id, input, "ocr_text_catalog_match")
     );
     revalidatePath("/patient/submissions");
     revalidatePath("/patient/dashboard");

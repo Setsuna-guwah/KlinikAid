@@ -434,3 +434,55 @@ Detected tests on mobile uploads come from OCR the client wrote into its own
 pending row, so they carry `test_detection_source: "client_ocr_catalog_match"`;
 web's server-side OCR keeps `"ocr_text_catalog_match"`. Reception sees the
 original file either way.
+
+### Migration 43 — RLS auth calls evaluated once per statement (#235, not yet applied)
+
+`src/lib/db/migration_43.sql` recreates all 51 policies (47 in `public`, 4 on
+`storage.objects`) under the same names, commands, roles and USING/WITH CHECK
+logic. The only change is that every `auth.uid()`, `user_has_permission(...)`,
+`get_auth_user_role()` and `get_auth_user_dept()` call is written as
+`(select ...)`, so Postgres runs it once per statement as an InitPlan instead of
+once per row. Left bare, `user_has_permission` made counting `system_logs` take
+820 ms for an admin. `tools/perf/rls-policy-diff.mjs` proves the policy set and
+expressions are unchanged apart from those wrappers, and that the plan has an
+InitPlan. Function volatility is unchanged. Apply after merge, then regenerate
+`schema.sql`.
+
+### Migration 47 — profiles self-update recursion (#256, not yet applied)
+
+`src/lib/db/migration_47.sql` fixes the failure any patient hit saving privacy
+consent: updating their own `public.profiles` row raised
+`infinite recursion detected in policy for relation "profiles"` (SQLSTATE
+42P17), so `accepted_privacy_at` from
+`src/app/(auth)/privacy-agreement/actions.ts` and mobile sign-up could never be
+saved. The cause was the "Users can update own profile details" `WITH CHECK`,
+which guarded the protected columns (`role`, `role_id`, `department`,
+`is_active`, `email_verified_at`) with sub-selects on `profiles` itself, and
+expanding those re-applies the `profiles` policies. Migration 43 kept the
+sub-selects, so applying it did not help.
+
+The migration moves the guard out of the policy and into a `BEFORE UPDATE FOR
+EACH ROW` trigger, `public.protect_profile_columns()`, which compares NEW with
+OLD instead of re-reading the row. A change to any of the five columns is
+allowed only for a non end-user session (`service_role`, `SECURITY DEFINER`
+functions such as `sync_email_verified_at`) or a caller holding
+`profiles.manage`; otherwise it raises 42501. `WITH CHECK` on the same policy is
+reduced to `(select auth.uid()) = id`; its `USING` and `TO authenticated` are
+unchanged, so an inactive patient still cannot update their own row. The only
+other `BEFORE` trigger on `profiles`, `profiles_sync_legacy_role`, sorts before
+the guard by name, so the guard compares the legacy-derived `role`. No other
+policy or table grant changes.
+
+`tools/db/profiles-update-guard-check.mjs` proves it in a throwaway Postgres:
+before the migration a patient self-update of `accepted_privacy_at` reproduces
+42P17; after, the patient can save `accepted_privacy_at` and their name, is
+refused (42501) on each of the five protected columns, cannot touch another
+user's row, and an inactive patient cannot update at all, while a
+`profiles.manage` admin, `service_role` and the `sync_email_verified_at` definer
+path can still change the protected columns.
+
+**Ordering:** 43 is already applied, and its re-created "Users can update own
+profile details" is the recursive policy this migration replaces, so 47 must be
+applied after 43. 47 does not depend on 44, 45 or 46. If 43 is ever re-run,
+re-run 47 afterwards. `SNAPSHOT`: written but not applied; do not regenerate
+`schema.sql` until applied.

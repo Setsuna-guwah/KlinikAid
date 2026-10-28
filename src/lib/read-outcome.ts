@@ -109,6 +109,27 @@ export function classifyRead<T>(result: { data: T; error: unknown }): ReadOutcom
 }
 
 /**
+ * True when a list read returned a full page, so it may have been cut short.
+ *
+ * PostgREST's `max-rows` applies to every response, `limit` or not, and the
+ * deployed project caps at 1000 (verified against the live API: `limit=1001`
+ * returns exactly 1000 rows with a 200 and no error). A longer match is
+ * therefore *silently* truncated -- the client cannot see the difference
+ * between "the whole result" and "the first 1000 rows of it" in the response
+ * body. The only signal available is that the page came back full.
+ *
+ * Callers that draw a conclusion from the *set* of rows -- a distinct list, a
+ * total, a chart of every result -- must treat a full page as "not known to be
+ * complete" rather than as data. A read that asks for more than the deployment
+ * allows can never exceed it, so this stays a false positive at most at exactly
+ * the cap, which is the side to err on: it reports "unknown", never a confident
+ * partial answer.
+ */
+export function hitRowCap(returnedRows: number, limit: number): boolean {
+  return returnedRows >= limit;
+}
+
+/**
  * Collect the failures from a batch of reads so they can be surfaced together.
  *
  * The specialist dashboard runs eight independent queries and aggregates them
