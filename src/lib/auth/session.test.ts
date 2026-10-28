@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import {
+  fetchWithSigningKeyDeadline,
+  SIGNING_KEY_FETCH_TIMEOUT_MS,
+} from "@/lib/supabase/signing-keys";
 
 /**
  * The session identity used by the dashboard after issue #165.
@@ -16,6 +20,13 @@ const AUTH_USER_HEADER = "x-klinikaid-auth-user";
 const mocks = vi.hoisted(() => ({
   client: null as SupabaseClient | null,
   requestHeaders: new Headers(),
+  /** What the Auth server answers for `getUser(token)`: the live-session check. */
+  liveAnswer: { data: { user: { id: "user-123" } }, error: null } as {
+    data: { user: { id: string } | null };
+    error: { message: string } | null;
+  },
+  /** Order of the server-side checks, to prove they overlap. */
+  calls: [] as string[],
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -91,6 +102,10 @@ function clientWithToken(token: string | null): SupabaseClient {
   (globalThis as { WebSocket?: unknown }).WebSocket = class NoopWebSocket {};
   const client = createClient(PROJECT_URL, ANON_KEY, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    // The bounded `fetch` src/lib/supabase/server.ts builds the client with:
+    // a stalled key discovery request is aborted at its deadline instead of
+    // holding the verification open.
+    global: { fetch: fetchWithSigningKeyDeadline },
   });
   // The session comes from the request cookies in the app; here it is the
   // token under test.
@@ -98,6 +113,14 @@ function clientWithToken(token: string | null): SupabaseClient {
     token
       ? { data: { session: { access_token: token } }, error: null }
       : { data: { session: null }, error: null };
+  // The Auth server's answer on whether this session still exists. Nothing in
+  // these tests needs the network, so the answer is set per test.
+  (client.auth as unknown as { getUser: (jwt: string) => Promise<unknown> }).getUser = async (
+    jwt: string
+  ) => {
+    mocks.calls.push("live");
+    return { ...mocks.liveAnswer, _jwt: jwt };
+  };
   return client;
 }
 
@@ -111,15 +134,106 @@ async function freshSession() {
 }
 
 beforeEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", PROJECT_URL);
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", ANON_KEY);
   // The middleware confirmed this session for the request.
   mocks.requestHeaders = new Headers({ [AUTH_USER_HEADER]: "user-123" });
+  mocks.liveAnswer = { data: { user: { id: "user-123" } }, error: null };
+  mocks.calls = [];
 });
 
 describe("getRequestUser", () => {
+  it("refuses a session the Auth server no longer recognises, even with a valid signature", async () => {
+    // A signed-out session: the token still verifies, but the Auth server
+    // answers that the session is gone. That answer decides, not the signature.
+    const key = await signingKey("kid-1");
+    mocks.client = clientWithToken(await signToken(key, claims()));
+    mocks.liveAnswer = { data: { user: null }, error: { message: "session_not_found" } };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string) => {
+        if (String(input).includes("jwks.json")) {
+          return new Response(JSON.stringify({ keys: [key.jwk] }), { status: 200 });
+        }
+        throw new Error(`unexpected fetch: ${input}`);
+      })
+    );
+
+    const { getRequestUser, getRequestSession, startRequestSession } = await freshSession();
+    await expect(getRequestUser()).resolves.toBeNull();
+    await expect(getRequestSession()).resolves.toBeNull();
+    // The local check still succeeded: the pending session says it is not live.
+    const pending = await startRequestSession();
+    await expect(pending?.live).resolves.toBe(false);
+  });
+
+  it("refuses when the Auth server names a different user than the verified token", async () => {
+    const key = await signingKey("kid-1");
+    mocks.client = clientWithToken(await signToken(key, claims()));
+    mocks.liveAnswer = { data: { user: { id: "someone-else" } }, error: null };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string) => {
+        if (String(input).includes("jwks.json")) {
+          return new Response(JSON.stringify({ keys: [key.jwk] }), { status: 200 });
+        }
+        throw new Error(`unexpected fetch: ${input}`);
+      })
+    );
+
+    const { getRequestUser } = await freshSession();
+    await expect(getRequestUser()).resolves.toBeNull();
+  });
+
+  it("starts the live check before the local verification finishes", async () => {
+    const key = await signingKey("kid-1");
+    mocks.client = clientWithToken(await signToken(key, claims()));
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string) => {
+        if (String(input).includes("jwks.json")) {
+          mocks.calls.push("keys");
+          return new Response(JSON.stringify({ keys: [key.jwk] }), { status: 200 });
+        }
+        throw new Error(`unexpected fetch: ${input}`);
+      })
+    );
+
+    const { getRequestUser } = await freshSession();
+    await expect(getRequestUser()).resolves.toMatchObject({ id: "user-123" });
+    // The network check is issued before the key set is read, so the two run
+    // together rather than one after the other.
+    expect(mocks.calls.indexOf("live")).toBeGreaterThanOrEqual(0);
+    expect(mocks.calls.indexOf("live")).toBeLessThan(mocks.calls.indexOf("keys"));
+  });
+
+  it("lets the caller read the profile before the revocation answer is known", async () => {
+    const key = await signingKey("kid-1");
+    mocks.client = clientWithToken(await signToken(key, claims()));
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string) => {
+        if (String(input).includes("jwks.json")) {
+          return new Response(JSON.stringify({ keys: [key.jwk] }), { status: 200 });
+        }
+        throw new Error(`unexpected fetch: ${input}`);
+      })
+    );
+
+    const { startRequestSession } = await freshSession();
+    const pending = await startRequestSession();
+    // The session is available at once; only `live` waits for the Auth server.
+    expect(pending?.session.user.id).toBe("user-123");
+    await expect(pending?.live).resolves.toBe(true);
+  });
+
   it("returns the identity the signed token carries", async () => {
     const key = await signingKey("kid-1");
     const token = await signToken(key, claims());
@@ -155,6 +269,9 @@ describe("getRequestUser", () => {
     const stranger = await signingKey("kid-2");
     const token = await signToken(stranger, claims());
     mocks.client = clientWithToken(token);
+    // An unknown key id makes `getClaims()` fall back to asking the Auth
+    // server, which does not recognise a token it never issued.
+    mocks.liveAnswer = { data: { user: null }, error: { message: "invalid JWT" } };
 
     vi.stubGlobal(
       "fetch",
@@ -333,5 +450,35 @@ describe("getRequestUser", () => {
 
     const keyFetches = fetchMock.mock.calls.filter((call) => String(call[0]).includes("jwks.json"));
     expect(keyFetches).toHaveLength(1);
+  });
+
+  it("refuses the session rather than hanging when the key discovery endpoint stalls", async () => {
+    vi.useFakeTimers();
+    // A key id no earlier test put in the SDK's own key cache, so the SDK's
+    // fallback fetch runs for real in this test too.
+    const key = await signingKey("kid-stalled");
+    mocks.client = clientWithToken(await signToken(key, claims()));
+
+    // Neither the app's key cache nor the SDK's own discovery can be filled:
+    // every request to the endpoint stalls until its deadline aborts it.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () =>
+            reject(new DOMException("The request was aborted.", "AbortError"))
+          );
+        })
+      )
+    );
+
+    const { getRequestUser } = await freshSession();
+    const pending = getRequestUser();
+
+    // Both fetches — the cache's and the SDK's own — are aborted at their
+    // deadline; nothing waits for a stalled endpoint forever.
+    await vi.advanceTimersByTimeAsync(2 * SIGNING_KEY_FETCH_TIMEOUT_MS);
+    // An unavailable key set did not make verification succeed.
+    await expect(pending).resolves.toBeNull();
   });
 });
