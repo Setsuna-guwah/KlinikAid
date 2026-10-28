@@ -26,6 +26,31 @@ export interface NavigationClick {
 }
 
 /**
+ * The click fields the router rules read, from a React mouse event.
+ *
+ * The click is the only input that starts a navigation, so every caller passes
+ * the click it is handling; keeping the mapping in one place means the sidebar
+ * and the in-page links cannot drift apart in what they report.
+ */
+export function navigationClickFrom(event: {
+  button: number;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+  altKey: boolean;
+  defaultPrevented: boolean;
+}): NavigationClick {
+  return {
+    button: event.button,
+    metaKey: event.metaKey,
+    ctrlKey: event.ctrlKey,
+    shiftKey: event.shiftKey,
+    altKey: event.altKey,
+    defaultPrevented: event.defaultPrevented,
+  };
+}
+
+/**
  * True when the click is not the plain left click the router navigates on.
  *
  * The browser takes these over: they open a new tab or window, so no client

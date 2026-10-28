@@ -10,8 +10,9 @@ import React, {
   useState,
 } from "react";
 import { usePathname } from "next/navigation";
-import { useLinkStatus } from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import {
+  navigationClickFrom,
   shouldStartPendingNavigation,
   type NavigationClick,
 } from "@/lib/navigation-pending";
@@ -131,6 +132,49 @@ function NavigationPendingStatus({ pending }: { pending: boolean }) {
     <p role="status" aria-live="polite" data-testid="navigation-status" className="sr-only">
       {pending ? "Loading the requested page" : ""}
     </p>
+  );
+}
+
+interface PendingLinkProps extends Omit<React.ComponentProps<typeof Link>, "href"> {
+  /** The target path, as a string: the pending signal is keyed by it. */
+  href: string;
+}
+
+/**
+ * A link that raises the shell's pending indicator, for navigations that start
+ * inside a page rather than in the sidebar (issue #239).
+ *
+ * A card or a row link is a navigation like any other: it leaves the page on
+ * screen while the RSC for the target arrives, and a repeat visit has no
+ * skeleton to fall back on. The two routes the benchmark found with no feedback
+ * at all -- a queue document's detail and a specialist patient's analytics --
+ * are dynamic-id routes whose page calls notFound() after an await, so they
+ * must not have a loading.tsx (issue #213: a boundary there streams the 200
+ * status before the page can turn it into a 404). The click is then the only
+ * moment a pending state can be raised, and it is raised here, in the click.
+ *
+ * The indicator itself is the shell's: one bar and one polite status for the
+ * whole dashboard, so a page with twenty of these still makes one announcement
+ * per navigation.
+ */
+export function PendingLink({ href, children, onClick, ...rest }: PendingLinkProps) {
+  const { pendingHref, startNavigation } = useNavigationPending();
+
+  // The link is busy while its navigation runs, as the sidebar's links are: the
+  // content behind it is still the page the user just left.
+  return (
+    <Link
+      href={href}
+      aria-busy={pendingHref === href || undefined}
+      onClick={(event) => {
+        startNavigation(href, navigationClickFrom(event));
+        onClick?.(event);
+      }}
+      {...rest}
+    >
+      {children}
+      <NavigationPendingSignal href={href} />
+    </Link>
   );
 }
 

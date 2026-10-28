@@ -17,6 +17,7 @@ import { getAge, formatPhTime as formatPhDate } from "@/lib/utils";
 import { fetchJson, type ApiError } from "@/lib/fetch-json";
 import { isLocallySearchable, rosterMatchesText } from "@/lib/specialist-roster-search";
 import DataLoadError from "@/components/DataLoadError";
+import { PendingLink } from "@/components/NavigationPending";
 import { useHydrated } from "@/lib/use-hydrated";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -511,14 +512,19 @@ export default function SpecialistPatientsClient({
                         >
                           Enter Record
                         </Link>
-                        <Link 
+                        {/* PendingLink rather than Link: the analytics route is a
+                            dynamic id whose page calls notFound(), so it cannot
+                            have a loading.tsx (issue #213) -- the prefetched
+                            RSC still leaves the old directory on screen for a
+                            beat, and the click is what can say so (issue #239). */}
+                        <PendingLink
                           href={`/specialist/patients/${patient.id}/analytics`}
                           prefetch
                           className="inline-flex items-center gap-1 font-semibold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 bg-indigo-50/50 hover:bg-indigo-100/70 dark:bg-slate-800 dark:hover:bg-slate-700 px-2.5 py-1.5 rounded-lg transition"
                         >
                           Analytics
                           <ArrowRight className="h-3 w-3" />
-                        </Link>
+                        </PendingLink>
                         <Button
                           variant="ghost"
                           size="icon"

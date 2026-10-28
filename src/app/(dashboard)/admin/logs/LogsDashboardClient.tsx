@@ -177,6 +177,19 @@ export default function LogsDashboardClient({
   // history entry alone is enough: the panels already read the URL through
   // useSearchParams.
   const setActiveTab = (tab: string) => {
+    // Start a panel's load here, in the click, rather than in the effect that
+    // runs once the switch has committed (issue #239). The panel then paints its
+    // spinner on the frame the switch lands on -- instead of an empty "no logs
+    // yet" table first -- and the request is in flight a frame sooner. The
+    // condition is the one those effects use, so a panel that already has its
+    // data, or an idle warm-up already in flight, still makes no second request.
+    if (tab !== activeTab) {
+      if (tab === "system" && systemRequested.current !== systemRequestKey) {
+        fetchSystemLogs({ recount: false });
+      }
+      if (tab === "chatbot" && chatRequested.current !== chatPage) fetchChatbotLogs();
+      if (tab === "costs" && !costRequested.current) fetchCostTracker();
+    }
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", tab);
     window.history.pushState(null, "", `?${params.toString()}`);
@@ -660,8 +673,29 @@ export default function LogsDashboardClient({
     };
   });
 
+  // What a screen reader is told while a panel waits. Derived from the panels'
+  // own loading flags rather than announced from their loading rows: a live
+  // region that mounts with its text already in it is not announced, and a row
+  // inside an aria-busy table has its announcement deferred until it is removed
+  // (issue #239 review). The region below is mounted from the start and only its
+  // text changes, which is the #182 pattern. Empty means "nothing waiting": an
+  // empty update is not announced.
+  const panelLoadingMessage = systemLoading
+    ? "Loading system events"
+    : chatLoading
+      ? "Loading chatbot audit logs"
+      : costLoading
+        ? "Loading API cost telemetry"
+        : "";
+
   return (
     <div className="space-y-6">
+      {/* The page's one polite status: the action the admin took is what is
+          announced, once, and the panels' visible loading rows stay visual. */}
+      <p role="status" aria-live="polite" data-testid="logs-status" className="sr-only">
+        {panelLoadingMessage}
+      </p>
+
       {/* Navigation Tabs Header */}
       <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-6">
         <button
