@@ -171,6 +171,19 @@ const config: Config = {
       },
     },
     extend: {
+      // Issue #171: theme-aware text shades. Light mode darkens these three so
+      // muted text clears 4.5:1 on the warm background; dark mode keeps
+      // Tailwind's values. Only `text-*` (and `placeholder:text-*`) read
+      // these, so `bg-`/`border-` slate and teal are unchanged. See globals.css.
+      textColor: {
+        slate: {
+          400: "rgb(var(--text-slate-400) / <alpha-value>)",
+          500: "rgb(var(--text-slate-500) / <alpha-value>)",
+        },
+        teal: {
+          600: "rgb(var(--text-teal-600) / <alpha-value>)",
+        },
+      },
       // Tailwind v3 ships ring widths 0/1/2/4/8 only; `ring-3` is a Tailwind v4
       // utility. The shadcn "base-nova" ui kit (button, input, select, textarea,
       // switch) declares `focus-visible:ring-3` / `aria-invalid:ring-3`, which
