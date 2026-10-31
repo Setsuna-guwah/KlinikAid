@@ -489,7 +489,7 @@ export default function RolesClient({ roles, permissions, mappings }: RolesClien
                       type="button"
                       variant="outline"
                       onClick={() => setDeletingRole(selectedRole)}
-                      className="gap-1.5 text-slate-700 hover:bg-destructive/10 hover:text-red-700 dark:text-slate-300 dark:hover:text-red-400"
+                      className="gap-1.5 text-slate-700 hover:bg-destructive/10 hover:text-destructive-text dark:text-slate-300 dark:hover:text-destructive-text"
                     >
                       <Trash2 aria-hidden />
                       Delete role
@@ -640,7 +640,7 @@ export default function RolesClient({ roles, permissions, mappings }: RolesClien
               type="button"
               disabled={isPending}
               onClick={handleDeleteRole}
-              className="h-9 bg-red-700 font-semibold text-white hover:bg-red-800"
+              className="h-9 bg-destructive font-semibold text-destructive-foreground hover:bg-destructive/90"
             >
               {isPending ? "Deleting..." : "Delete Role"}
             </Button>
