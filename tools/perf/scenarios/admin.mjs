@@ -275,7 +275,9 @@ export default {
     await measure("system logs: switch to Chatbot Audit", {
       kind: "interaction",
       action: () => page.getByRole("button", { name: "Chatbot Audit", exact: true }).click(),
-      ready: () => logRowsReady(page),
+      // The tab is warmed in the background, so its loader usually never shows;
+      // the tabs unmount, so waiting for visible rows is enough either way.
+      ready: () => logRowsReady(page, { waitForFetch: false }),
     });
     await measure("system logs: switch to API Cost Tracker", {
       kind: "interaction",
