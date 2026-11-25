@@ -288,10 +288,14 @@ export async function getDefaultLandingPath(userId: string, profile: Pick<Profil
 async function requireSessionWithPermission(
   permissionNames: string[]
 ): Promise<{ profile: Profile; allowed: boolean }> {
+  // The permission answer comes from the request's dashboard access call, which
+  // the dashboard layout has already made, so a page guard adds no round trip.
   const verified = await verifiedSessionWith((id) =>
     Promise.all([
       getProfile(id),
-      permissionNames.length === 1 ? hasPermission(id, permissionNames[0]) : hasAnyPermission(id, permissionNames),
+      getDashboardAccess()
+        .then((access) => Promise.all(permissionNames.map(permissionHolder(id, access))))
+        .then((answers) => answers.some(Boolean)),
     ])
   );
 

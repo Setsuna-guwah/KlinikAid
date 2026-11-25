@@ -139,6 +139,17 @@ describe("requirePermission", () => {
     await expect(guarded).resolves.toMatchObject({ id: "u-1" });
   });
 
+  it("answers from the request's dashboard access call without a per-permission call", async () => {
+    mocks.rpc.mockImplementation(async (name: string) =>
+      name === "dashboard_access_context"
+        ? { data: { role_name: "admin", permissions: ["roles.read"] }, error: null }
+        : { data: true, error: null }
+    );
+    await expect(requirePermission("roles.read")).resolves.toMatchObject({ id: "u-1" });
+    await expect(requirePermission("staff.manage")).rejects.toMatchObject({ status: 403 });
+    expect(mocks.rpc).not.toHaveBeenCalledWith("user_has_permission", expect.anything());
+  });
+
   it("refuses a deactivated account even when the permission would be held", async () => {
     mocks.profileSingle.mockResolvedValue({
       data: { ...ACTIVE_PROFILE, is_active: false },
