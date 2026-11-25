@@ -11,13 +11,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getRequestUser: vi.fn(),
+  live: vi.fn(),
   profileSelect: vi.fn(),
   profileEq: vi.fn(),
   profileSingle: vi.fn(),
   rpc: vi.fn(),
 }));
 
-vi.mock("@/lib/auth/session", () => ({ getRequestUser: mocks.getRequestUser }));
+vi.mock("@/lib/auth/session", () => ({
+  startRequestSession: async () => {
+    const user = await mocks.getRequestUser();
+    return user ? { session: { user, aal: "aal2" }, live: mocks.live() } : null;
+  },
+}));
 vi.mock("@/lib/perf/timing", () => ({
   timed: async (_name: string, fn: () => Promise<unknown>) => fn(),
 }));
@@ -62,6 +68,7 @@ const ACTIVE_PROFILE = {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.getRequestUser.mockResolvedValue({ id: "u-1", email: "admin@example.com" });
+  mocks.live.mockResolvedValue(true);
   mocks.profileEq.mockReturnValue(undefined);
   mocks.profileSingle.mockResolvedValue({ data: ACTIVE_PROFILE, error: null });
   mocks.rpc.mockResolvedValue({ data: true, error: null });
@@ -110,6 +117,26 @@ describe("requirePermission", () => {
       status: 401,
       message: "UNAUTHORIZED: Session not found",
     });
+  });
+
+  it("refuses a revoked session even though its token still verifies", async () => {
+    mocks.live.mockResolvedValue(false);
+    await expect(requirePermission("staff.manage")).rejects.toMatchObject({
+      status: 401,
+      message: "UNAUTHORIZED: Session not found",
+    });
+    mocks.live.mockResolvedValue(false);
+    expect(await getCurrentUser()).toEqual({ user: null, profile: null });
+  });
+
+  it("starts the profile and permission reads before the revocation answer arrives (#238)", async () => {
+    let confirm!: (live: boolean) => void;
+    mocks.live.mockReturnValue(new Promise<boolean>((resolve) => { confirm = resolve; }));
+    const guarded = requirePermission("roles.read");
+    await vi.waitFor(() => expect(mocks.rpc).toHaveBeenCalled());
+    expect(mocks.profileSingle).toHaveBeenCalled();
+    confirm(true);
+    await expect(guarded).resolves.toMatchObject({ id: "u-1" });
   });
 
   it("refuses a deactivated account even when the permission would be held", async () => {
