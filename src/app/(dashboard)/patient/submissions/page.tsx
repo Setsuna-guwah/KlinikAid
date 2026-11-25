@@ -6,7 +6,7 @@ import { AlertCircle } from "lucide-react";
 import SubmissionsClient from "./SubmissionsClient";
 import DataLoadError from "@/components/DataLoadError";
 import { timed } from "@/lib/perf/timing";
-import { getRequestUser } from "@/lib/auth/session";
+import { verifiedSessionWith } from "@/lib/auth/helpers";
 import { Document, PatientQueue } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -15,20 +15,20 @@ export default async function PatientSubmissionsPage() {
   const supabase = await createClient();
 
   // 1. Get current authenticated user
-  const user = await getRequestUser();
+  // The signed-in user and their patient record, read beside the session's
+  // revocation check (#238).
+  const verified = await verifiedSessionWith((id) =>
+    timed("page.patientSubmissions.patient", () =>
+      supabase.from("patients").select("id").eq("profile_id", id).single()
+    )
+  );
 
-  if (!user) {
+  if (!verified) {
     redirect("/login");
   }
 
-  // 2. Fetch patient record linked via profile_id
-  const { data: patient, error: patientError } = await timed("page.patientSubmissions.patient", () =>
-    supabase
-      .from("patients")
-      .select("id")
-      .eq("profile_id", user.id)
-      .single()
-  );
+  const { user } = verified;
+  const { data: patient, error: patientError } = verified.value;
 
   if (patientError || !patient) {
     return (

@@ -1,7 +1,7 @@
 import React from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getRequestUser } from "@/lib/auth/session";
+import { verifiedSessionWith } from "@/lib/auth/helpers";
 import TemplatesClient from "@/components/TemplatesClient";
 
 export const dynamic = "force-dynamic";
@@ -17,29 +17,30 @@ export default async function PatientTemplatesPage() {
   const supabase = await createClient();
 
   // 1. Auth gate
-  const user = await getRequestUser();
-  if (!user) {
+  // The profile (role check) and patient identity need only the user id, so
+  // both are read beside the session's revocation check (#238).
+  const verified = await verifiedSessionWith((id) =>
+    Promise.all([
+      supabase.from("profiles").select("role, full_name").eq("id", id).single(),
+      supabase
+        .from("patients")
+        .select("first_name, last_name, date_of_birth, contact_number, address")
+        .eq("profile_id", id)
+        .single(),
+    ])
+  );
+  if (!verified) {
     redirect("/login");
   }
 
   // 2. Verify patient role
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role, full_name")
-    .eq("id", user.id)
-    .single();
+  const [{ data: profile, error: profileError }, { data: patient, error: patientError }] = verified.value;
 
   if (profileError || !profile || profile.role !== "patient") {
     redirect("/patient/dashboard");
   }
 
-  // 3. Fetch patient identity for prefill (#41 — server-inject, not re-ask)
-  const { data: patient, error: patientError } = await supabase
-    .from("patients")
-    .select("first_name, last_name, date_of_birth, contact_number, address")
-    .eq("profile_id", user.id)
-    .single();
-
+  // 3. Patient identity for prefill (#41 — server-inject, not re-ask)
   if (patientError || !patient) {
     redirect("/patient/dashboard");
   }

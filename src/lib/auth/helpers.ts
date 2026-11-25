@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { AuthError } from "@/lib/api-response";
 import { createClient } from "@/lib/supabase/server";
-import { getRequestUser } from "@/lib/auth/session";
+import { startRequestSession } from "@/lib/auth/session";
 import { timed } from "@/lib/perf/timing";
 import { Profile, UserRole, Department } from "@/types";
 import { User } from "@supabase/supabase-js";
@@ -43,16 +43,34 @@ export const getCurrentUser = cache(async (): Promise<{
   user: User | null;
   profile: Profile | null;
 }> => {
-  const user = await getRequestUser();
-
-  if (!user) {
+  const verified = await verifiedSessionWith((id) => getProfile(id));
+  if (!verified) {
     return { user: null, profile: null };
   }
 
-  const profile = await getProfile(user.id);
-
-  return { user, profile };
+  return { user: verified.user, profile: verified.value };
 });
+
+/**
+ * The request's user and `read(user.id)`, with the read started before the
+ * session's revocation answer arrives so the two round trips overlap (#238),
+ * as the dashboard layout does. Null when there is no verified session or the
+ * Auth server no longer recognises it; the read's result is then discarded.
+ */
+export async function verifiedSessionWith<T>(
+  read: (userId: string) => PromiseLike<T>
+): Promise<{ user: User; value: T } | null> {
+  const pending = await startRequestSession();
+  if (!pending) return null;
+
+  const { user } = pending.session;
+  const [live, value] = await Promise.all([pending.live, read(user.id)]);
+  if (!live) {
+    console.error("The session is no longer live; refusing the request.");
+    return null;
+  }
+  return { user, value };
+}
 
 /**
  * Session plus profile, rejecting a deactivated account. Deactivation does not
@@ -270,18 +288,22 @@ export async function getDefaultLandingPath(userId: string, profile: Pick<Profil
 async function requireSessionWithPermission(
   permissionNames: string[]
 ): Promise<{ profile: Profile; allowed: boolean }> {
-  const user = await getRequestUser();
+  // The permission answer comes from the request's dashboard access call, which
+  // the dashboard layout has already made, so a page guard adds no round trip.
+  const verified = await verifiedSessionWith((id) =>
+    Promise.all([
+      getProfile(id),
+      getDashboardAccess()
+        .then((access) => Promise.all(permissionNames.map(permissionHolder(id, access))))
+        .then((answers) => answers.some(Boolean)),
+    ])
+  );
 
-  if (!user) {
+  if (!verified) {
     throw new AuthError(401, "UNAUTHORIZED: Session not found");
   }
 
-  const [profile, allowed] = await Promise.all([
-    getProfile(user.id),
-    permissionNames.length === 1
-      ? hasPermission(user.id, permissionNames[0])
-      : hasAnyPermission(user.id, permissionNames),
-  ]);
+  const [profile, allowed] = verified.value;
 
   if (!profile) {
     throw new AuthError(401, "UNAUTHORIZED: Session not found");

@@ -1,7 +1,7 @@
 import React from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getRequestUser } from "@/lib/auth/session";
+import { verifiedSessionWith } from "@/lib/auth/helpers";
 import DocumentSubmitClient from "./DocumentSubmitClient";
 
 export const dynamic = "force-dynamic";
@@ -9,19 +9,17 @@ export const dynamic = "force-dynamic";
 export default async function PatientSubmitPage() {
   const supabase = await createClient();
 
-  // 1. Get current authenticated user
-  const user = await getRequestUser();
+  // The signed-in user and their patient record, read beside the session's
+  // revocation check (#238).
+  const verified = await verifiedSessionWith((id) =>
+    supabase.from("patients").select("id").eq("profile_id", id).single()
+  );
 
-  if (!user) {
+  if (!verified) {
     redirect("/login");
   }
 
-  // 2. Double check patient record existence
-  const { data: patient, error: patientError } = await supabase
-    .from("patients")
-    .select("id")
-    .eq("profile_id", user.id)
-    .single();
+  const { data: patient, error: patientError } = verified.value;
 
   if (patientError || !patient) {
     redirect("/patient/dashboard"); // Redirect if not properly linked as patient
