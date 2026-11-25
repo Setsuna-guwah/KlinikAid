@@ -113,7 +113,8 @@ export default {
     await measure("sidebar RAG Manager -> System Logs", {
       kind: "navigation",
       action: () => clickSidebar(page, "System Logs"),
-      ready: () => logRowsReady(page),
+      // The first page is rendered by the server (#250): no loader to wait for.
+      ready: () => logRowsReady(page, { waitForFetch: false }),
     });
     await measure("sidebar System Logs -> Dashboard", {
       kind: "navigation",
@@ -237,7 +238,7 @@ export default {
     await measure("hard load /admin/logs", {
       kind: "hard-load",
       action: () => page.goto(url("/admin/logs"), { waitUntil: "commit" }),
-      ready: () => logRowsReady(page),
+      ready: () => logRowsReady(page, { waitForFetch: false }),
     });
 
     await measure("system logs: scroll to bottom", {
@@ -274,7 +275,9 @@ export default {
     await measure("system logs: switch to Chatbot Audit", {
       kind: "interaction",
       action: () => page.getByRole("button", { name: "Chatbot Audit", exact: true }).click(),
-      ready: () => logRowsReady(page),
+      // The tab is warmed in the background, so its loader usually never shows;
+      // the tabs unmount, so waiting for visible rows is enough either way.
+      ready: () => logRowsReady(page, { waitForFetch: false }),
     });
     await measure("system logs: switch to API Cost Tracker", {
       kind: "interaction",
