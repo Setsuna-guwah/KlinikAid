@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, type GenerationConfig } from "@google/generative-ai";
 import { WEB_OCR_ENABLED } from "@/lib/constants";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
@@ -28,7 +28,14 @@ export async function extractDocumentText(
   }
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    // Verbatim transcription needs no reasoning: with thinking off a one-page lab
+    // report took 2.8 s instead of 4.5 s, with identical values, and an
+    // unreadable image still returned OCR_FAILED (#240).
+    // The SDK's typings have no `thinkingConfig`; it is forwarded unchanged.
+    const generationConfig: GenerationConfig & { thinkingConfig: { thinkingBudget: number } } = {
+      thinkingConfig: { thinkingBudget: 0 },
+    };
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash", generationConfig });
     const result = await model.generateContent([
       {
         inlineData: {
