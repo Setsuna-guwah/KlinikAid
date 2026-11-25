@@ -26,7 +26,7 @@ import { describe, expect, it } from "vitest";
  * and are recorded in private/batch8/211/.
  */
 
-const PAGE_PATH = join(__dirname, "page.tsx");
+const PAGE_PATH = join(__dirname, "StaffManagementClient.tsx");
 
 const source = readFileSync(PAGE_PATH, "utf8");
 
