@@ -1,5 +1,4 @@
-import { hasAnyPermission } from "@/lib/auth/helpers";
-import { getRequestUser } from "@/lib/auth/session";
+import { hasAnyPermission, verifiedSessionWith } from "@/lib/auth/helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -36,16 +35,23 @@ function redirectTo(path: string): Response {
  * (MFA, deactivation, area rules and the access-denied audit row) decides.
  */
 export async function GET() {
-  const user = await getRequestUser();
-  if (!user) {
+  // Both permission answers are read beside the session's revocation check.
+  const verified = await verifiedSessionWith((id) =>
+    Promise.all([
+      hasAnyPermission(id, RECORD_ENTRY_PERMISSIONS),
+      hasAnyPermission(id, DEPARTMENT_AREA_PERMISSIONS),
+    ])
+  );
+  if (!verified) {
     return redirectTo("/login");
   }
 
-  if (await hasAnyPermission(user.id, RECORD_ENTRY_PERMISSIONS)) {
+  const [canEnterRecords, canEnterArea] = verified.value;
+  if (canEnterRecords) {
     return redirectTo("/department/records");
   }
 
-  if (await hasAnyPermission(user.id, DEPARTMENT_AREA_PERMISSIONS)) {
+  if (canEnterArea) {
     return redirectTo("/403");
   }
 
