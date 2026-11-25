@@ -1,4 +1,6 @@
 import React from "react";
+import { redirect } from "next/navigation";
+import { AuthError } from "@/lib/api-response";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requirePermission } from "@/lib/auth/helpers";
@@ -11,7 +13,14 @@ import type { DbRole, StaffMember } from "./staff-form";
 export const dynamic = "force-dynamic";
 
 export default async function StaffManagementPage() {
-  await requirePermission("staff.manage");
+  // A refused guard redirects, as the other admin pages do, instead of
+  // throwing into the error boundary.
+  try {
+    await requirePermission("staff.manage");
+  } catch (error: unknown) {
+    if (error instanceof AuthError) redirect(error.status === 401 ? "/login" : "/403");
+    throw error;
+  }
   const supabase = await createClient();
 
   // Load the staff registry and the role catalogue in parallel so the first
