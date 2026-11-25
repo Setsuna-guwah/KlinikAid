@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/auth/helpers";
 import { errorResponse, handleRouteError, successResponse } from "@/lib/api-response";
+import { fetchPatientRecordStats } from "@/lib/specialist-record-stats";
 
 /**
  * Maximum rows this endpoint will return.
@@ -92,55 +93,33 @@ export async function GET(request: Request) {
       );
     }
 
-    // 2. Fetch records for these patients from specialist_records
-    let recordsQuery = supabase
-      .from("specialist_records")
-      .select("specialist_patient_id, test_type, is_flagged, created_at")
-      .in("specialist_patient_id", patients.map((p) => p.id));
-
-    if (departmentFilter) {
-      recordsQuery = recordsQuery.eq("test_type", departmentFilter);
-    }
-    if (startDateFilter) {
-      recordsQuery = recordsQuery.gte("created_at", startDateFilter);
-    }
-    if (endDateFilter) {
-      recordsQuery = recordsQuery.lte("created_at", endDateFilter);
-    }
-
-    const { data: records, error: recordsError } = await recordsQuery;
+    // 2. Record count, flagged count and latest date per patient, grouped in
+    // the database (#263).
+    const { stats, error: recordsError } = await fetchPatientRecordStats(
+      supabase,
+      patients.map((p) => p.id),
+      { testType: departmentFilter, from: startDateFilter, to: endDateFilter },
+    );
 
     if (recordsError) {
       throw recordsError;
     }
 
-    // 3. Aggregate stats in-memory
     const results = patients
       .map((patient) => {
-        const patientRecords = (records || []).filter((r) => r.specialist_patient_id === patient.id);
+        const patientStats = stats.get(patient.id);
 
-        if ((departmentFilter || startDateFilter || endDateFilter) && patientRecords.length === 0) {
+        if ((departmentFilter || startDateFilter || endDateFilter) && !patientStats) {
           // If filtering by records and none matched, exclude this patient from search results
           return null;
-        }
-
-        const totalRecords = patientRecords.length;
-        const flaggedCount = patientRecords.filter((r) => r.is_flagged).length;
-        
-        let lastTestDate: string | null = null;
-        if (patientRecords.length > 0) {
-          lastTestDate = patientRecords.reduce(
-            (max, r) => (r.created_at > max ? r.created_at : max),
-            patientRecords[0].created_at
-          );
         }
 
         return {
           ...patient,
           patient_code: `PT-${patient.id.substring(0, 8).toUpperCase()}`,
-          total_records: totalRecords,
-          flagged_count: flaggedCount,
-          last_test_date: lastTestDate,
+          total_records: patientStats?.total_records ?? 0,
+          flagged_count: patientStats?.flagged_count ?? 0,
+          last_test_date: patientStats?.last_test_date ?? null,
         };
       })
       .filter(Boolean);

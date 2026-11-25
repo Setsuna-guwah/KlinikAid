@@ -3,6 +3,7 @@ import { requirePermission } from "@/lib/auth/helpers";
 import { createClient } from "@/lib/supabase/server";
 import SpecialistPatientsClient from "@/components/SpecialistPatientsClient";
 import DataLoadError from "@/components/DataLoadError";
+import { fetchPatientRecordStats, type PatientRecordStats } from "@/lib/specialist-record-stats";
 
 export const dynamic = "force-dynamic";
 
@@ -41,25 +42,17 @@ export default async function SpecialistPatientsPage() {
     console.error("Error fetching roster total:", rosterTotalError);
   }
 
-  // 2. Fetch records for these patients in a separate query to prevent massive nested scans (capped at 50000)
-  let records: { specialist_patient_id: string; is_flagged: boolean; created_at: string }[] = [];
-  let recordsError: { message: string } | null = null;
-  if (patients && patients.length > 0) {
-    const { data: recordsData, error: err } = await supabase
-      .from("specialist_records")
-      .select("specialist_patient_id, is_flagged, created_at")
-      .in("specialist_patient_id", patients.map((p) => p.id))
-      .limit(50000);
+  // 2. Record count, flagged count and latest date per patient (#263).
+  const { stats, error: recordsError } =
+    patients && patients.length > 0
+      ? await fetchPatientRecordStats(supabase, patients.map((p) => p.id))
+      : { stats: new Map<string, PatientRecordStats>(), error: null };
 
-    if (err) {
-      console.error("Error fetching records for patients:", err);
-      recordsError = err;
-    } else {
-      records = recordsData || [];
-    }
+  if (recordsError) {
+    console.error("Error fetching record stats for patients:", recordsError);
   }
 
-  // Every row in this roster is built from `records`: total_records, flagged_count
+  // Every row in this roster is built from those stats: total_records, flagged_count
   // and last_test_date. If that query failed, each patient would render as "0
   // records, 0 flagged" -- an empty diagnostic history and no out-of-range
   // results, asserted as fact. A roster of confident wrong counts is more
@@ -68,17 +61,7 @@ export default async function SpecialistPatientsPage() {
   const loadError = patientsError ?? recordsError ?? rosterTotalError;
 
   const formattedPatients = (patients || []).map((patient) => {
-    const patientRecords = records.filter((r) => r.specialist_patient_id === patient.id);
-    const totalRecords = patientRecords.length;
-    const flaggedCount = patientRecords.filter((r) => r.is_flagged).length;
-    
-    let lastTestDate: string | null = null;
-    if (patientRecords.length > 0) {
-      lastTestDate = patientRecords.reduce(
-        (max: string, r) => (r.created_at > max ? r.created_at : max),
-        patientRecords[0].created_at
-      );
-    }
+    const patientStats = stats.get(patient.id);
 
     return {
       id: patient.id,
@@ -90,9 +73,9 @@ export default async function SpecialistPatientsPage() {
       email: patient.email,
       address: patient.address,
       patient_code: `PT-${patient.id.substring(0, 8).toUpperCase()}`,
-      total_records: totalRecords,
-      flagged_count: flaggedCount,
-      last_test_date: lastTestDate
+      total_records: patientStats?.total_records ?? 0,
+      flagged_count: patientStats?.flagged_count ?? 0,
+      last_test_date: patientStats?.last_test_date ?? null
     };
   });
 
