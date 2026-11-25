@@ -57,8 +57,8 @@ export const getCurrentUser = cache(async (): Promise<{
  * as the dashboard layout does. Null when there is no verified session or the
  * Auth server no longer recognises it; the read's result is then discarded.
  */
-async function verifiedSessionWith<T>(
-  read: (userId: string) => Promise<T>
+export async function verifiedSessionWith<T>(
+  read: (userId: string) => PromiseLike<T>
 ): Promise<{ user: User; value: T } | null> {
   const pending = await startRequestSession();
   if (!pending) return null;

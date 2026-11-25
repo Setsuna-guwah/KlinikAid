@@ -1,7 +1,7 @@
 import React from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getRequestUser } from "@/lib/auth/session";
+import { verifiedSessionWith } from "@/lib/auth/helpers";
 import ProfileClient from "./ProfileClient";
 import { Department, UserRole } from "@/types";
 
@@ -10,17 +10,16 @@ export const dynamic = "force-dynamic";
 export default async function ProfilePage() {
   const supabase = await createClient();
 
-  const user = await getRequestUser();
-  if (!user) {
+  // Full profile info, read beside the session's revocation check (#238).
+  const verified = await verifiedSessionWith((id) =>
+    supabase.from("profiles").select("full_name, role, department").eq("id", id).single()
+  );
+  if (!verified) {
     redirect("/login");
   }
 
-  // Fetch full profile info
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("full_name, role, department")
-    .eq("id", user.id)
-    .single();
+  const { user } = verified;
+  const { data: profile } = verified.value;
 
   if (!profile) {
     redirect("/login");
